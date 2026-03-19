@@ -1,2 +1,2 @@
 # FateGear
-To be continue
+待完善
