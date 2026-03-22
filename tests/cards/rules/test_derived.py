@@ -68,10 +68,18 @@ def test_sanity_is_capped_by_cthulhu_mythos() -> None:
 
 
 def test_hit_points_calculation() -> None:
+    from dataclasses import replace
+    # HP (体力) 最大值 = (CON + SIZ) // 10
     attributes = _make_attributes(strength=50, dexterity=50, size=60)
-    attributes = attributes.__class__(**{**attributes.as_dict(), "CON": 50, "SIZ":65})
+    attributes = replace(attributes, constitution=50, size=65)
+    
+    # (体质 50 + 体型 65) // 10 = 115 // 10 = 11
     assert calculate_hit_points(attributes) == 11
 
 def test_magic_points_calculation() -> None:
-    attributes = _make_attributes(strength=50, dexterity=50, size=60)
+    # MP (魔法) 最大值 = POW // 5
+    # 给定 power (即 POW) 为 65
+    attributes = _make_attributes(strength=50, dexterity=50, size=60, power=65)
+    
+    # 65 // 5 = 13
     assert calculate_magic_points(attributes) == 13
