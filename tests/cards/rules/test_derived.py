@@ -6,6 +6,8 @@ from cards.rules.derived import (
     calculate_damage_bonus,
     calculate_move_rate,
     derive_stats,
+    calculate_hit_points,
+    calculate_magic_points
 )
 
 
@@ -62,3 +64,14 @@ def test_sanity_is_capped_by_cthulhu_mythos() -> None:
 
     assert derived.starting_sanity == 39
     assert derived.sanity_max == 39
+
+
+
+def test_hit_points_calculation() -> None:
+    attributes = _make_attributes(strength=50, dexterity=50, size=60)
+    attributes = attributes.__class__(**{**attributes.as_dict(), "CON": 50, "SIZ":65})
+    assert calculate_hit_points(attributes) == 11
+
+def test_magic_points_calculation() -> None:
+    attributes = _make_attributes(strength=50, dexterity=50, size=60)
+    assert calculate_magic_points(attributes) == 13
