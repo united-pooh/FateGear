@@ -1,13 +1,16 @@
 import pytest
+from pydantic import ValidationError
 
 from cards.domain.attributes import InvestigatorAttributes
 from cards.rules.derived import (
+    calculate_age_penalty,
     calculate_build,
     calculate_damage_bonus,
     calculate_move_rate,
+    calculate_sanity_max,
     derive_stats,
     calculate_hit_points,
-    calculate_magic_points
+    calculate_magic_points,
 )
 
 
@@ -66,20 +69,31 @@ def test_sanity_is_capped_by_cthulhu_mythos() -> None:
     assert derived.sanity_max == 39
 
 
-
 def test_hit_points_calculation() -> None:
-    from dataclasses import replace
     # HP (体力) 最大值 = (CON + SIZ) // 10
     attributes = _make_attributes(strength=50, dexterity=50, size=60)
-    attributes = replace(attributes, constitution=50, size=65)
-    
+    attributes = attributes.model_copy(update={"constitution": 50, "size": 65})
+
     # (体质 50 + 体型 65) // 10 = 115 // 10 = 11
     assert calculate_hit_points(attributes) == 11
+
 
 def test_magic_points_calculation() -> None:
     # MP (魔法) 最大值 = POW // 5
     # 给定 power (即 POW) 为 65
     attributes = _make_attributes(strength=50, dexterity=50, size=60, power=65)
-    
+
     # 65 // 5 = 13
     assert calculate_magic_points(attributes) == 13
+
+
+@pytest.mark.parametrize("invalid_age", ["20", 20.0, True, 0, 121])
+def test_age_validation_uses_pydantic(invalid_age: object) -> None:
+    with pytest.raises(ValidationError):
+        calculate_age_penalty(invalid_age)
+
+
+@pytest.mark.parametrize("invalid_mythos", ["20", 20.0, True, -1, 100])
+def test_mythos_validation_uses_pydantic(invalid_mythos: object) -> None:
+    with pytest.raises(ValidationError):
+        calculate_sanity_max(invalid_mythos)

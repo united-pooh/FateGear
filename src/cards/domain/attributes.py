@@ -1,57 +1,44 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+PercentileStat = Annotated[int, Field(ge=1, le=99, strict=True)]
+LuckStat = Annotated[int, Field(ge=0, le=99, strict=True)]
 
 
-def _validate_int(name: str, value: int, *, minimum: int, maximum: int) -> None:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise TypeError(f"{name} must be an int")
-    if not minimum <= value <= maximum:
-        raise ValueError(f"{name} must be between {minimum} and {maximum}, got {value}")
-
-
-@dataclass(frozen=True, slots=True)
-class InvestigatorAttributes:
+class InvestigatorAttributes(BaseModel):
     """第七版克苏鲁调查员的属性块。"""
 
-    strength: int
-    constitution: int
-    size: int
-    dexterity: int
-    appearance: int
-    intelligence: int
-    power: int
-    education: int
-    luck: int | None = None
+    strength: PercentileStat
+    constitution: PercentileStat
+    size: PercentileStat
+    dexterity: PercentileStat
+    appearance: PercentileStat
+    intelligence: PercentileStat
+    power: PercentileStat
+    education: PercentileStat
+    luck: LuckStat | None = None
 
-    def __post_init__(self) -> None:
-        for field_name in (
-            "strength",
-            "constitution",
-            "size",
-            "dexterity",
-            "appearance",
-            "intelligence",
-            "power",
-            "education",
-        ):
-            _validate_int(field_name, getattr(self, field_name), minimum=1, maximum=99)
-        if self.luck is not None:
-            _validate_int("luck", self.luck, minimum=0, maximum=99)
+    model_config = ConfigDict(frozen=True)
 
+    @computed_field
     @property
     def strength_plus_size(self) -> int:
         return self.strength + self.size
 
     def as_dict(self) -> dict[str, int | None]:
-        return {
-            "STR": self.strength,
-            "CON": self.constitution,
-            "SIZ": self.size,
-            "DEX": self.dexterity,
-            "APP": self.appearance,
-            "INT": self.intelligence,
-            "POW": self.power,
-            "EDU": self.education,
-            "Luck": self.luck,
+        mapping = {
+            "strength": "STR",
+            "constitution": "CON",
+            "size": "SIZ",
+            "dexterity": "DEX",
+            "appearance": "APP",
+            "intelligence": "INT",
+            "power": "POW",
+            "education": "EDU",
+            "luck": "Luck",
         }
+        data = self.model_dump(exclude={"strength_plus_size"})
+        return {mapping[k]: v for k, v in data.items()}

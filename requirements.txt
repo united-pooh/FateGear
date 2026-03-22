@@ -1,0 +1,6 @@
+pytest
+pydantic
+pyclean
+pytest
+mypy
+ruff
