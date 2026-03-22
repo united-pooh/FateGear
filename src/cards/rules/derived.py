@@ -1,36 +1,31 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, validate_call
 
 from cards.domain.attributes import InvestigatorAttributes
 from cards.domain.value_objects import DamageBonus
 
+Age = Annotated[int, Field(ge=1, le=120, strict=True)]
+CthulhuMythos = Annotated[int, Field(ge=0, le=99, strict=True)]
+HitPointsMax = Annotated[int, Field(ge=0, le=19, strict=True)]
+MagicPointsMax = Annotated[int, Field(ge=0, le=19, strict=True)]
+SanityScore = Annotated[int, Field(ge=0, le=99, strict=True)]
+MoveRate = Annotated[int, Field(ge=1, le=9, strict=True)]
+BuildScore = Annotated[int, Field(ge=-2, le=2, strict=True)]
 
-@dataclass(frozen=True, slots=True)
-class DerivedStats:
-    hit_points_max: int
-    magic_points_max: int
-    starting_sanity: int
-    sanity_max: int
-    move_rate: int
-    build: int
+
+class DerivedStats(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    hit_points_max: HitPointsMax
+    magic_points_max: MagicPointsMax
+    starting_sanity: SanityScore
+    sanity_max: SanityScore
+    move_rate: MoveRate
+    build: BuildScore
     damage_bonus: DamageBonus
-
-
-def _validate_age(age: int) -> None:
-    if isinstance(age, bool) or not isinstance(age, int):
-        raise TypeError("age must be an int")
-    if not 1 <= age <= 120:
-        raise ValueError(f"age must be between 1 and 120, got {age}")
-
-
-def _validate_mythos(cthulhu_mythos: int) -> None:
-    if isinstance(cthulhu_mythos, bool) or not isinstance(cthulhu_mythos, int):
-        raise TypeError("cthulhu_mythos must be an int")
-    if not 0 <= cthulhu_mythos <= 99:
-        raise ValueError(
-            f"cthulhu_mythos must be between 0 and 99, got {cthulhu_mythos}"
-        )
 
 
 def calculate_hit_points(attributes: InvestigatorAttributes) -> int:
@@ -41,8 +36,8 @@ def calculate_magic_points(attributes: InvestigatorAttributes) -> int:
     return attributes.power // 5
 
 
-def calculate_sanity_max(cthulhu_mythos: int = 0) -> int:
-    _validate_mythos(cthulhu_mythos)
+@validate_call
+def calculate_sanity_max(cthulhu_mythos: CthulhuMythos = 0) -> int:
     return max(0, 99 - cthulhu_mythos)
 
 
@@ -52,8 +47,8 @@ def calculate_starting_sanity(
     return min(attributes.power, calculate_sanity_max(cthulhu_mythos))
 
 
-def calculate_age_penalty(age: int) -> int:
-    _validate_age(age)
+@validate_call
+def calculate_age_penalty(age: Age) -> int:
     if age < 40:
         return 0
     return min(5, (age // 10) - 3)

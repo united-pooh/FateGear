@@ -1,10 +1,27 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Annotated, Any
 
-from cards.domain.attributes import InvestigatorAttributes
-from cards.domain.card import InvestigatorCard
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    validate_call,
+    model_validator,
+)
+
+from cards.domain.attributes import InvestigatorAttributes, LuckStat, PercentileStat
+from cards.domain.card import (
+    CthulhuMythos,
+    InvestigatorCard,
+    Name,
+    Occupation,
+    Player,
+)
+
+Age = Annotated[int, Field(ge=1, le=120, strict=True)]
 
 FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "name": ("name", "姓名"),
@@ -24,64 +41,68 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _pick(payload: Mapping[str, Any], *aliases: str) -> Any | None:
-    for alias in aliases:
-        if alias in payload and payload[alias] not in (None, ""):
-            return payload[alias]
-    return None
+def _alias_choices(field_name: str) -> AliasChoices:
+    return AliasChoices(*FIELD_ALIASES[field_name])
 
 
-def _coerce_int(field_name: str, value: Any) -> int:
-    if isinstance(value, bool):
-        raise TypeError(f"{field_name} must be an int-compatible value")
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            raise ValueError(f"{field_name} cannot be empty")
-        try:
-            return int(text)
-        except ValueError:
-            numeric = float(text)
-            if numeric.is_integer():
-                return int(numeric)
-    raise TypeError(f"{field_name} must be an int-compatible value")
+class InvestigatorBuildPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: Name = Field(default="未命名调查员", validation_alias=_alias_choices("name"))
+    player: Player = Field(default="", validation_alias=_alias_choices("player"))
+    occupation: Occupation = Field(
+        default="", validation_alias=_alias_choices("occupation")
+    )
+    age: Age = Field(validation_alias=_alias_choices("age"))
+    strength: PercentileStat = Field(validation_alias=_alias_choices("strength"))
+    constitution: PercentileStat = Field(
+        validation_alias=_alias_choices("constitution")
+    )
+    size: PercentileStat = Field(validation_alias=_alias_choices("size"))
+    dexterity: PercentileStat = Field(validation_alias=_alias_choices("dexterity"))
+    appearance: PercentileStat = Field(validation_alias=_alias_choices("appearance"))
+    intelligence: PercentileStat = Field(
+        validation_alias=_alias_choices("intelligence")
+    )
+    power: PercentileStat = Field(validation_alias=_alias_choices("power"))
+    education: PercentileStat = Field(validation_alias=_alias_choices("education"))
+    luck: LuckStat | None = Field(
+        default=None, validation_alias=_alias_choices("luck")
+    )
+    cthulhu_mythos: CthulhuMythos = Field(
+        default=0, validation_alias=_alias_choices("cthulhu_mythos")
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_empty_values(cls, data: object) -> object:
+        if not isinstance(data, Mapping):
+            return data
+
+        return {
+            key: value
+            for key, value in data.items()
+            if value not in (None, "")
+        }
 
 
-def _require_int(payload: Mapping[str, Any], field_name: str) -> int:
-    value = _pick(payload, *FIELD_ALIASES[field_name])
-    if value is None:
-        aliases = ", ".join(FIELD_ALIASES[field_name])
-        raise KeyError(f"missing required field {field_name}; expected one of: {aliases}")
-    return _coerce_int(field_name, value)
-
-
-def _optional_int(payload: Mapping[str, Any], field_name: str) -> int | None:
-    value = _pick(payload, *FIELD_ALIASES[field_name])
-    if value is None:
-        return None
-    return _coerce_int(field_name, value)
-
-
+@validate_call
 def build_investigator_card(
     *,
-    name: str,
-    age: int,
-    strength: int,
-    constitution: int,
-    size: int,
-    dexterity: int,
-    appearance: int,
-    intelligence: int,
-    power: int,
-    education: int,
-    occupation: str = "",
-    player: str = "",
-    luck: int | None = None,
-    cthulhu_mythos: int = 0,
+    name: Name,
+    age: Age,
+    strength: PercentileStat,
+    constitution: PercentileStat,
+    size: PercentileStat,
+    dexterity: PercentileStat,
+    appearance: PercentileStat,
+    intelligence: PercentileStat,
+    power: PercentileStat,
+    education: PercentileStat,
+    occupation: Occupation = "",
+    player: Player = "",
+    luck: LuckStat | None = None,
+    cthulhu_mythos: CthulhuMythos = 0,
 ) -> InvestigatorCard:
     attributes = InvestigatorAttributes(
         strength=strength,
@@ -105,22 +126,20 @@ def build_investigator_card(
 
 
 def build_investigator_from_mapping(payload: Mapping[str, Any]) -> InvestigatorCard:
-    name = _pick(payload, *FIELD_ALIASES["name"]) or "未命名调查员"
-    player = _pick(payload, *FIELD_ALIASES["player"]) or ""
-    occupation = _pick(payload, *FIELD_ALIASES["occupation"]) or ""
+    parsed = InvestigatorBuildPayload.model_validate(payload)
     return build_investigator_card(
-        name=str(name),
-        player=str(player),
-        occupation=str(occupation),
-        age=_require_int(payload, "age"),
-        strength=_require_int(payload, "strength"),
-        constitution=_require_int(payload, "constitution"),
-        size=_require_int(payload, "size"),
-        dexterity=_require_int(payload, "dexterity"),
-        appearance=_require_int(payload, "appearance"),
-        intelligence=_require_int(payload, "intelligence"),
-        power=_require_int(payload, "power"),
-        education=_require_int(payload, "education"),
-        luck=_optional_int(payload, "luck"),
-        cthulhu_mythos=_optional_int(payload, "cthulhu_mythos") or 0,
+        name=parsed.name,
+        player=parsed.player,
+        occupation=parsed.occupation,
+        age=parsed.age,
+        strength=parsed.strength,
+        constitution=parsed.constitution,
+        size=parsed.size,
+        dexterity=parsed.dexterity,
+        appearance=parsed.appearance,
+        intelligence=parsed.intelligence,
+        power=parsed.power,
+        education=parsed.education,
+        luck=parsed.luck,
+        cthulhu_mythos=parsed.cthulhu_mythos,
     )

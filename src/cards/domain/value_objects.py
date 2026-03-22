@@ -1,17 +1,25 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+FlatBonus = Annotated[int, Field(strict=True)]
+DiceCount = Annotated[int, Field(ge=0, strict=True)]
+DieSides = Annotated[int, Field(ge=0, strict=True)]
 
 
-@dataclass(frozen=True, slots=True)
-class DamageBonus:
+class DamageBonus(BaseModel):
     """结构化的伤害加值，便于后续战斗代码直接消费。"""
 
-    flat: int = 0
-    dice_count: int = 0
-    die_sides: int = 0
+    model_config = ConfigDict(frozen=True)
 
-    def __post_init__(self) -> None:
+    flat: FlatBonus = 0
+    dice_count: DiceCount = 0
+    die_sides: DieSides = 0
+
+    @model_validator(mode="after")
+    def _validate_dice_shape(self) -> "DamageBonus":
         if self.dice_count < 0:
             raise ValueError("dice_count must be zero or positive")
         if self.die_sides < 0:
@@ -22,6 +30,7 @@ class DamageBonus:
             raise ValueError("die_sides must be positive when dice_count is positive")
         if self.flat and self.dice_count:
             raise ValueError("flat and dice bonuses are modeled separately")
+        return self
 
     @property
     def notation(self) -> str:

@@ -2,9 +2,19 @@
 
 from cards.domain.build import build_investigator_card
 
+
 def test_card_state_respects_max_bounds() -> None:
     card = build_investigator_card(
-        name="测试员", age=20, strength=50, constitution=60, size=60, dexterity=50, appearance=50, intelligence=50, power=60, education=50,
+        name="测试员",
+        age=20,
+        strength=50,
+        constitution=60,
+        size=60,
+        dexterity=50,
+        appearance=50,
+        intelligence=50,
+        power=60,
+        education=50,
     )
     card.modify_hit_point(-5)
     assert card.state.hit_points == 7
