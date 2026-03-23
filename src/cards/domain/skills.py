@@ -54,7 +54,7 @@ class SkillDefinition(BaseModel):
         has_branch_key = self.branch_key is not None
         has_branch_name = self.branch_name is not None
         if has_branch_key != has_branch_name:
-            raise ValueError("branch_key and branch_name must be provided together")
+            raise ValueError("branch_key 和 branch_name 必须同时提供")
         return self
 
 
@@ -80,27 +80,27 @@ class SkillTemplate(BaseModel):
     def _validate_branch_shape(self) -> "SkillTemplate":
         if self.branch_mode is SkillBranchMode.NONE:
             if self.branch_label is not None:
-                raise ValueError("branch_label is only allowed for branch skills")
+                raise ValueError("branch_label 只能用于分支技能")
             if self.allow_custom_branch:
-                raise ValueError("allow_custom_branch requires a branch skill")
+                raise ValueError("allow_custom_branch 只能用于分支技能")
             if self.branch_options:
-                raise ValueError("branch_options are only allowed for branch skills")
+                raise ValueError("branch_options 只能用于分支技能")
             return self
 
         if self.branch_label is None:
-            raise ValueError("branch_label is required for branch skills")
+            raise ValueError("分支技能必须提供 branch_label")
         if not self.allow_custom_branch and not self.branch_options:
             raise ValueError(
-                "branch skills must define branch_options or allow_custom_branch"
+                "分支技能必须定义 branch_options，或启用 allow_custom_branch"
             )
 
         option_keys = [option.key for option in self.branch_options]
         if len(option_keys) != len(set(option_keys)):
-            raise ValueError("branch option keys must be unique")
+            raise ValueError("分支选项的 key 必须唯一")
 
         option_names = [option.name for option in self.branch_options]
         if len(option_names) != len(set(option_names)):
-            raise ValueError("branch option names must be unique")
+            raise ValueError("分支选项的 name 必须唯一")
 
         return self
 
@@ -112,7 +112,7 @@ class SkillTemplate(BaseModel):
     ) -> SkillDefinition:
         if not self.is_branch_skill:
             if branch_key is not None or branch_name is not None:
-                raise ValueError("branch arguments are only allowed for branch skills")
+                raise ValueError("只有分支技能才允许传入 branch 参数")
             return SkillDefinition(
                 key=self.key,
                 name=self.name,
@@ -133,7 +133,7 @@ class SkillTemplate(BaseModel):
             if matched_by_key is not None and (
                 branch_name is not None and matched_by_key.name != branch_name
             ):
-                raise ValueError("branch_name does not match branch_key")
+                raise ValueError("branch_name 与 branch_key 不匹配")
 
         matched_by_name = None
         if branch_name is not None:
@@ -148,7 +148,7 @@ class SkillTemplate(BaseModel):
             if matched_by_key is not None and (
                 matched_by_name is not None and matched_by_name.key != matched_by_key.key
             ):
-                raise ValueError("branch_key and branch_name reference different options")
+                raise ValueError("branch_key 和 branch_name 指向了不同的分支选项")
 
         matched_option = matched_by_key or matched_by_name
         if matched_option is not None:
@@ -157,11 +157,11 @@ class SkillTemplate(BaseModel):
         else:
             if not self.allow_custom_branch:
                 raise ValueError(
-                    "branch skill must use one of the predefined branch options"
+                    "该分支技能必须使用预定义的分支选项之一"
                 )
             if branch_key is None or branch_name is None:
                 raise ValueError(
-                    "custom branch skills require both branch_key and branch_name"
+                    "自定义分支技能必须同时提供 branch_key 和 branch_name"
                 )
 
         return SkillDefinition(

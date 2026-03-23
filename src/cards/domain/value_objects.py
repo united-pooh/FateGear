@@ -21,15 +21,15 @@ class DamageBonus(BaseModel):
     @model_validator(mode="after")
     def _validate_dice_shape(self) -> "DamageBonus":
         if self.dice_count < 0:
-            raise ValueError("dice_count must be zero or positive")
+            raise ValueError("dice_count 必须大于或等于 0")
         if self.die_sides < 0:
-            raise ValueError("die_sides must be zero or positive")
+            raise ValueError("die_sides 必须大于或等于 0")
         if self.dice_count == 0 and self.die_sides != 0:
-            raise ValueError("die_sides must be zero when dice_count is zero")
+            raise ValueError("当 dice_count 为 0 时，die_sides 也必须为 0")
         if self.dice_count > 0 and self.die_sides == 0:
-            raise ValueError("die_sides must be positive when dice_count is positive")
+            raise ValueError("当 dice_count 大于 0 时，die_sides 必须大于 0")
         if self.flat and self.dice_count:
-            raise ValueError("flat and dice bonuses are modeled separately")
+            raise ValueError("flat 加值和骰子加值必须分开表示")
         return self
 
     @property
