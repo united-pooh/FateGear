@@ -11,6 +11,10 @@ from cards.rules.derived import (
     calculate_starting_sanity,
     derive_stats,
 )
+from cards.rules.validation import (
+    validate_skill_definitions,
+    validate_skill_templates,
+)
 
 __all__ = [
     "DerivedStats",
@@ -24,4 +28,6 @@ __all__ = [
     "calculate_sanity_max",
     "calculate_starting_sanity",
     "derive_stats",
+    "validate_skill_definitions",
+    "validate_skill_templates",
 ]
