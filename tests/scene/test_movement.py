@@ -57,6 +57,27 @@ def test_scene_movement_rules_blocks_transition_when_flag_is_missing() -> None:
     assert decision.reason == "你还没有拿到钥匙。"
 
 
+def test_scene_movement_rules_blocks_transition_when_stage_is_missing() -> None:
+    rules = SceneMovementRules(
+        scene_links=[
+            SceneLink(
+                from_scene_id="car_2",
+                to_scene_id="head_car",
+                required_flags=["path_through_clickers"],
+                required_stages=["breakthrough"],
+                block_reason="你还没有安全穿过循声者所在的车厢。",
+            )
+        ],
+        active_flags={"path_through_clickers"},
+        active_stage_id="key_ready",
+    )
+
+    decision = rules.evaluate_transition(from_scene_id="car_2", to_scene_id="head_car")
+
+    assert decision.allowed is False
+    assert decision.reason == "你还没有安全穿过循声者所在的车厢。"
+
+
 def test_list_reachable_scenes_only_returns_allowed_destinations() -> None:
     rules = SceneMovementRules(
         scene_links=[

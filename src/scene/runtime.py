@@ -457,6 +457,7 @@ class SceneRuntime:
         triggered_clock_events = self._trigger_clock_events(session, module)
         story_signals = self._build_story_signals(
             events=event_log,
+            triggered_clock_events=triggered_clock_events,
             turn_no=snapshot.current_turn,
         )
         transition = self._transition_validator.can_transition(
@@ -847,6 +848,7 @@ class SceneRuntime:
         self,
         *,
         events: list[RuntimeEvent],
+        triggered_clock_events: list[str],
         turn_no: int,
     ) -> list[StorySignal]:
         signals: list[StorySignal] = []
@@ -870,17 +872,16 @@ class SceneRuntime:
                         action_id=event.action_id,
                     )
                 )
-            elif event.type == "clock_events_triggered":
-                for trigger_value in event.triggered_clock_events:
-                    clock_id, _, threshold_text = trigger_value.partition(":")
-                    signals.append(
-                        StorySignal(
-                            type="clock_threshold_triggered",
-                            turn_no=turn_no,
-                            clock_id=clock_id,
-                            threshold=int(threshold_text),
-                        )
-                    )
+        for trigger_value in triggered_clock_events:
+            clock_id, _, threshold_text = trigger_value.partition(":")
+            signals.append(
+                StorySignal(
+                    type="clock_threshold_triggered",
+                    turn_no=turn_no,
+                    clock_id=clock_id,
+                    threshold=int(threshold_text),
+                )
+            )
         return signals
 
     def _ensure_known_player(
