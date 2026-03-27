@@ -9,7 +9,9 @@ from collections.abc import Sequence
 import yaml  # type: ignore[import-untyped]
 from pydantic import ValidationError
 
-from scene.module_definition import ModuleCondition, ModuleDefinition, ModuleEffect
+from scene.module_definition import ModuleDefinition
+from scene.module_types import ModuleCondition, ModuleEffect
+from scene.story import StoryTransition
 
 MODULE_ROOT = Path(__file__).resolve().parents[2] / "module"
 
@@ -70,6 +72,16 @@ def _validate_module_definition(
         source=source,
         object_name="clock",
     )
+    story_stage_ids = _ensure_unique_ids(
+        definition.story_stages,
+        source=source,
+        object_name="story_stage",
+    )
+    _ensure_unique_ids(
+        definition.story_transitions,
+        source=source,
+        object_name="story_transition",
+    )
     _ensure_unique_ids(
         definition.links,
         source=source,
@@ -86,10 +98,26 @@ def _validate_module_definition(
         source=source,
         object_name="flag",
     )
+    clock_thresholds = {
+        clock.id: {threshold.value for threshold in clock.threshold_events}
+        for clock in definition.clocks
+    }
 
     if definition.entry_scene_id not in scene_ids:
         raise ModuleValidationError(
             f"模组文件 {source} 的 entry_scene_id={definition.entry_scene_id!r} 不存在"
+        )
+    if definition.entry_stage_id not in story_stage_ids:
+        raise ModuleValidationError(
+            f"模组文件 {source} 的 entry_stage_id={definition.entry_stage_id!r} 不存在"
+        )
+
+    for stage in definition.story_stages:
+        _validate_flag_refs(
+            stage.required_flags,
+            source=source,
+            owner=f"story_stage[{stage.id}]",
+            flag_ids=flag_ids,
         )
 
     for link in definition.links:
@@ -108,6 +136,12 @@ def _validate_module_definition(
             source=source,
             owner=f"link[{link.id}]",
             flag_ids=flag_ids,
+        )
+        _validate_stage_refs(
+            link.required_stages,
+            source=source,
+            owner=f"link[{link.id}]",
+            stage_ids=story_stage_ids,
         )
 
     for action in definition.actions:
@@ -137,6 +171,12 @@ def _validate_module_definition(
             owner=f"action[{action.id}].effects_on_failure",
             flag_ids=flag_ids,
             clock_ids=clock_ids,
+        )
+        _validate_stage_refs(
+            action.required_stages,
+            source=source,
+            owner=f"action[{action.id}]",
+            stage_ids=story_stage_ids,
         )
 
     for clock in definition.clocks:
@@ -179,6 +219,17 @@ def _validate_module_definition(
             action_ids=action_ids,
             clock_ids=clock_ids,
         )
+
+    _validate_story_transitions(
+        definition.story_transitions,
+        source=source,
+        stage_ids=story_stage_ids,
+        scene_ids=scene_ids,
+        action_ids=action_ids,
+        flag_ids=flag_ids,
+        clock_ids=clock_ids,
+        clock_thresholds=clock_thresholds,
+    )
 
 
 def _ensure_unique_ids(
@@ -280,3 +331,102 @@ def _validate_flag_refs(
             raise ModuleValidationError(
                 f"模组文件 {source} 的 {owner} 引用了不存在的 flag={flag!r}"
             )
+
+
+def _validate_stage_refs(
+    stages: Sequence[str],
+    *,
+    source: Path,
+    owner: str,
+    stage_ids: set[str],
+) -> None:
+    for stage_id in stages:
+        if stage_id not in stage_ids:
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 {owner} 引用了不存在的 stage={stage_id!r}"
+            )
+
+
+def _validate_story_transitions(
+    transitions: Sequence[StoryTransition],
+    *,
+    source: Path,
+    stage_ids: set[str],
+    scene_ids: set[str],
+    action_ids: set[str],
+    flag_ids: set[str],
+    clock_ids: set[str],
+    clock_thresholds: dict[str, set[int]],
+) -> None:
+    priority_by_source: dict[str, set[int]] = {}
+
+    for transition in transitions:
+        if transition.source_stage_id not in stage_ids:
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 story_transition[{transition.id}] 引用了不存在的 "
+                f"source_stage_id={transition.source_stage_id!r}"
+            )
+        if transition.target_stage_id not in stage_ids:
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 story_transition[{transition.id}] 引用了不存在的 "
+                f"target_stage_id={transition.target_stage_id!r}"
+            )
+        _validate_flag_refs(
+            transition.required_flags,
+            source=source,
+            owner=f"story_transition[{transition.id}]",
+            flag_ids=flag_ids,
+        )
+        _validate_effects(
+            transition.effects,
+            source=source,
+            owner=f"story_transition[{transition.id}].effects",
+            flag_ids=flag_ids,
+            clock_ids=clock_ids,
+        )
+
+        used_priorities = priority_by_source.setdefault(
+            transition.source_stage_id,
+            set(),
+        )
+        if transition.priority in used_priorities:
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 source_stage_id={transition.source_stage_id!r} "
+                f"存在重复的 priority={transition.priority}"
+            )
+        used_priorities.add(transition.priority)
+
+        if transition.trigger_type == "scene_entered":
+            if transition.trigger_value not in scene_ids:
+                raise ModuleValidationError(
+                    f"模组文件 {source} 的 story_transition[{transition.id}] "
+                    f"使用了不存在的 scene trigger_value={transition.trigger_value!r}"
+                )
+            continue
+
+        if transition.trigger_type == "action_succeeded":
+            if transition.trigger_value not in action_ids:
+                raise ModuleValidationError(
+                    f"模组文件 {source} 的 story_transition[{transition.id}] "
+                    f"使用了不存在的 action trigger_value={transition.trigger_value!r}"
+                )
+            continue
+
+        if transition.trigger_type == "clock_threshold_triggered":
+            clock_id, separator, threshold_text = transition.trigger_value.partition(":")
+            if separator != ":" or not threshold_text.isdigit():
+                raise ModuleValidationError(
+                    f"模组文件 {source} 的 story_transition[{transition.id}] "
+                    "使用了非法的 clock trigger_value，格式应为 clock_id:threshold"
+                )
+            if clock_id not in clock_ids:
+                raise ModuleValidationError(
+                    f"模组文件 {source} 的 story_transition[{transition.id}] "
+                    f"使用了不存在的 clock_id={clock_id!r}"
+                )
+            threshold = int(threshold_text)
+            if threshold not in clock_thresholds.get(clock_id, set()):
+                raise ModuleValidationError(
+                    f"模组文件 {source} 的 story_transition[{transition.id}] "
+                    f"引用了未定义的 clock threshold={transition.trigger_value!r}"
+                )

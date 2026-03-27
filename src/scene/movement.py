@@ -30,9 +30,11 @@ class SceneMovementRules:
         *,
         scene_links: Iterable[SceneLink] | None = None,
         active_flags: Collection[str] | None = None,
+        active_stage_id: str | None = None,
     ) -> None:
         self._scene_links = list(scene_links) if scene_links is not None else None
         self._active_flags = set(active_flags) if active_flags is not None else None
+        self._active_stage_id = active_stage_id
 
     def evaluate_transition(
         self,
@@ -41,6 +43,7 @@ class SceneMovementRules:
         to_scene_id: str,
         scene_links: Iterable[SceneLink] | None = None,
         active_flags: Collection[str] | None = None,
+        active_stage_id: str | None = None,
     ) -> MovementDecision:
         """判断两个场景之间的移动是否允许。"""
 
@@ -49,6 +52,9 @@ class SceneMovementRules:
         )
         effective_flags = (
             set(active_flags) if active_flags is not None else self._active_flags
+        )
+        effective_stage_id = (
+            active_stage_id if active_stage_id is not None else self._active_stage_id
         )
 
         if effective_links is None:
@@ -76,6 +82,14 @@ class SceneMovementRules:
                 )
                 return MovementDecision(allowed=False, reason=reason)
 
+            if link.required_stages:
+                if (
+                    effective_stage_id is None
+                    or effective_stage_id not in link.required_stages
+                ):
+                    reason = link.block_reason or "当前剧情阶段不允许通过该通路"
+                    return MovementDecision(allowed=False, reason=reason)
+
             return MovementDecision(allowed=True)
 
         return MovementDecision(allowed=False, reason="场景之间不存在可通行连线")
@@ -86,6 +100,7 @@ class SceneMovementRules:
         from_scene_id: str,
         scene_links: Iterable[SceneLink] | None = None,
         active_flags: Collection[str] | None = None,
+        active_stage_id: str | None = None,
     ) -> list[str]:
         """列出当前场景下可直达的场景。"""
 
@@ -108,6 +123,9 @@ class SceneMovementRules:
                 active_flags=active_flags
                 if active_flags is not None
                 else self._active_flags,
+                active_stage_id=active_stage_id
+                if active_stage_id is not None
+                else self._active_stage_id,
             )
             if decision.allowed:
                 reachable.append(link.to_scene_id)

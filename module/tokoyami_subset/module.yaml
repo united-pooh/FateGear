@@ -2,6 +2,7 @@ module_id: tokoyami_subset
 title: 常暗之厢最小验证模组
 version: 1
 entry_scene_id: car_6
+entry_stage_id: awake
 
 flags:
   - note_read
@@ -56,6 +57,7 @@ links:
     from_scene_id: car_2
     to_scene_id: head_car
     required_flags: [path_through_clickers]
+    required_stages: [breakthrough]
     block_reason: 你还没有安全穿过循声者所在的车厢。
   - id: head_to_2
     from_scene_id: head_car
@@ -67,6 +69,7 @@ actions:
     name: 查看便签
     kind: investigate
     once: true
+    required_stages: [awake]
     effects_on_success:
       - type: set_flag
         flag: note_read
@@ -87,6 +90,7 @@ actions:
     name: 寻找钥匙
     kind: search
     once: true
+    required_stages: [informed]
     conditions:
       - type: flag_set
         flag: attendant_revived
@@ -99,6 +103,7 @@ actions:
     name: 潜行通过
     kind: stealth
     once: true
+    required_stages: [key_ready]
     conditions:
       - type: flag_set
         flag: key_obtained
@@ -112,6 +117,7 @@ actions:
     name: 全速前进
     kind: operate
     once: true
+    required_stages: [breakthrough]
     conditions:
       - type: flag_set
         flag: key_obtained
@@ -126,6 +132,7 @@ actions:
     name: 拉下制动杆
     kind: operate
     once: true
+    required_stages: [breakthrough]
     conditions:
       - type: flag_set
         flag: key_obtained
@@ -149,6 +156,92 @@ clocks:
         effects:
           - type: set_flag
             flag: rear_threat_overwhelms
+
+story_stages:
+  - id: awake
+    name: 惊醒
+    description: 调查员在诡异列车中醒来。
+  - id: informed
+    name: 掌握线索
+    description: 调查员已意识到必须继续向前并寻找钥匙。
+    required_flags: [note_read]
+  - id: key_ready
+    name: 钥匙到手
+    description: 调查员已经找到了驾驶室钥匙。
+    required_flags: [key_obtained]
+  - id: breakthrough
+    name: 突破障碍
+    description: 调查员安全穿过了循声者所在的车厢。
+    required_flags: [path_through_clickers]
+  - id: true_end
+    name: 真结局
+    description: 电车冲破噩梦般的黑暗，众人回到了现实。
+    required_flags: [chose_accelerate]
+    is_terminal: true
+    terminal_type: success
+  - id: bad_end
+    name: 坏结局
+    description: 列车减速后陷入黑暗，大嘴在近处咀嚼。
+    is_terminal: true
+    terminal_type: failure
+
+story_transitions:
+  - id: awaken_to_informed
+    source_stage_id: awake
+    target_stage_id: informed
+    required_flags: [note_read]
+    trigger_type: action_succeeded
+    trigger_value: inspect_note
+    priority: 10
+  - id: informed_to_key_ready
+    source_stage_id: informed
+    target_stage_id: key_ready
+    required_flags: [key_obtained]
+    trigger_type: action_succeeded
+    trigger_value: find_key
+    priority: 10
+  - id: key_ready_to_breakthrough
+    source_stage_id: key_ready
+    target_stage_id: breakthrough
+    required_flags: [path_through_clickers]
+    trigger_type: action_succeeded
+    trigger_value: sneak_past_clickers
+    priority: 10
+  - id: breakthrough_to_true_end
+    source_stage_id: breakthrough
+    target_stage_id: true_end
+    required_flags: [chose_accelerate]
+    trigger_type: action_succeeded
+    trigger_value: accelerate_train
+    priority: 10
+  - id: breakthrough_to_bad_end
+    source_stage_id: breakthrough
+    target_stage_id: bad_end
+    required_flags: [chose_decelerate]
+    trigger_type: action_succeeded
+    trigger_value: brake_train
+    priority: 20
+  - id: informed_overwhelmed
+    source_stage_id: informed
+    target_stage_id: bad_end
+    required_flags: [rear_threat_overwhelms]
+    trigger_type: clock_threshold_triggered
+    trigger_value: rear_threat:10
+    priority: 0
+  - id: key_ready_overwhelmed
+    source_stage_id: key_ready
+    target_stage_id: bad_end
+    required_flags: [rear_threat_overwhelms]
+    trigger_type: clock_threshold_triggered
+    trigger_value: rear_threat:10
+    priority: 0
+  - id: breakthrough_overwhelmed
+    source_stage_id: breakthrough
+    target_stage_id: bad_end
+    required_flags: [rear_threat_overwhelms]
+    trigger_type: clock_threshold_triggered
+    trigger_value: rear_threat:10
+    priority: 0
 
 endings:
   - id: true_end

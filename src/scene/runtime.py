@@ -13,13 +13,17 @@ from scene.loader import MODULE_ROOT, load_module_by_id
 from scene.map_state import SceneInstanceState, SessionMapState, SessionPlayerState
 from scene.module_definition import (
     ModuleAction,
-    ModuleCondition,
     ModuleDefinition,
-    ModuleEffect,
-    ModuleEnding,
 )
+from scene.module_types import ModuleCondition, ModuleEffect
 from scene.movement import SceneMovementRules
 from scene.scene import SceneLink
+from scene.story import (
+    StorySignal,
+    StoryState,
+    StoryStateService,
+    TransitionValidator,
+)
 
 
 class MoveIntent(BaseModel):
@@ -64,6 +68,7 @@ class RuntimeEvent(BaseModel):
         "flags_changed",
         "clocks_advanced",
         "clock_events_triggered",
+        "story_transition_applied",
         "ending_reached",
         "turn_completed",
     ]
@@ -89,6 +94,9 @@ class RuntimeEvent(BaseModel):
     ending_id: str = Field(default="")
     ending_result: str = Field(default="")
     clock_values: dict[str, int] = Field(default_factory=dict)
+    story_transition_id: str = Field(default="")
+    source_stage_id: str = Field(default="")
+    target_stage_id: str = Field(default="")
 
     def to_log_line(self) -> str:
         return self.message
@@ -107,6 +115,9 @@ class TurnResolution(BaseModel):
     applied_clock_deltas: dict[str, int] = Field(default_factory=dict)
     triggered_clock_events: list[str] = Field(default_factory=list)
     clock_values: dict[str, int] = Field(default_factory=dict)
+    story_signals: list[StorySignal] = Field(default_factory=list)
+    new_stage: str | None = Field(default=None)
+    applied_story_transition_id: str | None = Field(default=None)
     resolved_ending: str | None = Field(default=None)
     ending_result: str = Field(default="")
 
@@ -120,6 +131,8 @@ class SceneRuntime:
         )
         self._sessions: dict[str, SessionMapState] = {}
         self._module_cache: dict[str, ModuleDefinition] = {}
+        self._transition_validator = TransitionValidator()
+        self._story_state_service = StoryStateService()
 
     def create_session(
         self,
@@ -147,6 +160,7 @@ class SceneRuntime:
         session = SessionMapState(
             session_id=session_id,
             module_id=module.module_id,
+            story_state=StoryState(current_stage_id=module.entry_stage_id),
             clock_values={clock.id: clock.start for clock in module.clocks},
             scene_instances=scene_instances,
             player_states=player_states,
@@ -166,7 +180,10 @@ class SceneRuntime:
         session = self._get_session(session_id)
         module = self._load_module(session.module_id)
 
-        if session.resolved_ending is not None:
+        if (
+            session.resolved_ending is not None
+            or session.story_state.resolved_ending_id is not None
+        ):
             raise ValueError(f"会话 {session_id} 已进入结局，不能继续提交意图")
         if player_id not in session.player_states:
             raise KeyError(f"未知玩家: {player_id}")
@@ -189,14 +206,20 @@ class SceneRuntime:
 
     def resolve_turn(self, session_id: str) -> TurnResolution:
         session = self._get_session(session_id)
-        if session.resolved_ending is not None:
+        if (
+            session.resolved_ending is not None
+            or session.story_state.resolved_ending_id is not None
+        ):
             raise ValueError(f"会话 {session_id} 已进入结局，不能继续结算")
 
         snapshot = session.model_copy(deep=True)
         module = self._load_module(session.module_id)
         scene_by_id = module.scene_map()
+        story_stage_by_id = module.story_stage_map()
         movement_rules = self._movement_rules(
-            module=module, flags=snapshot.global_flags
+            module=module,
+            flags=snapshot.global_flags,
+            stage_id=snapshot.story_state.current_stage_id,
         )
         event_log = [
             RuntimeEvent(
@@ -207,6 +230,7 @@ class SceneRuntime:
                     f"会话={session_id}，待结算玩家={sorted(snapshot.pending_intents)}"
                 ),
                 player_ids=sorted(snapshot.pending_intents),
+                source_stage_id=snapshot.story_state.current_stage_id,
             )
         ]
 
@@ -431,20 +455,95 @@ class SceneRuntime:
             )
 
         triggered_clock_events = self._trigger_clock_events(session, module)
-        ending = self._resolve_ending(session, module)
+        story_signals = self._build_story_signals(
+            events=event_log,
+            turn_no=snapshot.current_turn,
+        )
+        transition = self._transition_validator.can_transition(
+            story_state=snapshot.story_state,
+            stages=story_stage_by_id,
+            transitions=module.story_transitions,
+            signals=story_signals,
+            flags=set(session.global_flags),
+        )
+
+        new_stage: str | None = None
+        applied_story_transition_id: str | None = None
+        story_transition_flag_clears: set[str] = set()
+        if transition is not None:
+            story_flag_sets: set[str] = set()
+            story_flag_clears: set[str] = set()
+            story_clock_deltas: dict[str, int] = defaultdict(int)
+            story_effects_applied = self._queue_effects(
+                transition.effects,
+                flag_sets=story_flag_sets,
+                flag_clears=story_flag_clears,
+                clock_deltas=story_clock_deltas,
+            )
+            self._apply_flag_changes(
+                session,
+                flag_sets=story_flag_sets,
+                flag_clears=story_flag_clears,
+            )
+            story_transition_flag_clears = set(story_flag_clears)
+            self._apply_clock_deltas(
+                session,
+                module=module,
+                deltas=story_clock_deltas,
+            )
+            for clock_id, delta in story_clock_deltas.items():
+                combined_clock_deltas[clock_id] = (
+                    combined_clock_deltas.get(clock_id, 0) + delta
+                )
+            if story_clock_deltas:
+                triggered_clock_events.extend(self._trigger_clock_events(session, module))
+            session.story_state = self._story_state_service.apply_transition(
+                story_state=snapshot.story_state,
+                transition=transition,
+                stages=story_stage_by_id,
+                turn_no=session.current_turn,
+            )
+            new_stage = session.story_state.current_stage_id
+            applied_story_transition_id = transition.id
+            event_log.append(
+                RuntimeEvent(
+                    type="story_transition_applied",
+                    turn_no=snapshot.current_turn,
+                    story_transition_id=transition.id,
+                    source_stage_id=transition.source_stage_id,
+                    target_stage_id=transition.target_stage_id,
+                    effects_applied=story_effects_applied,
+                    message=(
+                        f"剧情迁移：{transition.source_stage_id} -> "
+                        f"{transition.target_stage_id}，"
+                        f"触发器={transition.trigger_type}:{transition.trigger_value}"
+                    ),
+                )
+            )
+
+        ending_stage = (
+            story_stage_by_id[session.story_state.resolved_ending_id]
+            if session.story_state.resolved_ending_id is not None
+            else None
+        )
+        if ending_stage is not None:
+            session.resolved_ending = session.story_state.resolved_ending_id
+        resolved_ending = session.resolved_ending
+        ending_result = ending_stage.description if ending_stage is not None else ""
 
         applied_flags = sorted(session.global_flags - snapshot.global_flags)
-        if applied_flags or flag_clears:
+        all_removed_flags = sorted(flag_clears | story_transition_flag_clears)
+        if applied_flags or all_removed_flags:
             event_log.append(
                 RuntimeEvent(
                     type="flags_changed",
                     turn_no=snapshot.current_turn,
                     added_flags=applied_flags,
-                    removed_flags=sorted(flag_clears),
+                    removed_flags=all_removed_flags,
                     message=(
                         "标记变化："
                         f"新增={applied_flags or []}，"
-                        f"移除={sorted(flag_clears) or []}"
+                        f"移除={all_removed_flags or []}"
                     ),
                 )
             )
@@ -466,16 +565,16 @@ class SceneRuntime:
                     message=f"触发时钟事件：{triggered_clock_events}",
                 )
             )
-        if ending is not None:
+        if ending_stage is not None:
             event_log.append(
                 RuntimeEvent(
                     type="ending_reached",
                     turn_no=snapshot.current_turn,
-                    ending_id=ending.id,
-                    ending_result=ending.result,
-                    scene_id=ending.scene_id,
-                    scene_name=scene_by_id[ending.scene_id].name,
-                    message=f"达成结局：{ending.id}，结果：{ending.result}",
+                    ending_id=ending_stage.id,
+                    ending_result=ending_stage.description,
+                    scene_name=ending_stage.name,
+                    target_stage_id=ending_stage.id,
+                    message=f"达成结局：{ending_stage.id}，结果：{ending_stage.description}",
                 )
             )
         event_log.append(
@@ -483,9 +582,12 @@ class SceneRuntime:
                 type="turn_completed",
                 turn_no=snapshot.current_turn,
                 clock_values=dict(session.clock_values),
+                target_stage_id=session.story_state.current_stage_id,
                 message=(
                     f"第 {snapshot.current_turn} 回合结束："
-                    f"下一回合={session.current_turn}，时钟值={dict(session.clock_values)}"
+                    f"下一回合={session.current_turn}，"
+                    f"当前剧情阶段={session.story_state.current_stage_id}，"
+                    f"时钟值={dict(session.clock_values)}"
                 ),
             )
         )
@@ -499,8 +601,11 @@ class SceneRuntime:
             applied_clock_deltas=combined_clock_deltas,
             triggered_clock_events=triggered_clock_events,
             clock_values=dict(session.clock_values),
-            resolved_ending=ending.id if ending is not None else None,
-            ending_result=ending.result if ending is not None else "",
+            story_signals=story_signals,
+            new_stage=new_stage,
+            applied_story_transition_id=applied_story_transition_id,
+            resolved_ending=resolved_ending,
+            ending_result=ending_result,
         )
 
     def list_reachable_scenes(
@@ -514,6 +619,7 @@ class SceneRuntime:
         movement_rules = self._movement_rules(
             module=module,
             flags=session_state.global_flags,
+            stage_id=session_state.story_state.current_stage_id,
         )
         return movement_rules.list_reachable_scenes(
             from_scene_id=player_state.current_scene_id
@@ -559,12 +665,14 @@ class SceneRuntime:
         *,
         module: ModuleDefinition,
         flags: set[str],
+        stage_id: str,
     ) -> SceneMovementRules:
         scene_links = [
             SceneLink(
                 from_scene_id=link.from_scene_id,
                 to_scene_id=link.to_scene_id,
                 required_flags=list(link.required_flags),
+                required_stages=list(link.required_stages),
                 block_reason=link.block_reason,
             )
             for link in module.links
@@ -572,6 +680,7 @@ class SceneRuntime:
         return SceneMovementRules(
             scene_links=scene_links,
             active_flags=flags,
+            active_stage_id=stage_id,
         )
 
     def _group_pending_intents(
@@ -594,6 +703,11 @@ class SceneRuntime:
         player_state = session.player_states[player_id]
         if action.scene_id != player_state.current_scene_id:
             return False, "动作不在玩家当前场景中"
+        if (
+            action.required_stages
+            and session.story_state.current_stage_id not in action.required_stages
+        ):
+            return False, "当前剧情阶段不允许执行该动作"
         if action.once and action.id in session.completed_actions:
             return False, "该动作在本会话中已经执行过"
         if not self._conditions_met(action.conditions, session):
@@ -729,29 +843,45 @@ class SceneRuntime:
             deltas=clock_deltas,
         )
 
-    def _resolve_ending(
+    def _build_story_signals(
         self,
-        session: SessionMapState,
-        module: ModuleDefinition,
-    ) -> ModuleEnding | None:
-        if session.resolved_ending is not None:
-            ending = next(
-                (item for item in module.endings if item.id == session.resolved_ending),
-                None,
-            )
-            return ending
-
-        occupied_scenes = {
-            player_state.current_scene_id
-            for player_state in session.player_states.values()
-        }
-        for ending in module.endings:
-            if ending.scene_id not in occupied_scenes:
-                continue
-            if self._conditions_met(ending.conditions, session):
-                session.resolved_ending = ending.id
-                return ending
-        return None
+        *,
+        events: list[RuntimeEvent],
+        turn_no: int,
+    ) -> list[StorySignal]:
+        signals: list[StorySignal] = []
+        for event in events:
+            if event.type == "movement_committed":
+                signals.append(
+                    StorySignal(
+                        type="scene_entered",
+                        turn_no=turn_no,
+                        player_id=event.player_id,
+                        scene_id=event.to_scene_id,
+                    )
+                )
+            elif event.type == "action_resolved" and event.success is True:
+                signals.append(
+                    StorySignal(
+                        type="action_succeeded",
+                        turn_no=turn_no,
+                        player_id=event.player_id,
+                        scene_id=event.scene_id,
+                        action_id=event.action_id,
+                    )
+                )
+            elif event.type == "clock_events_triggered":
+                for trigger_value in event.triggered_clock_events:
+                    clock_id, _, threshold_text = trigger_value.partition(":")
+                    signals.append(
+                        StorySignal(
+                            type="clock_threshold_triggered",
+                            turn_no=turn_no,
+                            clock_id=clock_id,
+                            threshold=int(threshold_text),
+                        )
+                    )
+        return signals
 
     def _ensure_known_player(
         self,

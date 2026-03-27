@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from pydantic import BaseModel, Field
 
-from pydantic import BaseModel, Field, model_validator
+from scene.module_types import ModuleCondition, ModuleEffect
+from scene.story import StoryStage, StoryTransition
 
 
 class ModuleScene(BaseModel):
@@ -19,43 +20,8 @@ class ModuleLink(BaseModel):
     from_scene_id: str = Field(..., min_length=1, max_length=30)
     to_scene_id: str = Field(..., min_length=1, max_length=30)
     required_flags: list[str] = Field(default_factory=list, max_length=10)
+    required_stages: list[str] = Field(default_factory=list, max_length=10)
     block_reason: str = Field(default="", max_length=200)
-
-
-class ModuleCondition(BaseModel):
-    type: Literal["flag_set", "flag_unset", "action_completed", "clock_at_least"]
-    flag: str = Field(default="", max_length=40)
-    action_id: str = Field(default="", max_length=40)
-    clock_id: str = Field(default="", max_length=40)
-    value: int = Field(default=0, ge=0)
-
-    @model_validator(mode="after")
-    def validate_fields(self) -> "ModuleCondition":
-        if self.type in {"flag_set", "flag_unset"} and not self.flag:
-            raise ValueError("flag 条件需要提供 flag 字段")
-        if self.type == "action_completed" and not self.action_id:
-            raise ValueError("action_completed 条件需要提供 action_id 字段")
-        if self.type == "clock_at_least" and not self.clock_id:
-            raise ValueError("clock_at_least 条件需要提供 clock_id 字段")
-        return self
-
-
-class ModuleEffect(BaseModel):
-    type: Literal["set_flag", "clear_flag", "advance_clock"]
-    flag: str = Field(default="", max_length=40)
-    clock_id: str = Field(default="", max_length=40)
-    value: int = Field(default=0, ge=0)
-
-    @model_validator(mode="after")
-    def validate_fields(self) -> "ModuleEffect":
-        if self.type in {"set_flag", "clear_flag"} and not self.flag:
-            raise ValueError("flag 效果需要提供 flag 字段")
-        if self.type == "advance_clock":
-            if not self.clock_id:
-                raise ValueError("advance_clock 效果需要提供 clock_id 字段")
-            if self.value <= 0:
-                raise ValueError("advance_clock 效果需要提供大于 0 的 value")
-        return self
 
 
 class ClockThresholdEvent(BaseModel):
@@ -77,6 +43,7 @@ class ModuleAction(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     kind: str = Field(..., min_length=1, max_length=30)
     once: bool = Field(default=True)
+    required_stages: list[str] = Field(default_factory=list, max_length=10)
     conditions: list[ModuleCondition] = Field(default_factory=list)
     effects_on_success: list[ModuleEffect] = Field(default_factory=list)
     effects_on_failure: list[ModuleEffect] = Field(default_factory=list)
@@ -95,11 +62,14 @@ class ModuleDefinition(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     version: int = Field(default=1, ge=1)
     entry_scene_id: str = Field(..., min_length=1, max_length=30)
+    entry_stage_id: str = Field(..., min_length=1, max_length=40)
     flags: list[str] = Field(default_factory=list)
     scenes: list[ModuleScene] = Field(default_factory=list)
     links: list[ModuleLink] = Field(default_factory=list)
     actions: list[ModuleAction] = Field(default_factory=list)
     clocks: list[ModuleClock] = Field(default_factory=list)
+    story_stages: list[StoryStage] = Field(default_factory=list)
+    story_transitions: list[StoryTransition] = Field(default_factory=list)
     endings: list[ModuleEnding] = Field(default_factory=list)
 
     def scene_map(self) -> dict[str, ModuleScene]:
@@ -113,3 +83,6 @@ class ModuleDefinition(BaseModel):
 
     def clock_map(self) -> dict[str, ModuleClock]:
         return {clock.id: clock for clock in self.clocks}
+
+    def story_stage_map(self) -> dict[str, StoryStage]:
+        return {stage.id: stage for stage in self.story_stages}

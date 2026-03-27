@@ -78,6 +78,11 @@ class SceneLink(BaseModel):
         max_length=10,
         description="通过该单向连线所需满足的状态标记列表。",
     )
+    required_stages: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="通过该单向连线所需处于的剧情阶段列表。",
+    )
     block_reason: str = Field(
         default="",
         max_length=200,

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from scene.story import StoryState
+
 
 class SceneInstanceState(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
@@ -54,6 +56,10 @@ class SessionMapState(BaseModel):
         default=1,
         ge=1,
         description="当前会话的全局回合数。",
+    )
+    story_state: StoryState = Field(
+        ...,
+        description="当前会话的剧情主阶段状态。",
     )
     global_flags: set[str] = Field(
         default_factory=set,
