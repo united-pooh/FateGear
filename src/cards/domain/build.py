@@ -66,9 +66,7 @@ class InvestigatorBuildPayload(BaseModel):
     )
     power: PercentileStat = Field(validation_alias=_alias_choices("power"))
     education: PercentileStat = Field(validation_alias=_alias_choices("education"))
-    luck: LuckStat | None = Field(
-        default=None, validation_alias=_alias_choices("luck")
-    )
+    luck: LuckStat | None = Field(default=None, validation_alias=_alias_choices("luck"))
     cthulhu_mythos: CthulhuMythos = Field(
         default=0, validation_alias=_alias_choices("cthulhu_mythos")
     )
@@ -79,11 +77,7 @@ class InvestigatorBuildPayload(BaseModel):
         if not isinstance(data, Mapping):
             return data
 
-        return {
-            key: value
-            for key, value in data.items()
-            if value not in (None, "")
-        }
+        return {key: value for key, value in data.items() if value not in (None, "")}
 
 
 @validate_call

@@ -34,11 +34,7 @@ class InvestigatorState(BaseModel):
     @classmethod
     def _clamp_hit_points(cls, value: object, info: ValidationInfo) -> object:
         max_value = info.data.get("hit_points_max")
-        if (
-            max_value is None
-            or not isinstance(value, int)
-            or isinstance(value, bool)
-        ):
+        if max_value is None or not isinstance(value, int) or isinstance(value, bool):
             return value
         return min(max(value, 0), max_value)
 
@@ -46,11 +42,7 @@ class InvestigatorState(BaseModel):
     @classmethod
     def _clamp_magic_points(cls, value: object, info: ValidationInfo) -> object:
         max_value = info.data.get("magic_points_max")
-        if (
-            max_value is None
-            or not isinstance(value, int)
-            or isinstance(value, bool)
-        ):
+        if max_value is None or not isinstance(value, int) or isinstance(value, bool):
             return value
         return min(max(value, 0), max_value)
 
@@ -58,11 +50,7 @@ class InvestigatorState(BaseModel):
     @classmethod
     def _clamp_sanity(cls, value: object, info: ValidationInfo) -> object:
         max_value = info.data.get("sanity_max")
-        if (
-            max_value is None
-            or not isinstance(value, int)
-            or isinstance(value, bool)
-        ):
+        if max_value is None or not isinstance(value, int) or isinstance(value, bool):
             return value
         return min(max(value, 0), max_value)
 

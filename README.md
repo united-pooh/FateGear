@@ -620,6 +620,8 @@ async def render_narration(
   调查员卡片聚合根
 - `cards.rules.derived`
   `HP`、`MP`、`SAN`、`MOV`、`Build`、`Damage Bonus` 等衍生公式
+- `cards.rules.validation`
+  `cards` 域跨模型业务校验（当前覆盖技能模板与技能定义集合校验）
 - `cards.domain.skills`
   技能模板、分支技能与已具体化技能定义
 - `cards.domain.build`
@@ -640,6 +642,12 @@ async def render_narration(
 - Keeper 监控前端
 
 这意味着 README 里的主体内容描述的是目标架构，不是当前代码已经全部完成的现状。
+
+当前的职责边界补充如下：
+
+- `cards.rules.validation` 只承接 `cards` 域跨模型业务校验
+- `scene.*` 负责地图移动相关骨架与后续实现
+- 剧情 `TransitionValidator` 仍未实现，且不属于 `cards`
 
 ## 11. 为什么先做地图与场景事件转移
 
@@ -712,27 +720,26 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 #### 2.1 地图数据模型
 
-- [ ] 定义 `Scene`
-- [ ] 为 `Scene` 增加字段：`id`
-- [ ] 为 `Scene` 增加字段：`module_id`
-- [ ] 为 `Scene` 增加字段：`name`
-- [ ] 为 `Scene` 增加字段：`description`
-- [ ] 为 `Scene` 增加字段：`tags`
-- [ ] 为 `Scene` 增加字段：`is_entry`
-- [ ] 为 `Scene` 增加字段：`is_safe_zone`
-- [ ] 定义 `SceneLink`
-- [ ] 为 `SceneLink` 增加字段：`from_scene_id`
-- [ ] 为 `SceneLink` 增加字段：`to_scene_id`
-- [ ] 为 `SceneLink` 增加字段：`is_one_way`
-- [ ] 为 `SceneLink` 增加字段：`is_locked`
-- [ ] 为 `SceneLink` 增加字段：`required_flags`
-- [ ] 为 `SceneLink` 增加字段：`block_reason`
-- [ ] 定义 `SessionMapState`
-- [ ] 定义 `SessionPlayerState`
-- [ ] 在 `SessionPlayerState` 中增加 `current_scene_id`
+- [x] 定义 `Scene`
+- [x] 为 `Scene` 增加字段：`id`
+- [x] 为 `Scene` 增加字段：`module_id`
+- [x] 为 `Scene` 增加字段：`name`
+- [x] 为 `Scene` 增加字段：`description`
+- [x] 为 `Scene` 增加字段：`tags`
+- [x] 为 `Scene` 增加字段：`is_entry`
+- [x] 为 `Scene` 增加字段：`is_safe_zone`
+- [x] 定义 `SceneLink`
+- [x] 为 `SceneLink` 增加字段：`from_scene_id`
+- [x] 为 `SceneLink` 增加字段：`to_scene_id`
+- [x] 为 `SceneLink` 增加字段：`is_locked`
+- [x] 为 `SceneLink` 增加字段：`required_flags`
+- [x] 为 `SceneLink` 增加字段：`block_reason`
+- [x] 定义 `SessionMapState`
+- [x] 定义 `SessionPlayerState`
+- [x] 在 `SessionPlayerState` 中增加 `current_scene_id`
 - [ ] 在 `SessionPlayerState` 中增加 `last_scene_id`
 - [ ] 在 `SessionPlayerState` 中增加 `visibility_state`
-- [ ] 定义 `SceneInstanceState`
+- [x] 定义 `SceneInstanceState`
 - [ ] 为 `SceneInstanceState` 增加字段：`visited`
 - [ ] 为 `SceneInstanceState` 增加字段：`danger_level`
 - [ ] 为 `SceneInstanceState` 增加字段：`local_flags`
