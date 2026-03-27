@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field
 
 PercentileStat = Annotated[int, Field(ge=1, le=99, strict=True)]
 LuckStat = Annotated[int, Field(ge=0, le=99, strict=True)]
@@ -23,7 +23,6 @@ class InvestigatorAttributes(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    @computed_field
     @property
     def strength_plus_size(self) -> int:
         return self.strength + self.size
@@ -40,5 +39,5 @@ class InvestigatorAttributes(BaseModel):
             "education": "EDU",
             "luck": "Luck",
         }
-        data = self.model_dump(exclude={"strength_plus_size"})
+        data = self.model_dump()
         return {mapping[k]: v for k, v in data.items()}

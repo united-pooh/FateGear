@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SkillKey = Annotated[
     str,
@@ -44,7 +44,6 @@ class SkillDefinition(BaseModel):
     branch_key: SkillKey | None = None
     branch_name: SkillName | None = None
 
-    @computed_field
     @property
     def is_branch_skill(self) -> bool:
         return self.branch_key is not None
@@ -71,7 +70,6 @@ class SkillTemplate(BaseModel):
     allow_custom_branch: bool = False
     branch_options: tuple[SkillBranchOption, ...] = ()
 
-    @computed_field
     @property
     def is_branch_skill(self) -> bool:
         return self.branch_mode is SkillBranchMode.REQUIRED
@@ -123,11 +121,7 @@ class SkillTemplate(BaseModel):
         matched_by_key = None
         if branch_key is not None:
             matched_by_key = next(
-                (
-                    option
-                    for option in self.branch_options
-                    if option.key == branch_key
-                ),
+                (option for option in self.branch_options if option.key == branch_key),
                 None,
             )
             if matched_by_key is not None and (
@@ -146,7 +140,8 @@ class SkillTemplate(BaseModel):
                 None,
             )
             if matched_by_key is not None and (
-                matched_by_name is not None and matched_by_name.key != matched_by_key.key
+                matched_by_name is not None
+                and matched_by_name.key != matched_by_key.key
             ):
                 raise ValueError("branch_key 和 branch_name 指向了不同的分支选项")
 
@@ -156,13 +151,9 @@ class SkillTemplate(BaseModel):
             branch_name = matched_option.name
         else:
             if not self.allow_custom_branch:
-                raise ValueError(
-                    "该分支技能必须使用预定义的分支选项之一"
-                )
+                raise ValueError("该分支技能必须使用预定义的分支选项之一")
             if branch_key is None or branch_name is None:
-                raise ValueError(
-                    "自定义分支技能必须同时提供 branch_key 和 branch_name"
-                )
+                raise ValueError("自定义分支技能必须同时提供 branch_key 和 branch_name")
 
         return SkillDefinition(
             key=f"{self.key}:{branch_key}",

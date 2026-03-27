@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
@@ -88,12 +90,12 @@ def test_magic_points_calculation() -> None:
 
 
 @pytest.mark.parametrize("invalid_age", ["20", 20.0, True, 0, 121])
-def test_age_validation_uses_pydantic(invalid_age: object) -> None:
+def test_age_validation_uses_pydantic(invalid_age: Any) -> None:
     with pytest.raises(ValidationError):
         calculate_age_penalty(invalid_age)
 
 
 @pytest.mark.parametrize("invalid_mythos", ["20", 20.0, True, -1, 100])
-def test_mythos_validation_uses_pydantic(invalid_mythos: object) -> None:
+def test_mythos_validation_uses_pydantic(invalid_mythos: Any) -> None:
     with pytest.raises(ValidationError):
         calculate_sanity_max(invalid_mythos)
