@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from scene.movement import MovementDecision, SceneMovementRules
+from .rules import MovementDecision, SceneMovementRules
 
 
 class SceneRouter:

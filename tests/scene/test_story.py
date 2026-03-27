@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from scene.module_types import ModuleEffect
-from scene.story import (
+from scenario.module import ModuleEffect
+from scenario.story import (
     StorySignal,
     StoryStage,
     StoryState,

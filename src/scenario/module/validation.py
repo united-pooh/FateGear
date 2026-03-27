@@ -1,19 +1,14 @@
-"""YAML 模组定义加载器。"""
+"""YAML 模组语义校验。"""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
-from collections.abc import Sequence
 
-import yaml  # type: ignore[import-untyped]
-from pydantic import ValidationError
-
-from scene.module_definition import ModuleDefinition
-from scene.module_types import ModuleCondition, ModuleEffect
-from scene.story import StoryTransition
-
-MODULE_ROOT = Path(__file__).resolve().parents[2] / "module"
+from .models import ModuleDefinition
+from .types import ModuleCondition, ModuleEffect
+from ..story.models import StoryTransition
 
 
 class _HasId(Protocol):
@@ -24,35 +19,7 @@ class ModuleValidationError(ValueError):
     """模组结构或语义校验失败。"""
 
 
-def load_module_definition(path: str | Path) -> ModuleDefinition:
-    file_path = Path(path)
-    if not file_path.exists():
-        raise FileNotFoundError(f"未找到模组文件: {file_path}")
-
-    raw_text = file_path.read_text(encoding="utf-8")
-    payload = yaml.safe_load(raw_text) or {}
-
-    try:
-        definition = ModuleDefinition.model_validate(payload)
-    except ValidationError as exc:
-        raise ModuleValidationError(
-            f"模组文件 {file_path} 结构校验失败: {exc}"
-        ) from exc
-
-    _validate_module_definition(definition=definition, source=file_path)
-    return definition
-
-
-def load_module_by_id(
-    module_id: str,
-    *,
-    module_root: str | Path | None = None,
-) -> ModuleDefinition:
-    root = Path(module_root) if module_root is not None else MODULE_ROOT
-    return load_module_definition(root / module_id / "module.yaml")
-
-
-def _validate_module_definition(
+def validate_module_definition(
     *,
     definition: ModuleDefinition,
     source: Path,

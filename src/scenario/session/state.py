@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from scene.story import StoryState
+from ..story.models import StoryState
 
 
 class SceneInstanceState(BaseModel):

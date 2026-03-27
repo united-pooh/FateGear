@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from scene.movement import MovementDecision, SceneMovementRules
-from scene.scene import SceneLink
+from scenario.scene import MovementDecision, SceneLink, SceneMovementRules
 
 
 def test_movement_decision_defaults_reason_to_empty_string() -> None:

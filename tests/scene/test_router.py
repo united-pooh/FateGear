@@ -4,7 +4,7 @@ import inspect
 
 import pytest
 
-from scene.router import SceneRouter
+from scenario.scene import SceneRouter
 
 
 @pytest.mark.parametrize(

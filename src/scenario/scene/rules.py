@@ -9,7 +9,7 @@ from collections.abc import Collection, Iterable
 
 from pydantic import BaseModel, Field
 
-from scene.scene import SceneLink
+from .models import SceneLink
 
 
 class MovementDecision(BaseModel):

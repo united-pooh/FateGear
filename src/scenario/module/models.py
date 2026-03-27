@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from scene.module_types import ModuleCondition, ModuleEffect
-from scene.story import StoryStage, StoryTransition
+from .types import ModuleCondition, ModuleEffect
+from ..story.models import StoryStage, StoryTransition
 
 
 class ModuleScene(BaseModel):

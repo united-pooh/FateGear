@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scene.runtime import RuntimeEvent, SceneRuntime, TurnResolution
+from scenario.runtime import RuntimeEvent, SceneRuntime, TurnResolution
 
 SCENE_LOG_DIR = Path(__file__).resolve().parents[2] / "log" / "scene"
 STORY_LOG_DIR = Path(__file__).resolve().parents[2] / "log" / "story"

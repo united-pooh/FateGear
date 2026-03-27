@@ -4,11 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from scene.loader import (
-    ModuleValidationError,
-    load_module_by_id,
-    load_module_definition,
-)
+from scenario.io import load_module_by_id, load_module_definition
+from scenario.module import ModuleValidationError
 
 
 def test_load_sample_modules_from_yaml() -> None:
