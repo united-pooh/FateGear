@@ -116,9 +116,7 @@ class TransitionValidator:
         if transition.trigger_type == "action_succeeded":
             return signal.action_id == transition.trigger_value
         if transition.trigger_type == "clock_threshold_triggered":
-            return (
-                f"{signal.clock_id}:{signal.threshold}" == transition.trigger_value
-            )
+            return f"{signal.clock_id}:{signal.threshold}" == transition.trigger_value
         return False
 
     def _required_flags_met(

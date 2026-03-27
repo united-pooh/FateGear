@@ -300,7 +300,11 @@ class SceneRuntime:
                                 f"{from_scene_name}（{player_state.current_scene_id}） -> "
                                 f"{target_scene_name}（{intent.target_scene_id}），"
                                 f"{'成功' if decision.allowed else '失败'}"
-                                + (f"，原因：{decision.reason}" if decision.reason else "")
+                                + (
+                                    f"，原因：{decision.reason}"
+                                    if decision.reason
+                                    else ""
+                                )
                             ),
                         )
                     )
@@ -497,7 +501,9 @@ class SceneRuntime:
                     combined_clock_deltas.get(clock_id, 0) + delta
                 )
             if story_clock_deltas:
-                triggered_clock_events.extend(self._trigger_clock_events(session, module))
+                triggered_clock_events.extend(
+                    self._trigger_clock_events(session, module)
+                )
             session.story_state = self._story_state_service.apply_transition(
                 story_state=snapshot.story_state,
                 transition=transition,

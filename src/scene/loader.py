@@ -413,7 +413,9 @@ def _validate_story_transitions(
             continue
 
         if transition.trigger_type == "clock_threshold_triggered":
-            clock_id, separator, threshold_text = transition.trigger_value.partition(":")
+            clock_id, separator, threshold_text = transition.trigger_value.partition(
+                ":"
+            )
             if separator != ":" or not threshold_text.isdigit():
                 raise ModuleValidationError(
                     f"模组文件 {source} 的 story_transition[{transition.id}] "

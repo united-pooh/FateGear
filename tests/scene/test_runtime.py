@@ -109,13 +109,19 @@ def _write_runtime_logs(
     ]
 
     for resolution in resolutions:
-        scene_lines.append(f"=== turn {resolution.turn_no} -> {resolution.next_turn} ===")
+        scene_lines.append(
+            f"=== turn {resolution.turn_no} -> {resolution.next_turn} ==="
+        )
         scene_lines.extend(event.to_log_line() for event in resolution.event_log)
         scene_lines.append("")
 
-        story_lines.append(f"=== turn {resolution.turn_no} -> {resolution.next_turn} ===")
+        story_lines.append(
+            f"=== turn {resolution.turn_no} -> {resolution.next_turn} ==="
+        )
         if resolution.story_signals:
-            story_lines.extend(_format_story_signal(signal) for signal in resolution.story_signals)
+            story_lines.extend(
+                _format_story_signal(signal) for signal in resolution.story_signals
+            )
         else:
             story_lines.append("no_story_signal")
         if resolution.applied_story_transition_id is not None:
@@ -158,7 +164,9 @@ def test_create_session_initializes_players_scenes_clocks_and_story_stage() -> N
     assert set(session.scene_instances) == {"foyer", "storage", "control", "exit"}
 
 
-def test_turn_only_advances_on_resolve_and_links_unlock_after_story_transition() -> None:
+def test_turn_only_advances_on_resolve_and_links_unlock_after_story_transition() -> (
+    None
+):
     runtime = SceneRuntime()
     session = runtime.create_session("generic_mvp", ["p1"])
     resolutions: list[TurnResolution] = []

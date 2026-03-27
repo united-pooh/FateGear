@@ -11,7 +11,9 @@ from scene.story import (
 )
 
 
-def test_transition_validator_prefers_matching_transition_with_higher_priority() -> None:
+def test_transition_validator_prefers_matching_transition_with_higher_priority() -> (
+    None
+):
     validator = TransitionValidator()
     story_state = StoryState(current_stage_id="investigation")
     stages = {
