@@ -1,0 +1,117 @@
+module_id: generic_mvp
+title: 通用MVP测试模组
+version: 1
+entry_scene_id: foyer
+
+flags:
+  - key_found
+  - door_unlocked
+  - machine_primed
+  - alarm_triggered
+  - exit_open
+
+scenes:
+  - id: foyer
+    name: 前厅
+    description: 一间昏暗的前厅，通往储藏室和控制室的门都在眼前。
+    tags: [entry]
+  - id: storage
+    name: 储藏室
+    description: 这里堆满箱子和备用工具。
+  - id: control
+    name: 控制室
+    description: 中央终端仍在低声运转。
+  - id: exit
+    name: 出口
+    description: 打开的安全门通向外部。
+    tags: [exit]
+
+links:
+  - id: foyer_to_storage
+    from_scene_id: foyer
+    to_scene_id: storage
+  - id: storage_to_foyer
+    from_scene_id: storage
+    to_scene_id: foyer
+  - id: foyer_to_control
+    from_scene_id: foyer
+    to_scene_id: control
+    required_flags: [door_unlocked]
+    block_reason: 控制室大门仍然上锁。
+  - id: control_to_foyer
+    from_scene_id: control
+    to_scene_id: foyer
+  - id: control_to_exit
+    from_scene_id: control
+    to_scene_id: exit
+    required_flags: [exit_open]
+    block_reason: 安全门尚未打开。
+  - id: exit_to_control
+    from_scene_id: exit
+    to_scene_id: control
+
+actions:
+  - id: find_key
+    scene_id: storage
+    name: 搜索钥匙
+    kind: search
+    once: true
+    effects_on_success:
+      - type: set_flag
+        flag: key_found
+
+  - id: unlock_control_door
+    scene_id: storage
+    name: 解锁控制室
+    kind: operate
+    once: true
+    conditions:
+      - type: flag_set
+        flag: key_found
+    effects_on_success:
+      - type: set_flag
+        flag: door_unlocked
+    marks_scene_cleared: true
+
+  - id: prime_machine
+    scene_id: control
+    name: 启动终端
+    kind: operate
+    once: true
+    effects_on_success:
+      - type: set_flag
+        flag: machine_primed
+      - type: advance_clock
+        clock_id: alarm
+        value: 1
+
+  - id: open_exit
+    scene_id: control
+    name: 打开安全门
+    kind: operate
+    once: true
+    conditions:
+      - type: flag_set
+        flag: machine_primed
+    effects_on_success:
+      - type: set_flag
+        flag: exit_open
+
+clocks:
+  - id: alarm
+    start: 0
+    max_value: 3
+    step_per_turn: 0
+    threshold_events:
+      - value: 1
+        effects:
+          - type: set_flag
+            flag: alarm_triggered
+
+endings:
+  - id: safe_escape
+    scene_id: exit
+    conditions:
+      - type: flag_set
+        flag: exit_open
+    result: 调查员成功逃离设施。

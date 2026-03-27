@@ -1,5 +1,6 @@
 pytest
 pydantic
+PyYAML
 pyclean
 pytest
 mypy

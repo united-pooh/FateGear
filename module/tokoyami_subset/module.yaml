@@ -1,0 +1,165 @@
+module_id: tokoyami_subset
+title: 常暗之厢最小验证模组
+version: 1
+entry_scene_id: car_6
+
+flags:
+  - note_read
+  - key_hint_known
+  - attendant_revived
+  - key_obtained
+  - path_through_clickers
+  - chose_accelerate
+  - chose_decelerate
+  - rear_threat_warning
+  - rear_threat_overwhelms
+
+scenes:
+  - id: car_6
+    name: 6号车厢
+    description: 末班车的起始车厢，门上贴着便签。
+    tags: [entry]
+  - id: car_4
+    name: 4号车厢
+    description: 倒下的乘务员正躺在座椅边上。
+  - id: car_3
+    name: 3号车厢
+    description: 杂乱的行李占满了车厢过道。
+  - id: car_2
+    name: 2号车厢
+    description: 黑暗中传来循声者的喘息声。
+  - id: head_car
+    name: 先头车厢
+    description: 驾驶室就在尽头。
+    tags: [exit]
+
+links:
+  - id: car_6_to_4
+    from_scene_id: car_6
+    to_scene_id: car_4
+  - id: car_4_to_6
+    from_scene_id: car_4
+    to_scene_id: car_6
+  - id: car_4_to_3
+    from_scene_id: car_4
+    to_scene_id: car_3
+  - id: car_3_to_4
+    from_scene_id: car_3
+    to_scene_id: car_4
+  - id: car_3_to_2
+    from_scene_id: car_3
+    to_scene_id: car_2
+  - id: car_2_to_3
+    from_scene_id: car_2
+    to_scene_id: car_3
+  - id: car_2_to_head
+    from_scene_id: car_2
+    to_scene_id: head_car
+    required_flags: [path_through_clickers]
+    block_reason: 你还没有安全穿过循声者所在的车厢。
+  - id: head_to_2
+    from_scene_id: head_car
+    to_scene_id: car_2
+
+actions:
+  - id: inspect_note
+    scene_id: car_6
+    name: 查看便签
+    kind: investigate
+    once: true
+    effects_on_success:
+      - type: set_flag
+        flag: note_read
+      - type: set_flag
+        flag: key_hint_known
+
+  - id: revive_attendant
+    scene_id: car_4
+    name: 救醒乘务员
+    kind: assist
+    once: true
+    effects_on_success:
+      - type: set_flag
+        flag: attendant_revived
+
+  - id: find_key
+    scene_id: car_3
+    name: 寻找钥匙
+    kind: search
+    once: true
+    conditions:
+      - type: flag_set
+        flag: attendant_revived
+    effects_on_success:
+      - type: set_flag
+        flag: key_obtained
+
+  - id: sneak_past_clickers
+    scene_id: car_2
+    name: 潜行通过
+    kind: stealth
+    once: true
+    conditions:
+      - type: flag_set
+        flag: key_obtained
+    effects_on_success:
+      - type: set_flag
+        flag: path_through_clickers
+    marks_scene_cleared: true
+
+  - id: accelerate_train
+    scene_id: head_car
+    name: 全速前进
+    kind: operate
+    once: true
+    conditions:
+      - type: flag_set
+        flag: key_obtained
+      - type: flag_set
+        flag: path_through_clickers
+    effects_on_success:
+      - type: set_flag
+        flag: chose_accelerate
+
+  - id: brake_train
+    scene_id: head_car
+    name: 拉下制动杆
+    kind: operate
+    once: true
+    conditions:
+      - type: flag_set
+        flag: key_obtained
+      - type: flag_set
+        flag: path_through_clickers
+    effects_on_success:
+      - type: set_flag
+        flag: chose_decelerate
+
+clocks:
+  - id: rear_threat
+    start: 0
+    max_value: 10
+    step_per_turn: 1
+    threshold_events:
+      - value: 2
+        effects:
+          - type: set_flag
+            flag: rear_threat_warning
+      - value: 10
+        effects:
+          - type: set_flag
+            flag: rear_threat_overwhelms
+
+endings:
+  - id: true_end
+    scene_id: head_car
+    conditions:
+      - type: flag_set
+        flag: chose_accelerate
+    result: 电车冲破噩梦般的黑暗，众人回到了现实。
+  - id: bad_end
+    scene_id: head_car
+    conditions:
+      - type: flag_set
+        flag: chose_decelerate
+    result: 列车减速后陷入黑暗，大嘴在近处咀嚼。
