@@ -156,6 +156,9 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# Test runtime logs
+log/
 .dmypy.json
 dmypy.json
 
@@ -211,4 +214,3 @@ __marimo__/
 
 # mypy
 .mypy_cache/
-

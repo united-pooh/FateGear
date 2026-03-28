@@ -646,7 +646,7 @@ async def render_narration(
 当前的职责边界补充如下：
 
 - `cards.rules.validation` 只承接 `cards` 域跨模型业务校验
-- `scene.*` 负责地图移动相关骨架与后续实现
+- `scenario.*` 负责地图移动相关骨架与后续实现
 - 剧情 `TransitionValidator` 仍未实现，且不属于 `cards`
 
 ## 11. 为什么先做地图与场景事件转移
