@@ -74,6 +74,33 @@ class SceneRuntime:
     def destroy_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
 
+    def get_session(self, session_id: str) -> SessionMapState:
+        return self._get_session(session_id)
+
+    def add_player(self, session_id: str, player_id: str) -> SessionPlayerState:
+        session = self._get_session(session_id)
+        if (
+            session.resolved_ending is not None
+            or session.story_state.resolved_ending_id is not None
+        ):
+            raise ValueError(f"会话 {session_id} 已进入结局，不能再加入新玩家")
+        if session.current_turn != 1:
+            raise ValueError(f"会话 {session_id} 已经开始，不能再加入新玩家")
+        if session.pending_intents:
+            raise ValueError(f"会话 {session_id} 当前已有待结算意图，不能加入新玩家")
+        if player_id in session.player_states:
+            raise ValueError(f"玩家 {player_id} 已经在会话 {session_id} 中")
+
+        module = self._load_module(session.module_id)
+        player_state = SessionPlayerState(
+            session_id=session_id,
+            player_id=player_id,
+            current_scene_id=module.entry_scene_id,
+            last_scene_id=module.entry_scene_id,
+        )
+        session.player_states[player_id] = player_state
+        return player_state
+
     def submit_intent(
         self,
         session_id: str,

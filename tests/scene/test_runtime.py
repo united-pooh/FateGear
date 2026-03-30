@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from scenario.runtime import RuntimeEvent, SceneRuntime, TurnResolution
 
 SCENE_LOG_DIR = Path(__file__).resolve().parents[2] / "log" / "scene"
@@ -162,6 +164,28 @@ def test_create_session_initializes_players_scenes_clocks_and_story_stage() -> N
     assert session.clock_values == {"alarm": 0}
     assert session.player_states["p1"].current_scene_id == "foyer"
     assert set(session.scene_instances) == {"foyer", "storage", "control", "exit"}
+
+
+def test_add_player_joins_waiting_session_at_entry_scene() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session("generic_mvp", ["kp"])
+
+    player_state = runtime.add_player(session.session_id, "p2")
+
+    assert player_state.player_id == "p2"
+    assert player_state.current_scene_id == "foyer"
+    assert player_state.last_scene_id == "foyer"
+    assert set(session.player_states) == {"kp", "p2"}
+
+
+def test_add_player_rejects_join_after_session_has_started() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session("generic_mvp", ["kp"])
+
+    runtime.resolve_turn(session.session_id)
+
+    with pytest.raises(ValueError, match="已经开始"):
+        runtime.add_player(session.session_id, "late_player")
 
 
 def test_turn_only_advances_on_resolve_and_links_unlock_after_story_transition() -> (

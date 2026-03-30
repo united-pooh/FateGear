@@ -700,6 +700,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [x] 明确一条核心原则：规则判定和叙事生成拆成两步
 - [x] 明确一条核心原则：每轮必须落 `turn_log` 和 `event_log`
 - [x] 先做“无 LLM 也能跑通”的最小闭环，再接入模型
+- [x] 已打通无 LLM 的最小场景运行时（YAML 模组 + Session + Intent + Resolve + Event Log）
 
 ### 1. Python 工程初始化
 
@@ -710,6 +711,8 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [ ] 接入 `Alembic`
 - [x] 接入 `Pydantic v2`
 - [x] 接入 `pytest`
+- [x] 接入 `PyYAML`
+- [x] 接入质量工具（`ruff` / `mypy` / `pyclean`）
 - [ ] 配置 `.env` / 配置管理
 - [ ] 配置日志系统
 - [ ] 配置本地开发数据库（PostgreSQL）
@@ -750,6 +753,8 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [x] 在 `SessionPlayerState` 中增加 `last_scene_id`
 - [x] 在 `SessionPlayerState` 中增加 `visibility_state`
 - [x] 定义 `SceneInstanceState`
+- [x] 为 `SceneInstanceState` 增加字段：`completed_action_ids`
+- [x] 为 `SceneInstanceState` 增加字段：`has_event_occurred`
 - [ ] 为 `SceneInstanceState` 增加字段：`visited`
 - [ ] 为 `SceneInstanceState` 增加字段：`danger_level`
 - [x] 为 `SceneInstanceState` 增加字段：`local_flags`
@@ -762,6 +767,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [x] 支持普通相邻场景移动
 - [x] 支持单向场景移动
 - [x] 支持锁定场景移动
+- [ ] 将模组 YAML 里的显式锁定连线接入运行时
 - [x] 支持条件解锁场景移动
 - [ ] 支持隐藏通路
 - [ ] 支持场景禁入
@@ -797,7 +803,8 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [ ] 视图接口只返回该玩家当前可见信息
 - [x] 场景移动会生成 `event_log`
 - [ ] 场景移动不会自动触发剧情状态迁移
-- [ ] 服务端状态是唯一真相，前端位置仅作参考
+- [x] 服务端状态是唯一真相，前端位置仅作参考
+- [x] 同一回合不同场景 batch 基于同一份快照结算
 
 ### 3. 剧情状态机（第二优先级）
 
@@ -832,7 +839,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 #### 3.3 剧情状态模块验收标准
 
 - [x] 地图状态和剧情状态完全分离
-- [ ] 即使玩家进入了某场景，也不等于剧情阶段自动推进
+- [x] 即使玩家进入了某场景，也不等于剧情阶段自动推进
 - [x] 必须满足 transition 条件才能进入下一剧情阶段
 - [x] 终局只能由状态机合法进入
 
@@ -846,12 +853,16 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [ ] 定义 `SceneTurnBatch`
 - [ ] 定义 `TurnResult`
 - [ ] 定义 `NarrationRecord`
+- [x] 定义 `MoveIntent`
+- [x] 定义 `ActionIntent`
+- [x] 定义 `RuntimeEvent`
+- [x] 定义 `TurnResolution`
 
 #### 4.2 回合服务
 
 - [x] 实现“提交玩家动作”接口
 - [x] 支持多玩家同一轮分别提交动作
-- [ ] 支持房主/主持人手动触发结算
+- [x] 支持房主/主持人手动触发结算
 - [ ] 支持玩家全部提交后自动触发结算
 - [x] 实现按场景分组 `SceneTurnBatch`
 - [x] 实现每轮快照加载
@@ -882,6 +893,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [ ] 定义 `CheckResult`
 - [ ] 定义 `RuleEffect`
 - [ ] 定义 `DiceRoll`
+- [x] 已实现动作条件校验与效果执行骨架（`flag` / `clock` / `once` / `required_stages`）
 
 #### 5.2 基础能力
 
@@ -979,6 +991,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [ ] 定义 `dice_roll_log`
 - [ ] 定义 `agent_plan_log`
 - [ ] 定义 `narration_log`
+- [x] 定义运行时 `RuntimeEvent` 与回合内 `event_log`
 
 #### 8.2 日志内容
 
@@ -990,6 +1003,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [ ] 记录状态提交结果
 - [ ] 记录剧情迁移结果
 - [ ] 记录最终叙事文本
+- [x] 记录移动、动作、标记变化、时钟推进、剧情迁移、结局与回合结束事件
 
 #### 8.3 回放与调试
 
@@ -998,6 +1012,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [ ] 实现按场景查看事件
 - [ ] 实现按 NPC 查看状态变化
 - [ ] 实现 Keeper 调试面板
+- [x] 测试中可按回合导出场景 / 剧情日志文件
 
 #### 8.4 日志模块验收标准
 
@@ -1027,6 +1042,8 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [x] `TransitionValidator.can_transition`
 - [ ] `RuleEngine.resolve_checks`
 - [ ] `NPCState` 更新逻辑
+- [x] `SceneMovementRules.evaluate_transition`
+- [x] YAML 模组加载与语义校验
 
 #### 10.2 集成测试
 
@@ -1034,6 +1051,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [x] 玩家移动 -> 场景快照更新
 - [x] 多玩家分场景 -> 正确分 batch
 - [ ] 一轮 resolve -> 规则判定 -> 状态提交 -> 叙事输出
+- [x] 一轮 resolve -> 动作效果 -> 状态提交 -> 剧情迁移
 - [x] 剧情状态合法迁移
 - [ ] 剧情状态非法迁移被拦截
 
@@ -1093,7 +1111,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [ ] 先做数据库模型：`Scene / SceneLink / SessionPlayerState / SceneInstanceState`
 - [ ] 再做 `SceneRouter`
 - [ ] 再做“玩家移动 + 玩家视图 + event_log”
-- [ ] 然后做 `StoryState + TransitionValidator`
+- [x] 然后做 `StoryState + TransitionValidator`
 - [ ] 然后做 `Turn / Intent / Resolve`
 - [ ] 然后做 `RuleEngine`
 - [ ] 然后做 `NPCState`
@@ -1112,4 +1130,4 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [ ] Agent 只提议，不直接写库
 - [ ] 每轮都有完整日志可查
 - [ ] Keeper 能看到全局面板
-- [ ] 没有 LLM 时，系统也能以模板方式完成基本结算
+- [x] 没有 LLM 时，系统也能以模板方式完成基本结算
