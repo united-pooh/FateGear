@@ -15,6 +15,8 @@ SkillKey = Annotated[
 ]
 SkillName = Annotated[str, Field(min_length=1, max_length=30)]
 SkillBase = Annotated[int, Field(ge=0, le=99, strict=True)]
+SkillValue = Annotated[int, Field(ge=0, le=99, strict=True)]
+SkillPoints = Annotated[int, Field(ge=0, strict=True)]
 BranchLabel = Annotated[str, Field(min_length=1, max_length=20)]
 
 
@@ -55,6 +57,15 @@ class SkillDefinition(BaseModel):
         if has_branch_key != has_branch_name:
             raise ValueError("branch_key 和 branch_name 必须同时提供")
         return self
+
+
+class InvestigatorSkill(BaseModel):
+    """调查员卡上挂载的具体技能状态。"""
+
+    definition: SkillDefinition
+    value: SkillValue
+    occupation_points: SkillPoints = 0
+    interest_points: SkillPoints = 0
 
 
 class SkillTemplate(BaseModel):
