@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from .models import (
         ClockThresholdEvent,
         ModuleAction,
+        ModuleActionCheck,
         ModuleClock,
         ModuleDefinition,
         ModuleEnding,
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 __all__ = [
     "ClockThresholdEvent",
     "ModuleAction",
+    "ModuleActionCheck",
     "ModuleClock",
     "ModuleCondition",
     "ModuleDefinition",
@@ -36,6 +38,7 @@ __all__ = [
 _MODEL_EXPORTS = {
     "ClockThresholdEvent",
     "ModuleAction",
+    "ModuleActionCheck",
     "ModuleClock",
     "ModuleDefinition",
     "ModuleEnding",

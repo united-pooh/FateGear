@@ -6,6 +6,8 @@ import pytest
 
 from scenario.runtime import RuntimeEvent, SceneRuntime, TurnResolution
 
+from tests.scene.card_fixtures import build_player_cards, build_test_card
+
 SCENE_LOG_DIR = Path(__file__).resolve().parents[2] / "log" / "scene"
 STORY_LOG_DIR = Path(__file__).resolve().parents[2] / "log" / "story"
 STORY_EVENT_TYPES = {
@@ -19,6 +21,10 @@ STORY_EVENT_TYPES = {
     "ending_reached",
     "turn_completed",
 }
+
+
+def _runtime_with_deterministic_success() -> SceneRuntime:
+    return SceneRuntime(roll_provider=lambda: 1)
 
 
 def _submit_and_resolve(
@@ -154,9 +160,13 @@ def _write_runtime_logs(
 
 
 def test_create_session_initializes_players_scenes_clocks_and_story_stage() -> None:
-    runtime = SceneRuntime()
+    runtime = _runtime_with_deterministic_success()
 
-    session = runtime.create_session("generic_mvp", ["p1", "p2"])
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1", "p2"],
+        player_cards=build_player_cards(["p1", "p2"]),
+    )
 
     assert session.module_id == "generic_mvp"
     assert session.current_turn == 1
@@ -167,10 +177,18 @@ def test_create_session_initializes_players_scenes_clocks_and_story_stage() -> N
 
 
 def test_add_player_joins_waiting_session_at_entry_scene() -> None:
-    runtime = SceneRuntime()
-    session = runtime.create_session("generic_mvp", ["kp"])
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["kp"],
+        player_cards=build_player_cards(["kp"]),
+    )
 
-    player_state = runtime.add_player(session.session_id, "p2")
+    player_state = runtime.add_player(
+        session.session_id,
+        "p2",
+        investigator=build_test_card("p2"),
+    )
 
     assert player_state.player_id == "p2"
     assert player_state.current_scene_id == "foyer"
@@ -179,20 +197,32 @@ def test_add_player_joins_waiting_session_at_entry_scene() -> None:
 
 
 def test_add_player_rejects_join_after_session_has_started() -> None:
-    runtime = SceneRuntime()
-    session = runtime.create_session("generic_mvp", ["kp"])
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["kp"],
+        player_cards=build_player_cards(["kp"]),
+    )
 
     runtime.resolve_turn(session.session_id)
 
     with pytest.raises(ValueError, match="已经开始"):
-        runtime.add_player(session.session_id, "late_player")
+        runtime.add_player(
+            session.session_id,
+            "late_player",
+            investigator=build_test_card("late_player"),
+        )
 
 
 def test_turn_only_advances_on_resolve_and_links_unlock_after_story_transition() -> (
     None
 ):
-    runtime = SceneRuntime()
-    session = runtime.create_session("generic_mvp", ["p1"])
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
     resolutions: list[TurnResolution] = []
 
     assert runtime.list_reachable_scenes(session, "p1") == ["storage"]
@@ -254,8 +284,12 @@ def test_turn_only_advances_on_resolve_and_links_unlock_after_story_transition()
 
 
 def test_same_turn_scene_batches_use_the_same_snapshot() -> None:
-    runtime = SceneRuntime()
-    session = runtime.create_session("generic_mvp", ["p1", "p2"])
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1", "p2"],
+        player_cards=build_player_cards(["p1", "p2"]),
+    )
     resolutions: list[TurnResolution] = []
 
     _submit_and_resolve(
@@ -303,8 +337,12 @@ def test_same_turn_scene_batches_use_the_same_snapshot() -> None:
 
 
 def test_action_effects_update_clocks_thresholds_story_stage_and_once_actions() -> None:
-    runtime = SceneRuntime()
-    session = runtime.create_session("generic_mvp", ["p1"])
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
     resolutions: list[TurnResolution] = []
 
     _submit_and_resolve(
@@ -374,8 +412,12 @@ def test_action_effects_update_clocks_thresholds_story_stage_and_once_actions() 
 
 
 def test_generic_module_happy_path_reaches_escape_story_ending() -> None:
-    runtime = SceneRuntime()
-    session = runtime.create_session("generic_mvp", ["p1"])
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
     resolutions: list[TurnResolution] = []
 
     _submit_and_resolve(
@@ -445,8 +487,12 @@ def test_generic_module_happy_path_reaches_escape_story_ending() -> None:
 
 
 def test_tokoyami_subset_happy_path_advances_story_stage() -> None:
-    runtime = SceneRuntime()
-    session = runtime.create_session("tokoyami_subset", ["p1"])
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
     resolutions: list[TurnResolution] = []
 
     resolution = _submit_and_resolve(
@@ -540,8 +586,12 @@ def test_tokoyami_subset_happy_path_advances_story_stage() -> None:
 
 
 def test_tokoyami_subset_clock_threshold_reaches_bad_end_after_informed_stage() -> None:
-    runtime = SceneRuntime()
-    session = runtime.create_session("tokoyami_subset", ["p1"])
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
     resolutions: list[TurnResolution] = []
 
     first_resolution = _submit_and_resolve(
@@ -581,8 +631,12 @@ def test_tokoyami_subset_clock_threshold_reaches_bad_end_after_informed_stage() 
 
 
 def test_tokoyami_subset_multiplayer_shared_progression_and_logs() -> None:
-    runtime = SceneRuntime()
-    session = runtime.create_session("tokoyami_subset", ["p1", "p2"])
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1", "p2"],
+        player_cards=build_player_cards(["p1", "p2"]),
+    )
     resolutions: list[TurnResolution] = []
 
     resolution = _submit_and_resolve(

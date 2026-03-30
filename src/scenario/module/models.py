@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from .types import ModuleCondition, ModuleEffect
@@ -37,6 +39,16 @@ class ModuleClock(BaseModel):
     threshold_events: list[ClockThresholdEvent] = Field(default_factory=list)
 
 
+ActionCheckDifficulty = Literal["regular", "hard", "extreme"]
+
+
+class ModuleActionCheck(BaseModel):
+    # FIXME: 这里使用了裸 str；应考虑复用 cards 的 SkillKey 约束，尽早在加载期拦截非法 skill_key。
+    skill_key: str = Field(..., min_length=1, max_length=50)
+    difficulty: ActionCheckDifficulty = "regular"
+    failure_reason: str = Field(default="检定失败", max_length=200)
+
+
 class ModuleAction(BaseModel):
     id: str = Field(..., min_length=1, max_length=40)
     scene_id: str = Field(..., min_length=1, max_length=30)
@@ -45,6 +57,7 @@ class ModuleAction(BaseModel):
     once: bool = Field(default=True)
     required_stages: list[str] = Field(default_factory=list, max_length=10)
     conditions: list[ModuleCondition] = Field(default_factory=list)
+    check: ModuleActionCheck | None = Field(default=None)
     effects_on_success: list[ModuleEffect] = Field(default_factory=list)
     effects_on_failure: list[ModuleEffect] = Field(default_factory=list)
     marks_scene_cleared: bool = Field(default=False)

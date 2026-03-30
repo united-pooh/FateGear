@@ -59,6 +59,10 @@ actions:
     name: 搜索钥匙
     kind: search
     once: true
+    check:
+      skill_key: spot_hidden
+      difficulty: regular
+      failure_reason: 你没有在杂物中找到任何钥匙线索。
     effects_on_success:
       - type: set_flag
         flag: key_found
@@ -69,6 +73,10 @@ actions:
     kind: operate
     once: true
     required_stages: [setup]
+    check:
+      skill_key: art_craft:locksmith
+      difficulty: hard
+      failure_reason: 锁芯结构太复杂，暂时无法解开。
     conditions:
       - type: flag_set
         flag: key_found
@@ -83,6 +91,10 @@ actions:
     kind: operate
     once: true
     required_stages: [access_opened]
+    check:
+      skill_key: science:physics
+      difficulty: regular
+      failure_reason: 终端参数校准失败，机器没有响应。
     effects_on_success:
       - type: set_flag
         flag: machine_primed
@@ -96,6 +108,10 @@ actions:
     kind: operate
     once: true
     required_stages: [system_primed]
+    check:
+      skill_key: science:physics
+      difficulty: hard
+      failure_reason: 安全门控制逻辑异常，开门请求被拒绝。
     conditions:
       - type: flag_set
         flag: machine_primed

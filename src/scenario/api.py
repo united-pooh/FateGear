@@ -6,6 +6,8 @@ from pathlib import Path
 from threading import RLock
 from typing import Literal
 
+from cards import build_investigator_card
+from cards.domain.card import InvestigatorCard
 from pydantic import BaseModel, Field
 
 from .io import MODULE_ROOT, load_module_by_id
@@ -98,6 +100,11 @@ class ScenarioService:
             session = self._runtime.create_session(
                 payload.module_id,
                 [payload.creator_id],
+                player_cards={
+                    payload.creator_id: self._build_default_investigator_card(
+                        payload.creator_id
+                    )
+                },
             )
             self._owner_by_session_id[session.session_id] = payload.creator_id
             return self._build_party_summary(session)
@@ -113,7 +120,11 @@ class ScenarioService:
             else JoinPartyRequest.model_validate(request)
         )
         with self._lock:
-            self._runtime.add_player(session_id, payload.player_id)
+            self._runtime.add_player(
+                session_id,
+                payload.player_id,
+                investigator=self._build_default_investigator_card(payload.player_id),
+            )
             session = self._runtime.get_session(session_id)
             return self._build_party_summary(session)
 
@@ -167,3 +178,20 @@ class ScenarioService:
             players=players,
         )
 
+    def _build_default_investigator_card(self, player_id: str) -> InvestigatorCard:
+        # FIXME: 默认姓名直接拼接 player_id，长 player_id 可能超过 Name 的 30 字符上限并触发校验失败。
+        # FIXME: 默认卡目前不挂技能；在动作配置了 check 的模组中，这会导致会话虽可创建但关键动作难以推进。
+        return build_investigator_card(
+            name=f"调查员-{player_id}",
+            age=25,
+            occupation="临时调查员",
+            player=player_id,
+            strength=50,
+            constitution=50,
+            size=50,
+            dexterity=50,
+            appearance=50,
+            intelligence=50,
+            power=50,
+            education=50,
+        )
