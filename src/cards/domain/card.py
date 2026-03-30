@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from typing import Annotated
+from collections.abc import Mapping
 
 from pydantic import BaseModel, Field
 
 from cards.domain.attributes import InvestigatorAttributes
+from cards.domain.skills import InvestigatorSkill, SkillKey
 from cards.domain.state import InvestigatorState
 from cards.rules.derived import DerivedStats, derive_stats
 
@@ -24,6 +26,7 @@ class InvestigatorCard(BaseModel):
     occupation: Occupation
     player: Player
     cthulhu_mythos: CthulhuMythos
+    skills: dict[SkillKey, InvestigatorSkill] = Field(default_factory=dict)
 
     @classmethod
     def create(
@@ -35,6 +38,7 @@ class InvestigatorCard(BaseModel):
         occupation: Occupation = "",
         player: Player = "",
         cthulhu_mythos: CthulhuMythos = 0,
+        skills: Mapping[SkillKey, InvestigatorSkill] | None = None,
     ) -> InvestigatorCard:
         derived = derive_stats(
             attributes=attributes,
@@ -51,6 +55,7 @@ class InvestigatorCard(BaseModel):
             occupation=occupation,
             player=player,
             cthulhu_mythos=cthulhu_mythos,
+            skills=dict(skills) if skills is not None else {},
         )
 
     def modify_hit_point(self, amount: int) -> None:

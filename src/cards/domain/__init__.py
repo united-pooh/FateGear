@@ -1,8 +1,13 @@
 from cards.domain.attributes import InvestigatorAttributes
-from cards.domain.build import build_investigator_card, build_investigator_from_mapping
+from cards.domain.build import (
+    InvestigatorSkillInput,
+    build_investigator_card,
+    build_investigator_from_mapping,
+)
 from cards.domain.card import InvestigatorCard
 from cards.domain.enums import MentalState, PhysicalState
 from cards.domain.skills import (
+    InvestigatorSkill,
     SkillBranchMode,
     SkillBranchOption,
     SkillDefinition,
@@ -15,6 +20,8 @@ __all__ = [
     "DamageBonus",
     "InvestigatorAttributes",
     "InvestigatorCard",
+    "InvestigatorSkill",
+    "InvestigatorSkillInput",
     "InvestigatorState",
     "MentalState",
     "PhysicalState",

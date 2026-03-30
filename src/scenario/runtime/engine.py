@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from random import randint
 from uuid import uuid4
 
+from cards.domain.card import InvestigatorCard
+
 from ..io.module_loader import MODULE_ROOT, load_module_by_id
-from ..module.models import ModuleAction, ModuleDefinition
+from ..module.models import ModuleAction, ModuleActionCheck, ModuleDefinition
 from ..module.types import ModuleCondition, ModuleEffect
 from ..scene.models import SceneLink
 from ..scene.rules import SceneMovementRules
@@ -24,11 +28,18 @@ from .contracts import (
     MoveIntent,
 )
 
+RollProvider = Callable[[], int]
+
 
 class SceneRuntime:
     """YAML 模组的最小运行时协调器。"""
 
-    def __init__(self, *, module_root: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        module_root: str | Path | None = None,
+        roll_provider: RollProvider | None = None,
+    ) -> None:
         self._module_root = (
             Path(module_root) if module_root is not None else MODULE_ROOT
         )
@@ -36,14 +47,29 @@ class SceneRuntime:
         self._module_cache: dict[str, ModuleDefinition] = {}
         self._transition_validator = TransitionValidator()
         self._story_state_service = StoryStateService()
+        self._roll_provider = roll_provider or (lambda: randint(1, 100))
 
     def create_session(
         self,
         module_id: str,
         player_ids: list[str],
+        *,
+        player_cards: Mapping[str, InvestigatorCard],
     ) -> SessionMapState:
         if not player_ids:
             raise ValueError("创建会话时至少需要一个 player_id")
+
+        unknown_player_ids = sorted(set(player_cards) - set(player_ids))
+        if unknown_player_ids:
+            raise ValueError(f"player_cards 包含未知玩家: {unknown_player_ids}")
+        missing_player_ids = sorted(set(player_ids) - set(player_cards))
+        if missing_player_ids:
+            raise ValueError(f"player_cards 缺少玩家: {missing_player_ids}")
+        empty_card_player_ids = sorted(
+            player_id for player_id in player_ids if player_cards[player_id] is None
+        )
+        if empty_card_player_ids:
+            raise ValueError(f"player_cards 中玩家未绑定人物卡: {empty_card_player_ids}")
 
         module = self._load_module(module_id)
         session_id = uuid4().hex[:12]
@@ -54,6 +80,7 @@ class SceneRuntime:
                 player_id=player_id,
                 current_scene_id=entry_scene_id,
                 last_scene_id=entry_scene_id,
+                investigator=self._clone_card(player_cards[player_id]),
             )
             for player_id in player_ids
         }
@@ -73,6 +100,43 @@ class SceneRuntime:
 
     def destroy_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
+
+    def get_session(self, session_id: str) -> SessionMapState:
+        return self._get_session(session_id)
+
+    def add_player(
+        self,
+        session_id: str,
+        player_id: str,
+        *,
+        investigator: InvestigatorCard,
+    ) -> SessionPlayerState:
+        if investigator is None:
+            raise ValueError("add_player 时必须提供 investigator 人物卡")
+
+        session = self._get_session(session_id)
+        if (
+            session.resolved_ending is not None
+            or session.story_state.resolved_ending_id is not None
+        ):
+            raise ValueError(f"会话 {session_id} 已进入结局，不能再加入新玩家")
+        if session.current_turn != 1:
+            raise ValueError(f"会话 {session_id} 已经开始，不能再加入新玩家")
+        if session.pending_intents:
+            raise ValueError(f"会话 {session_id} 当前已有待结算意图，不能加入新玩家")
+        if player_id in session.player_states:
+            raise ValueError(f"玩家 {player_id} 已经在会话 {session_id} 中")
+
+        module = self._load_module(session.module_id)
+        player_state = SessionPlayerState(
+            session_id=session_id,
+            player_id=player_id,
+            current_scene_id=module.entry_scene_id,
+            last_scene_id=module.entry_scene_id,
+            investigator=self._clone_card(investigator),
+        )
+        session.player_states[player_id] = player_state
+        return player_state
 
     def submit_intent(
         self,
@@ -257,6 +321,47 @@ class SceneRuntime:
                             success=False,
                             reason=reason,
                             action_id=action.id,
+                        )
+                    )
+                    continue
+
+                check_passed, check_reason, failure_effects = self._resolve_action_check(
+                    action=action,
+                    player_state=player_state,
+                    flag_sets=flag_sets,
+                    flag_clears=flag_clears,
+                    clock_deltas=clock_deltas,
+                )
+                if not check_passed:
+                    current_scene_name = scene_by_id[player_state.current_scene_id].name
+                    event_log.append(
+                        RuntimeEvent(
+                            type="action_resolved",
+                            turn_no=snapshot.current_turn,
+                            player_id=player_id,
+                            scene_id=player_state.current_scene_id,
+                            scene_name=current_scene_name,
+                            action_id=action.id,
+                            action_name=action.name,
+                            success=False,
+                            reason=check_reason,
+                            effects_applied=failure_effects,
+                            message=(
+                                f"玩家 {player_id} 在"
+                                f"{current_scene_name}（{player_state.current_scene_id}）"
+                                f"执行动作「{action.name}」失败，原因：{check_reason}"
+                            ),
+                        )
+                    )
+                    outcomes.append(
+                        IntentResolution(
+                            player_id=player_id,
+                            scene_id=player_state.current_scene_id,
+                            intent_type="action",
+                            success=False,
+                            reason=check_reason,
+                            action_id=action.id,
+                            effects_applied=failure_effects,
                         )
                     )
                     continue
@@ -623,6 +728,62 @@ class SceneRuntime:
         if not self._conditions_met(action.conditions, session):
             return False, "动作前置条件未满足"
         return True, ""
+
+    def _resolve_action_check(
+        self,
+        *,
+        action: ModuleAction,
+        player_state: SessionPlayerState,
+        flag_sets: set[str],
+        flag_clears: set[str],
+        clock_deltas: dict[str, int],
+    ) -> tuple[bool, str, list[str]]:
+        check = action.check
+        if check is None:
+            return True, "", []
+
+        skill = player_state.investigator.skills.get(check.skill_key)
+        failure_effects = self._queue_effects(
+            action.effects_on_failure,
+            flag_sets=flag_sets,
+            flag_clears=flag_clears,
+            clock_deltas=clock_deltas,
+        )
+        if skill is None:
+            return (
+                False,
+                f"缺少技能 {check.skill_key}",
+                failure_effects,
+            )
+
+        roll = self._next_roll()
+        threshold = self._difficulty_threshold(skill.value, check)
+        if roll <= threshold:
+            return True, "", []
+        return False, check.failure_reason, failure_effects
+
+    def _difficulty_threshold(
+        self,
+        skill_value: int,
+        check: ModuleActionCheck,
+    ) -> int:
+        if check.difficulty == "regular":
+            return skill_value
+        if check.difficulty == "hard":
+            return skill_value // 2
+        return skill_value // 5
+
+    def _next_roll(self) -> int:
+        rolled = self._roll_provider()
+        if rolled < 1 or rolled > 100:
+            raise ValueError(f"检定结果必须在 1..100 之间，收到: {rolled}")
+        return rolled
+
+    def _clone_card(
+        self,
+        investigator: InvestigatorCard,
+    ) -> InvestigatorCard:
+        return investigator.model_copy(deep=True)
 
     def _conditions_met(
         self,

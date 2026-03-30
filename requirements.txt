@@ -1,6 +1,7 @@
 pytest
 pydantic
 PyYAML
+aiohttp
 pyclean
 pytest
 mypy

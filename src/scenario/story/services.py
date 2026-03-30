@@ -17,7 +17,7 @@ class TransitionValidator:
         signals: list[StorySignal],
         flags: set[str],
     ) -> StoryTransition | None:
-        candidate_transitions = sorted(
+        candidate_transitions: list[StoryTransition] = sorted(
             (
                 transition
                 for transition in transitions
@@ -28,17 +28,17 @@ class TransitionValidator:
 
         for transition in candidate_transitions:
             if not self._required_flags_met(
-                transition.required_flags,
+                required_flags=transition.required_flags,
                 flags=flags,
             ):
                 continue
             if not any(
-                self._signal_matches_transition(signal, transition)
+                self._signal_matches_transition(signal=signal, transition=transition)
                 for signal in signals
             ):
                 continue
             if not self._target_stage_unlocked(
-                stages[transition.target_stage_id],
+                stage=stages[transition.target_stage_id],
                 flags=flags,
                 transition=transition,
             ):
@@ -76,7 +76,7 @@ class TransitionValidator:
         flags: set[str],
         transition: StoryTransition,
     ) -> bool:
-        projected_flags = set(flags)
+        projected_flags: set[str] = set(flags)
         for effect in transition.effects:
             if effect.type == "set_flag":
                 projected_flags.add(effect.flag)
@@ -96,7 +96,7 @@ class StoryStateService:
         stages: dict[str, StoryStage],
         turn_no: int,
     ) -> StoryState:
-        target_stage = stages[transition.target_stage_id]
+        target_stage: StoryStage = stages[transition.target_stage_id]
         return StoryState(
             current_stage_id=transition.target_stage_id,
             stage_entered_turn=turn_no,

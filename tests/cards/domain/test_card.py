@@ -16,6 +16,8 @@ def test_card_state_respects_max_bounds() -> None:
         power=60,
         education=50,
     )
+    assert card.skills == {}
+
     card.modify_hit_point(-5)
     assert card.state.hit_points == 7
     assert card.derived.hit_points_max == 12

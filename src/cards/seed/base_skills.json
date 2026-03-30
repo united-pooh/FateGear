@@ -1,1 +1,17 @@
-
+[
+  {"key": "accounting", "name": "会计", "base": 5},
+  {"key": "anthropology", "name": "人类学", "base": 1},
+  {"key": "appraise", "name": "估价", "base": 5},
+  {"key": "archaeology", "name": "考古学", "base": 1},
+  {"key": "charm", "name": "魅惑", "base": 15},
+  {"key": "climb", "name": "攀爬", "base": 20},
+  {"key": "credit_rating", "name": "信用评级", "base": 0},
+  {"key": "first_aid", "name": "急救", "base": 30},
+  {"key": "intimidate", "name": "恐吓", "base": 15},
+  {"key": "library_use", "name": "图书馆使用", "base": 20},
+  {"key": "listen", "name": "聆听", "base": 20},
+  {"key": "persuade", "name": "说服", "base": 10},
+  {"key": "psychology", "name": "心理学", "base": 10},
+  {"key": "spot_hidden", "name": "侦查", "base": 25},
+  {"key": "stealth", "name": "潜行", "base": 20}
+]

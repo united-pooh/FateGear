@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..story.models import StoryState
+from cards.domain.card import InvestigatorCard
 
+from ..story.models import StoryState
 
 class SceneInstanceState(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
@@ -125,4 +126,9 @@ class SessionPlayerState(BaseModel):
     visibility_state: dict[str, bool] = Field(
         default_factory=dict,
         description="玩家当前可见性状态表，用于标记 NPC、线索、路径等对象是否可见。",
+    )
+
+    investigator: InvestigatorCard = Field(
+        ...,
+        description="玩家操控的调查员卡数据。",
     )
