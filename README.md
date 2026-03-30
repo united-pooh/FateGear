@@ -14,6 +14,16 @@ FateGear 的目标不是做一个“会讲故事的聊天机器人”，而是�
 - Agent 只输出提议和叙事，不直接修改数据库状态。
 - 运行时核心依赖会话快照与事件日志，而不是每轮靠回放日志重建全部上下文。
 
+## 命名空间迁移（Breaking）
+
+自 `2026-03-30` 起，项目已完成运行时命名空间收敛：
+
+- 旧 `scene.*` 命名空间已删除，不再提供兼容层。
+- 所有运行时与领域模型统一到 `scenario.*`。
+- `SceneRuntime` 的唯一入口为 `scenario.runtime.SceneRuntime`。
+
+如果你的外部脚本仍在使用 `scene.*` 导入，请改为 `scenario.*` 对应路径。
+
 ## 1. 项目定位
 
 FateGear 服务的不是“自由闲聊式 TRPG”，而是有明确模组边界的 COC 守密场景，例如《常暗之箱》这种强叙事、强结局约束、带有空间探索和时间压力的模组。
@@ -689,7 +699,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [x] 明确一条核心原则：Agent 只输出“提议”，不直接写数据库
 - [x] 明确一条核心原则：规则判定和叙事生成拆成两步
 - [x] 明确一条核心原则：每轮必须落 `turn_log` 和 `event_log`
-- [ ] 先做“无 LLM 也能跑通”的最小闭环，再接入模型
+- [x] 先做“无 LLM 也能跑通”的最小闭环，再接入模型
 
 ### 1. Python 工程初始化
 
@@ -737,28 +747,28 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [x] 定义 `SessionMapState`
 - [x] 定义 `SessionPlayerState`
 - [x] 在 `SessionPlayerState` 中增加 `current_scene_id`
-- [ ] 在 `SessionPlayerState` 中增加 `last_scene_id`
-- [ ] 在 `SessionPlayerState` 中增加 `visibility_state`
+- [x] 在 `SessionPlayerState` 中增加 `last_scene_id`
+- [x] 在 `SessionPlayerState` 中增加 `visibility_state`
 - [x] 定义 `SceneInstanceState`
 - [ ] 为 `SceneInstanceState` 增加字段：`visited`
 - [ ] 为 `SceneInstanceState` 增加字段：`danger_level`
-- [ ] 为 `SceneInstanceState` 增加字段：`local_flags`
+- [x] 为 `SceneInstanceState` 增加字段：`local_flags`
 - [ ] 为 `SceneInstanceState` 增加字段：`destroyed / disabled`
-- [ ] 定义地图配置导入格式（JSON/YAML 都可）
+- [x] 定义地图配置导入格式（JSON/YAML 都可）
 
 #### 2.2 场景转移规则
 
-- [ ] 实现“是否可移动”校验
-- [ ] 支持普通相邻场景移动
-- [ ] 支持单向场景移动
-- [ ] 支持锁定场景移动
-- [ ] 支持条件解锁场景移动
+- [x] 实现“是否可移动”校验
+- [x] 支持普通相邻场景移动
+- [x] 支持单向场景移动
+- [x] 支持锁定场景移动
+- [x] 支持条件解锁场景移动
 - [ ] 支持隐藏通路
 - [ ] 支持场景禁入
 - [ ] 支持场景摧毁/关闭后不可进入
-- [ ] 支持队伍拆分到不同场景
-- [ ] 支持多人同场景
-- [ ] 支持移动后写入事件日志
+- [x] 支持队伍拆分到不同场景
+- [x] 支持多人同场景
+- [x] 支持移动后写入事件日志
 - [ ] 支持移动后更新玩家可见视图
 
 #### 2.3 `SceneRouter` 服务
@@ -781,11 +791,11 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 #### 2.5 地图模块验收标准
 
-- [ ] 两个玩家可以处于不同场景
-- [ ] 玩家移动后 `current_scene_id` 正确更新
-- [ ] 锁定路径会返回明确失败原因
+- [x] 两个玩家可以处于不同场景
+- [x] 玩家移动后 `current_scene_id` 正确更新
+- [x] 锁定路径会返回明确失败原因
 - [ ] 视图接口只返回该玩家当前可见信息
-- [ ] 场景移动会生成 `event_log`
+- [x] 场景移动会生成 `event_log`
 - [ ] 场景移动不会自动触发剧情状态迁移
 - [ ] 服务端状态是唯一真相，前端位置仅作参考
 
@@ -793,38 +803,38 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 #### 3.1 剧情状态模型
 
-- [ ] 定义 `StoryState`
-- [ ] 定义 `StoryStage`
-- [ ] 为 `StoryStage` 增加字段：`id`
-- [ ] 为 `StoryStage` 增加字段：`name`
-- [ ] 为 `StoryStage` 增加字段：`description`
-- [ ] 为 `StoryStage` 增加字段：`required_flags`
-- [ ] 为 `StoryStage` 增加字段：`available_clues`
-- [ ] 为 `StoryStage` 增加字段：`npc_presence_rules`
-- [ ] 为 `StoryStage` 增加字段：`is_terminal`
-- [ ] 为 `StoryStage` 增加字段：`terminal_type`
-- [ ] 定义 `StoryTransition`
-- [ ] 为 `StoryTransition` 增加字段：`source_stage_id`
-- [ ] 为 `StoryTransition` 增加字段：`target_stage_id`
-- [ ] 为 `StoryTransition` 增加字段：`required_flags`
-- [ ] 为 `StoryTransition` 增加字段：`trigger_type`
-- [ ] 为 `StoryTransition` 增加字段：`priority`
+- [x] 定义 `StoryState`
+- [x] 定义 `StoryStage`
+- [x] 为 `StoryStage` 增加字段：`id`
+- [x] 为 `StoryStage` 增加字段：`name`
+- [x] 为 `StoryStage` 增加字段：`description`
+- [x] 为 `StoryStage` 增加字段：`required_flags`
+- [x] 为 `StoryStage` 增加字段：`available_clues`
+- [x] 为 `StoryStage` 增加字段：`npc_presence_rules`
+- [x] 为 `StoryStage` 增加字段：`is_terminal`
+- [x] 为 `StoryStage` 增加字段：`terminal_type`
+- [x] 定义 `StoryTransition`
+- [x] 为 `StoryTransition` 增加字段：`source_stage_id`
+- [x] 为 `StoryTransition` 增加字段：`target_stage_id`
+- [x] 为 `StoryTransition` 增加字段：`required_flags`
+- [x] 为 `StoryTransition` 增加字段：`trigger_type`
+- [x] 为 `StoryTransition` 增加字段：`priority`
 
 #### 3.2 剧情状态服务
 
-- [ ] 实现 `TransitionValidator`
+- [x] 实现 `TransitionValidator`
 - [ ] 实现 `StoryStateService.can_transition(...)`
-- [ ] 实现 `StoryStateService.apply_transition(...)`
-- [ ] 确保剧情迁移只允许走模组定义路径
-- [ ] 确保未解锁结局不能被直接触发
-- [ ] 剧情迁移后写入 `event_log`
+- [x] 实现 `StoryStateService.apply_transition(...)`
+- [x] 确保剧情迁移只允许走模组定义路径
+- [x] 确保未解锁结局不能被直接触发
+- [x] 剧情迁移后写入 `event_log`
 
 #### 3.3 剧情状态模块验收标准
 
-- [ ] 地图状态和剧情状态完全分离
+- [x] 地图状态和剧情状态完全分离
 - [ ] 即使玩家进入了某场景，也不等于剧情阶段自动推进
-- [ ] 必须满足 transition 条件才能进入下一剧情阶段
-- [ ] 终局只能由状态机合法进入
+- [x] 必须满足 transition 条件才能进入下一剧情阶段
+- [x] 终局只能由状态机合法进入
 
 ### 4. 回合、输入与结算主链路
 
@@ -839,15 +849,15 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 #### 4.2 回合服务
 
-- [ ] 实现“提交玩家动作”接口
-- [ ] 支持多玩家同一轮分别提交动作
+- [x] 实现“提交玩家动作”接口
+- [x] 支持多玩家同一轮分别提交动作
 - [ ] 支持房主/主持人手动触发结算
 - [ ] 支持玩家全部提交后自动触发结算
-- [ ] 实现按场景分组 `SceneTurnBatch`
-- [ ] 实现每轮快照加载
+- [x] 实现按场景分组 `SceneTurnBatch`
+- [x] 实现每轮快照加载
 - [ ] 实现结算幂等保护
 - [ ] 实现结算事务提交
-- [ ] 实现回合结束标记
+- [x] 实现回合结束标记
 
 #### 4.3 回合接口
 
@@ -858,8 +868,8 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 #### 4.4 回合模块验收标准
 
-- [ ] 同一轮多个玩家动作可同时存在
-- [ ] 系统能按场景正确分组处理
+- [x] 同一轮多个玩家动作可同时存在
+- [x] 系统能按场景正确分组处理
 - [ ] 同一轮重复 resolve 不会重复写状态
 - [ ] 每轮结果可回放
 
@@ -1014,17 +1024,17 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 - [ ] `SceneRouter.can_move`
 - [ ] `SceneRouter.move_player`
 - [ ] `SceneRouter.group_players_by_scene`
-- [ ] `TransitionValidator.can_transition`
+- [x] `TransitionValidator.can_transition`
 - [ ] `RuleEngine.resolve_checks`
 - [ ] `NPCState` 更新逻辑
 
 #### 10.2 集成测试
 
-- [ ] 创建会话 -> 进入初始场景
-- [ ] 玩家移动 -> 场景快照更新
-- [ ] 多玩家分场景 -> 正确分 batch
+- [x] 创建会话 -> 进入初始场景
+- [x] 玩家移动 -> 场景快照更新
+- [x] 多玩家分场景 -> 正确分 batch
 - [ ] 一轮 resolve -> 规则判定 -> 状态提交 -> 叙事输出
-- [ ] 剧情状态合法迁移
+- [x] 剧情状态合法迁移
 - [ ] 剧情状态非法迁移被拦截
 
 #### 10.3 回归测试
@@ -1038,24 +1048,24 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 #### M1：地图与场景转移跑通（不接 LLM）
 
-- [ ] 完成地图模型
+- [x] 完成地图模型
 - [ ] 完成 `SceneRouter`
 - [ ] 完成移动接口
 - [ ] 完成玩家视图接口
-- [ ] 完成事件日志
-- [ ] 完成多人分场景支持
+- [x] 完成事件日志
+- [x] 完成多人分场景支持
 
 #### M2：剧情状态机接入
 
-- [ ] 完成 `StoryState`
-- [ ] 完成 `TransitionValidator`
-- [ ] 完成剧情迁移日志
-- [ ] 完成“场景转移 != 剧情转移”校验
+- [x] 完成 `StoryState`
+- [x] 完成 `TransitionValidator`
+- [x] 完成剧情迁移日志
+- [x] 完成“场景转移 != 剧情转移”校验
 
 #### M3：回合流 + `RuleEngine` 跑通
 
-- [ ] 完成 Intent 提交
-- [ ] 完成按场景分组
+- [x] 完成 Intent 提交
+- [x] 完成按场景分组
 - [ ] 完成基础规则判定
 - [ ] 完成一轮结算事务
 
@@ -1091,12 +1101,12 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 ### 13. V1 完成定义（Done Definition）
 
-- [ ] 可以创建一局游戏
-- [ ] 可以加载一张模组地图
-- [ ] 玩家可以在合法场景间移动
-- [ ] 多玩家可以分处不同场景
-- [ ] 系统可以按场景结算玩家动作
-- [ ] 剧情只能通过状态机合法推进
+- [x] 可以创建一局游戏
+- [x] 可以加载一张模组地图
+- [x] 玩家可以在合法场景间移动
+- [x] 多玩家可以分处不同场景
+- [x] 系统可以按场景结算玩家动作
+- [x] 剧情只能通过状态机合法推进
 - [ ] NPC 有位置、状态、知识边界
 - [ ] 检定结果由 `RuleEngine` 计算
 - [ ] Agent 只提议，不直接写库

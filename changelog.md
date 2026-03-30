@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-30
+
+### Breaking Changes
+- 移除旧 `scene.*` 命名空间（`src/scene` 整包删除），不再提供兼容层。
+- 统一收敛到 `scenario.*` 新框架，运行时唯一入口为 `scenario.runtime.SceneRuntime`。
+
+### Changed
+- `scenario.module` 包导出改为惰性加载，避免 `story.models -> module.__init__ -> module.models` 的循环导入。
+- 运行时相关测试收集路径已打通，可直接执行 `tests/scene/test_runtime.py --collect-only`。
+
 ## 2026-03-27
 
 ### Added
