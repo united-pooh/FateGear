@@ -1,1 +1,34 @@
-
+[
+  {
+    "key": "art_craft",
+    "name": "艺术/手艺",
+    "base": 5,
+    "branch_mode": "required",
+    "branch_label": "门类",
+    "allow_custom_branch": true,
+    "branch_options": [
+      {"key": "painting", "name": "绘画"},
+      {"key": "photography", "name": "摄影"}
+    ]
+  },
+  {
+    "key": "language_other",
+    "name": "外语",
+    "base": 1,
+    "branch_mode": "required",
+    "branch_label": "语种",
+    "allow_custom_branch": true
+  },
+  {
+    "key": "science",
+    "name": "科学",
+    "base": 1,
+    "branch_mode": "required",
+    "branch_label": "学科",
+    "branch_options": [
+      {"key": "biology", "name": "生物学"},
+      {"key": "chemistry", "name": "化学"},
+      {"key": "physics", "name": "物理"}
+    ]
+  }
+]
