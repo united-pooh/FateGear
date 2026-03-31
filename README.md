@@ -563,9 +563,23 @@ GET /sessions/{session_id}
 
 返回该会话的 `PartySummary`。
 
-### 提交玩家意图（尚未实现 HTTP 路由）
+### 提交玩家意图
 
-> ⚠️ 内部 `SceneRuntime.submit_intent()` 已实现，但当前尚未暴露为 HTTP 端点。
+```http
+POST /sessions/{session_id}/intents
+```
+
+请求体：
+
+```json
+{
+  "player_id": "keeper",
+  "intent": {
+    "type": "move",
+    "target_scene_id": "corridor"
+  }
+}
+```
 
 意图有两种类型，由 `type` 字段区分：
 
@@ -589,9 +603,11 @@ GET /sessions/{session_id}
 
 服务端以 `session_player_state.current_scene_id` 为准，不接受客户端传入的场景覆盖。每位玩家在同一回合只能提交一次意图；会话已进入结局后不能继续提交。
 
-### 结算当前轮（尚未实现 HTTP 路由）
+### 结算当前轮
 
-> ⚠️ 内部 `SceneRuntime.resolve_turn()` 已实现，但当前尚未暴露为 HTTP 端点。
+```http
+POST /sessions/{session_id}/resolve
+```
 
 结算成功后返回 `TurnResolution`：
 
@@ -1033,8 +1049,8 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 #### 4.3 回合接口
 
-- [ ] `POST /sessions/{session_id}/intents`
-- [ ] `POST /sessions/{session_id}/turns/{turn_no}/resolve`
+- [x] `POST /sessions/{session_id}/intents`
+- [x] `POST /sessions/{session_id}/resolve`
 - [ ] `GET /sessions/{session_id}/turns/{turn_no}`
 - [ ] `GET /sessions/{session_id}/keeper-view`
 
@@ -1049,7 +1065,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 #### 5.1 规则引擎骨架
 
-- [ ] 先实现通用“动作 -> 是否需要判定 -> 执行判定 -> 返回结果”流程
+- [x] 先实现通用“动作 -> 是否需要判定 -> 执行判定 -> 返回结果”流程
 - [ ] 定义 `CheckRequest`
 - [ ] 定义 `CheckResult`
 - [ ] 定义 `RuleEffect`

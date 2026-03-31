@@ -29,5 +29,7 @@ def test_create_app_registers_expected_routes_and_health_handler() -> None:
         assert ("POST", "/sessions") in registered_routes
         assert ("GET", "/sessions/{session_id}") in registered_routes
         assert ("POST", "/sessions/{session_id}/players") in registered_routes
+        assert ("POST", "/sessions/{session_id}/intents") in registered_routes
+        assert ("POST", "/sessions/{session_id}/resolve") in registered_routes
 
     asyncio.run(run())

@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from hashlib import sha1
 from pathlib import Path
 from threading import RLock
 from typing import Literal
 
-from cards import build_investigator_card
+from cards import build_investigator_card, load_skill_template_mapping
 from cards.domain.card import InvestigatorCard
+from cards.domain.skills import SkillTemplate
 from pydantic import BaseModel, Field
 
 from .io import MODULE_ROOT, load_module_by_id
-from .runtime import SceneRuntime
+from .module.models import ModuleDefinition
+from .runtime import SceneIntent, SceneRuntime, TurnResolution
 from .session import SessionMapState
 
 
@@ -29,6 +32,11 @@ class CreatePartyRequest(BaseModel):
 
 class JoinPartyRequest(BaseModel):
     player_id: str = Field(..., min_length=1, max_length=30)
+
+
+class SubmitIntentRequest(BaseModel):
+    player_id: str = Field(..., min_length=1, max_length=30)
+    intent: SceneIntent
 
 
 class PartyPlayerSummary(BaseModel):
@@ -65,6 +73,7 @@ class ScenarioService:
         self._runtime = runtime or SceneRuntime(module_root=resolved_module_root)
         self._owner_by_session_id: dict[str, str] = {}
         self._lock = RLock()
+        self._skill_templates = load_skill_template_mapping()
 
     def list_modules(self) -> list[ModuleSummary]:
         """扫描模组目录并返回可创建会话的模组摘要。"""
@@ -102,13 +111,19 @@ class ScenarioService:
             if isinstance(request, CreatePartyRequest)
             else CreatePartyRequest.model_validate(request)
         )
+        module = load_module_by_id(
+            payload.module_id,
+            module_root=self._module_root,
+        )
         with self._lock:
             session = self._runtime.create_session(
                 payload.module_id,
                 [payload.creator_id],
                 player_cards={
                     payload.creator_id: self._build_default_investigator_card(
-                        payload.creator_id
+                        payload.creator_id,
+                        module_id=payload.module_id,
+                        module=module,
                     )
                 },
             )
@@ -126,14 +141,45 @@ class ScenarioService:
             if isinstance(request, JoinPartyRequest)
             else JoinPartyRequest.model_validate(request)
         )
+        session = self._runtime.get_session(session_id)
+        module = load_module_by_id(session.module_id, module_root=self._module_root)
         with self._lock:
             self._runtime.add_player(
                 session_id,
                 payload.player_id,
-                investigator=self._build_default_investigator_card(payload.player_id),
+                investigator=self._build_default_investigator_card(
+                    payload.player_id,
+                    module_id=session.module_id,
+                    module=module,
+                ),
             )
             session = self._runtime.get_session(session_id)
             return self._build_party_summary(session)
+
+    def submit_intent(
+        self,
+        session_id: str,
+        request: SubmitIntentRequest | dict[str, object],
+    ) -> PartySummary:
+        """向会话提交本回合玩家意图。"""
+        payload = (
+            request
+            if isinstance(request, SubmitIntentRequest)
+            else SubmitIntentRequest.model_validate(request)
+        )
+        with self._lock:
+            self._runtime.submit_intent(
+                session_id,
+                payload.player_id,
+                payload.intent,
+            )
+            session = self._runtime.get_session(session_id)
+            return self._build_party_summary(session)
+
+    def resolve_turn(self, session_id: str) -> TurnResolution:
+        """结算当前会话的一个完整回合。"""
+        with self._lock:
+            return self._runtime.resolve_turn(session_id)
 
     def get_party(self, session_id: str) -> PartySummary:
         """查询单个会话摘要。"""
@@ -188,12 +234,20 @@ class ScenarioService:
             players=players,
         )
 
-    def _build_default_investigator_card(self, player_id: str) -> InvestigatorCard:
+    def _build_default_investigator_card(
+        self,
+        player_id: str,
+        *,
+        module_id: str,
+        module: ModuleDefinition | None = None,
+    ) -> InvestigatorCard:
         """构造最小可用的默认调查员卡。"""
-        # FIXME: 默认姓名直接拼接 player_id，长 player_id 可能超过 Name 的 30 字符上限并触发校验失败。
-        # FIXME: 默认卡目前不挂技能；在动作配置了 check 的模组中，这会导致会话虽可创建但关键动作难以推进。
+        module_definition = module or load_module_by_id(
+            module_id,
+            module_root=self._module_root,
+        )
         return build_investigator_card(
-            name=f"调查员-{player_id}",
+            name=self._build_default_investigator_name(player_id),
             age=25,
             occupation="临时调查员",
             player=player_id,
@@ -205,4 +259,72 @@ class ScenarioService:
             intelligence=50,
             power=50,
             education=50,
+            skill_templates=self._skill_templates,
+            skill_inputs=self._build_default_skill_inputs(module_definition),
         )
+
+    def _build_default_investigator_name(self, player_id: str) -> str:
+        """构造长度安全且稳定的默认姓名。"""
+        prefix = "调查员-"
+        max_suffix_length = 30 - len(prefix)
+        if len(player_id) <= max_suffix_length:
+            return f"{prefix}{player_id}"
+
+        digest = sha1(player_id.encode("utf-8")).hexdigest()[:8]
+        head_length = max_suffix_length - len(digest) - 1
+        return f"{prefix}{player_id[:head_length]}-{digest}"
+
+    def _build_default_skill_inputs(
+        self,
+        module: ModuleDefinition,
+    ) -> list[dict[str, object]]:
+        """按模组动作定义挂载最小可执行技能集。"""
+        skill_inputs: dict[str, dict[str, object]] = {}
+        for action in module.actions:
+            check = action.check
+            if check is None:
+                continue
+
+            template_key, separator, branch_key = check.skill_key.partition(":")
+            template = self._skill_templates.get(template_key)
+            if template is None:
+                raise ValueError(
+                    f"模组 {module.module_id} 引用了未知技能模板: {check.skill_key}"
+                )
+
+            skill_input: dict[str, object] = {"template_key": template_key}
+            if separator:
+                self._fill_branch_skill_input(
+                    skill_input=skill_input,
+                    template=template,
+                    branch_key=branch_key,
+                    skill_key=check.skill_key,
+                    module_id=module.module_id,
+                )
+            skill_inputs[check.skill_key] = skill_input
+        return [skill_inputs[key] for key in sorted(skill_inputs)]
+
+    def _fill_branch_skill_input(
+        self,
+        *,
+        skill_input: dict[str, object],
+        template: SkillTemplate,
+        branch_key: str,
+        skill_key: str,
+        module_id: str,
+    ) -> None:
+        if not template.is_branch_skill:
+            raise ValueError(f"模组 {module_id} 的技能 {skill_key} 不是合法分支技能")
+
+        skill_input["branch_key"] = branch_key
+        option = next(
+            (item for item in template.branch_options if item.key == branch_key),
+            None,
+        )
+        if option is not None:
+            skill_input["branch_name"] = option.name
+            return
+        if template.allow_custom_branch:
+            skill_input["branch_name"] = branch_key
+            return
+        raise ValueError(f"模组 {module_id} 的技能 {skill_key} 未定义合法分支")

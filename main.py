@@ -17,6 +17,7 @@ from scenario.api import (  # noqa: E402
     CreatePartyRequest,
     JoinPartyRequest,
     ScenarioService,
+    SubmitIntentRequest,
 )
 
 APP_SERVICE_KEY = web.AppKey("scenario_service", ScenarioService)
@@ -82,6 +83,8 @@ async def handle_root(request: web.Request) -> web.Response:
                 "create_party": "POST /sessions",
                 "get_party": "GET /sessions/{session_id}",
                 "join_party": "POST /sessions/{session_id}/players",
+                "submit_intent": "POST /sessions/{session_id}/intents",
+                "resolve_turn": "POST /sessions/{session_id}/resolve",
             },
         }
     )
@@ -120,6 +123,19 @@ async def handle_join_session(request: web.Request) -> web.Response:
     return web.json_response(party.model_dump())
 
 
+async def handle_submit_intent(request: web.Request) -> web.Response:
+    session_id = request.match_info["session_id"]
+    payload = SubmitIntentRequest.model_validate(await _read_json_body(request))
+    party = _service(request).submit_intent(session_id, payload)
+    return web.json_response(party.model_dump())
+
+
+async def handle_resolve_turn(request: web.Request) -> web.Response:
+    session_id = request.match_info["session_id"]
+    resolution = _service(request).resolve_turn(session_id)
+    return web.json_response(resolution.model_dump())
+
+
 def create_app(service: ScenarioService) -> web.Application:
     app = web.Application(middlewares=[error_middleware])
     app[APP_SERVICE_KEY] = service
@@ -132,6 +148,8 @@ def create_app(service: ScenarioService) -> web.Application:
             web.post("/sessions", handle_create_session),
             web.get("/sessions/{session_id}", handle_get_session),
             web.post("/sessions/{session_id}/players", handle_join_session),
+            web.post("/sessions/{session_id}/intents", handle_submit_intent),
+            web.post("/sessions/{session_id}/resolve", handle_resolve_turn),
         ]
     )
     return app
@@ -157,6 +175,8 @@ def main() -> None:
     print(f"FateGear aiohttp server running on http://{args.host}:{args.port}")
     print("Create party: POST /sessions")
     print("Join party:   POST /sessions/{session_id}/players")
+    print("Submit turn:  POST /sessions/{session_id}/intents")
+    print("Resolve turn: POST /sessions/{session_id}/resolve")
     print("List modules: GET /modules")
     web.run_app(app, host=args.host, port=args.port)
 

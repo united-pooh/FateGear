@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
-from random import randint
 from uuid import uuid4
 
 from cards.domain.card import InvestigatorCard
 
 from ..io.module_loader import MODULE_ROOT, load_module_by_id
-from ..module.models import ModuleAction, ModuleActionCheck, ModuleDefinition
-from ..module.types import ModuleCondition, ModuleEffect
+from ..module.models import ModuleAction, ModuleDefinition
 from ..scene.models import SceneLink
 from ..scene.rules import SceneMovementRules
 from ..session.state import SceneInstanceState, SessionMapState, SessionPlayerState
@@ -27,8 +25,7 @@ from .contracts import (
     TurnResolution,
     MoveIntent,
 )
-
-RollProvider = Callable[[], int]
+from .rule_engine import RollProvider, RuleEngine
 
 
 class SceneRuntime:
@@ -42,6 +39,7 @@ class SceneRuntime:
         *,
         module_root: str | Path | None = None,
         roll_provider: RollProvider | None = None,
+        rule_engine: RuleEngine | None = None,
     ) -> None:
         self._module_root = (
             Path(module_root) if module_root is not None else MODULE_ROOT
@@ -50,7 +48,7 @@ class SceneRuntime:
         self._module_cache: dict[str, ModuleDefinition] = {}
         self._transition_validator = TransitionValidator()
         self._story_state_service = StoryStateService()
-        self._roll_provider = roll_provider or (lambda: randint(1, 100))
+        self._rule_engine = rule_engine or RuleEngine(roll_provider=roll_provider)
 
     def create_session(
         self,
@@ -86,7 +84,7 @@ class SceneRuntime:
                 player_id=player_id,
                 current_scene_id=entry_scene_id,
                 last_scene_id=entry_scene_id,
-                investigator=self._clone_card(player_cards[player_id]),
+                investigator=self._rule_engine.clone_card(player_cards[player_id]),
             )
             for player_id in player_ids
         }
@@ -140,7 +138,7 @@ class SceneRuntime:
             player_id=player_id,
             current_scene_id=module.entry_scene_id,
             last_scene_id=module.entry_scene_id,
-            investigator=self._clone_card(investigator),
+            investigator=self._rule_engine.clone_card(investigator),
         )
         session.player_states[player_id] = player_state
         return player_state
@@ -303,7 +301,7 @@ class SceneRuntime:
                     continue
 
                 action = module.action_map()[intent.action_id]
-                available, reason = self._can_execute_action(
+                available, reason = self._rule_engine.can_execute_action(
                     action=action,
                     session=snapshot,
                     player_id=player_id,
@@ -341,7 +339,7 @@ class SceneRuntime:
                     continue
 
                 check_passed, check_reason, failure_effects = (
-                    self._resolve_action_check(
+                    self._rule_engine.resolve_action_check(
                         action=action,
                         player_state=player_state,
                         flag_sets=flag_sets,
@@ -389,7 +387,7 @@ class SceneRuntime:
                 if action.marks_scene_cleared:
                     scene_clears.add(action.scene_id)
 
-                effects_applied = self._queue_effects(
+                effects_applied = self._rule_engine.queue_effects(
                     action.effects_on_success,
                     flag_sets=flag_sets,
                     flag_clears=flag_clears,
@@ -469,8 +467,16 @@ class SceneRuntime:
             session.scene_instances[scene_id].completed_action_ids.update(action_ids)
 
         # 先应用动作层效果，再处理每回合时钟推进。
-        self._apply_flag_changes(session, flag_sets=flag_sets, flag_clears=flag_clears)
-        self._apply_clock_deltas(session, module=module, deltas=clock_deltas)
+        self._rule_engine.apply_flag_changes(
+            session,
+            flag_sets=flag_sets,
+            flag_clears=flag_clears,
+        )
+        self._rule_engine.apply_clock_deltas(
+            session,
+            module=module,
+            deltas=clock_deltas,
+        )
 
         session.current_turn += 1
         per_turn_deltas = {
@@ -478,14 +484,18 @@ class SceneRuntime:
             for clock in module.clocks
             if clock.step_per_turn > 0
         }
-        self._apply_clock_deltas(session, module=module, deltas=per_turn_deltas)
+        self._rule_engine.apply_clock_deltas(
+            session,
+            module=module,
+            deltas=per_turn_deltas,
+        )
         combined_clock_deltas = dict(clock_deltas)
         for clock_id, delta in per_turn_deltas.items():
             combined_clock_deltas[clock_id] = (
                 combined_clock_deltas.get(clock_id, 0) + delta
             )
 
-        triggered_clock_events = self._trigger_clock_events(session, module)
+        triggered_clock_events = self._rule_engine.trigger_clock_events(session, module)
         story_signals = self._build_story_signals(
             events=event_log,
             triggered_clock_events=triggered_clock_events,
@@ -507,19 +517,19 @@ class SceneRuntime:
             story_flag_sets: set[str] = set()
             story_flag_clears: set[str] = set()
             story_clock_deltas: dict[str, int] = defaultdict(int)
-            story_effects_applied = self._queue_effects(
+            story_effects_applied = self._rule_engine.queue_effects(
                 transition.effects,
                 flag_sets=story_flag_sets,
                 flag_clears=story_flag_clears,
                 clock_deltas=story_clock_deltas,
             )
-            self._apply_flag_changes(
+            self._rule_engine.apply_flag_changes(
                 session,
                 flag_sets=story_flag_sets,
                 flag_clears=story_flag_clears,
             )
             story_transition_flag_clears = set(story_flag_clears)
-            self._apply_clock_deltas(
+            self._rule_engine.apply_clock_deltas(
                 session,
                 module=module,
                 deltas=story_clock_deltas,
@@ -530,7 +540,7 @@ class SceneRuntime:
                 )
             if story_clock_deltas:
                 triggered_clock_events.extend(
-                    self._trigger_clock_events(session, module)
+                    self._rule_engine.trigger_clock_events(session, module)
                 )
             session.story_state = self._story_state_service.apply_transition(
                 story_state=snapshot.story_state,
@@ -675,7 +685,7 @@ class SceneRuntime:
         for action in module.actions:
             if action.scene_id != player_state.current_scene_id:
                 continue
-            available, _ = self._can_execute_action(
+            available, _ = self._rule_engine.can_execute_action(
                 action=action,
                 session=session_state,
                 player_id=player_id,
@@ -733,223 +743,6 @@ class SceneRuntime:
             scene_id = session.player_states[player_id].current_scene_id
             grouped[scene_id].append((player_id, intent))
         return grouped
-
-    def _can_execute_action(
-        self,
-        *,
-        action: ModuleAction,
-        session: SessionMapState,
-        player_id: str,
-    ) -> tuple[bool, str]:
-        """判断动作在当前会话快照中是否可执行，并返回失败原因。"""
-        player_state = session.player_states[player_id]
-        if action.scene_id != player_state.current_scene_id:
-            return False, "动作不在玩家当前场景中"
-        if (
-            action.required_stages
-            and session.story_state.current_stage_id not in action.required_stages
-        ):
-            return False, "当前剧情阶段不允许执行该动作"
-        if action.once and action.id in session.completed_actions:
-            return False, "该动作在本会话中已经执行过"
-        if not self._conditions_met(action.conditions, session):
-            return False, "动作前置条件未满足"
-        return True, ""
-
-    def _resolve_action_check(
-        self,
-        *,
-        action: ModuleAction,
-        player_state: SessionPlayerState,
-        flag_sets: set[str],
-        flag_clears: set[str],
-        clock_deltas: dict[str, int],
-    ) -> tuple[bool, str, list[str]]:
-        """执行动作检定并返回成功标记、失败原因和失败效果摘要。"""
-        check = action.check
-        if check is None:
-            return True, "", []
-
-        skill = player_state.investigator.skills.get(check.skill_key)
-        failure_effects = self._queue_effects(
-            action.effects_on_failure,
-            flag_sets=flag_sets,
-            flag_clears=flag_clears,
-            clock_deltas=clock_deltas,
-        )
-        if skill is None:
-            return (
-                False,
-                f"缺少技能 {check.skill_key}",
-                failure_effects,
-            )
-
-        roll = self._next_roll()
-        threshold = self._difficulty_threshold(skill.value, check)
-        if roll <= threshold:
-            return True, "", []
-        return False, check.failure_reason, failure_effects
-
-    def _difficulty_threshold(
-        self,
-        skill_value: int,
-        check: ModuleActionCheck,
-    ) -> int:
-        """把技能值映射为不同难度下的目标阈值。"""
-        if check.difficulty == "regular":
-            return skill_value
-        if check.difficulty == "hard":
-            return skill_value // 2
-        return skill_value // 5
-
-    def _next_roll(self) -> int:
-        """获取一次 1..100 的检定结果。"""
-        rolled = self._roll_provider()
-        if rolled < 1 or rolled > 100:
-            raise ValueError(f"检定结果必须在 1..100 之间，收到: {rolled}")
-        return rolled
-
-    def _clone_card(
-        self,
-        investigator: InvestigatorCard,
-    ) -> InvestigatorCard:
-        """复制人物卡，隔离会话内状态与外部引用。"""
-        return investigator.model_copy(deep=True)
-
-    def _conditions_met(
-        self,
-        conditions: list[ModuleCondition],
-        session: SessionMapState,
-    ) -> bool:
-        """检查动作/结局条件是否满足。"""
-        for condition in conditions:
-            if (
-                condition.type == "flag_set"
-                and condition.flag not in session.global_flags
-            ):
-                return False
-            if (
-                condition.type == "flag_unset"
-                and condition.flag in session.global_flags
-            ):
-                return False
-            if (
-                condition.type == "action_completed"
-                and condition.action_id not in session.completed_actions
-            ):
-                return False
-            if (
-                condition.type == "clock_at_least"
-                and session.clock_values.get(condition.clock_id, 0) < condition.value
-            ):
-                return False
-        return True
-
-    def _queue_effects(
-        self,
-        effects: list[ModuleEffect],
-        *,
-        flag_sets: set[str],
-        flag_clears: set[str],
-        clock_deltas: dict[str, int],
-    ) -> list[str]:
-        """把效果累加到暂存容器，不直接写回会话。"""
-        effect_summaries: list[str] = []
-        for effect in effects:
-            if effect.type == "set_flag":
-                flag_sets.add(effect.flag)
-                effect_summaries.append(f"设置标记:{effect.flag}")
-            elif effect.type == "clear_flag":
-                flag_clears.add(effect.flag)
-                effect_summaries.append(f"移除标记:{effect.flag}")
-            elif effect.type == "advance_clock":
-                clock_deltas[effect.clock_id] += effect.value
-                effect_summaries.append(f"推进时钟:{effect.clock_id}+={effect.value}")
-        return effect_summaries
-
-    def _apply_flag_changes(
-        self,
-        session: SessionMapState,
-        *,
-        flag_sets: set[str],
-        flag_clears: set[str],
-    ) -> None:
-        """把暂存的标记增删写回会话。"""
-        for flag in flag_clears:
-            session.global_flags.discard(flag)
-        for flag in flag_sets:
-            session.global_flags.add(flag)
-
-    def _apply_clock_deltas(
-        self,
-        session: SessionMapState,
-        *,
-        module: ModuleDefinition,
-        deltas: dict[str, int],
-    ) -> None:
-        """把时钟增量写回会话，并受模组时钟上限约束。"""
-        for clock in module.clocks:
-            delta = deltas.get(clock.id, 0)
-            if delta == 0:
-                continue
-            current_value = session.clock_values.get(clock.id, clock.start)
-            session.clock_values[clock.id] = min(clock.max_value, current_value + delta)
-
-    def _trigger_clock_events(
-        self,
-        session: SessionMapState,
-        module: ModuleDefinition,
-    ) -> list[str]:
-        """触发达到阈值且尚未触发过的时钟事件。"""
-        triggered: list[str] = []
-        changed = True
-        while changed:
-            changed = False
-            for clock in module.clocks:
-                current_value = session.clock_values.get(clock.id, clock.start)
-                for threshold in clock.threshold_events:
-                    trigger_id = f"{clock.id}:{threshold.value}"
-                    if trigger_id in session.triggered_clock_events:
-                        continue
-                    if current_value < threshold.value:
-                        continue
-                    self._apply_effects_directly(
-                        session=session,
-                        module=module,
-                        effects=threshold.effects,
-                    )
-                    session.triggered_clock_events.add(trigger_id)
-                    triggered.append(trigger_id)
-                    changed = True
-        return triggered
-
-    def _apply_effects_directly(
-        self,
-        *,
-        session: SessionMapState,
-        module: ModuleDefinition,
-        effects: list[ModuleEffect],
-    ) -> None:
-        """直接应用一组效果（用于时钟阈值事件连锁）。"""
-        flag_sets: set[str] = set()
-        flag_clears: set[str] = set()
-        clock_deltas: dict[str, int] = defaultdict(int)
-        self._queue_effects(
-            effects,
-            flag_sets=flag_sets,
-            flag_clears=flag_clears,
-            clock_deltas=clock_deltas,
-        )
-        self._apply_flag_changes(
-            session,
-            flag_sets=flag_sets,
-            flag_clears=flag_clears,
-        )
-        self._apply_clock_deltas(
-            session,
-            module=module,
-            deltas=clock_deltas,
-        )
 
     def _build_story_signals(
         self,
