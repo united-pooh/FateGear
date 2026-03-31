@@ -14,6 +14,8 @@ def test_planner_agent_reads_defaults_from_environment(monkeypatch) -> None:
     monkeypatch.delenv("AGENT_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("PLANNER_AGENT_API_KEY", raising=False)
+    planner_module = sys.modules[KeeperPlanAgent.__module__]
+    monkeypatch.setattr(planner_module, "build_openai_client", lambda provider: None)
 
     agent = KeeperPlanAgent()
 
@@ -34,6 +36,8 @@ def test_narrator_agent_reads_defaults_from_environment(monkeypatch) -> None:
     monkeypatch.delenv("AGENT_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("NARRATOR_AGENT_API_KEY", raising=False)
+    narrator_module = sys.modules[KeeperRenderAgent.__module__]
+    monkeypatch.setattr(narrator_module, "build_openai_client", lambda provider: None)
 
     agent = KeeperRenderAgent()
 

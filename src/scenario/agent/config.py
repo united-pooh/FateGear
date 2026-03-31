@@ -338,3 +338,19 @@ def build_openai_client(provider: OpenAIProviderConfig) -> Any:  # noqa: ANN401
     if provider.project:
         kwargs["project"] = provider.project
     return AsyncOpenAI(**kwargs)
+
+
+def detect_provider_kind(*, model_id: str = "", client: Any = None) -> str:  # noqa: ANN401
+    """根据模型名和客户端 base_url 推断 Provider 类型。
+
+    当前主要用于对 DeepSeek 做兼容分支：
+    - 若 base_url 指向 `deepseek.com`，视为 `deepseek`
+    - 若模型名以 `deepseek-` 开头，也视为 `deepseek`
+    - 其余情况默认视为 `openai_compatible`
+    """
+
+    base_url = str(getattr(client, "base_url", "") or "").lower()
+    model = model_id.lower()
+    if "deepseek.com" in base_url or model.startswith("deepseek-"):
+        return "deepseek"
+    return "openai_compatible"

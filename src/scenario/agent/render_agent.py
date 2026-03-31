@@ -20,13 +20,30 @@ from typing import Any
 from pydantic import ValidationError
 
 from .base import AgentOutputError, BaseAgent
-from .config import AgentSettings, build_openai_client, load_agent_settings
+from .config import (
+    AgentSettings,
+    build_openai_client,
+    detect_provider_kind,
+    load_agent_settings,
+)
 from .models import CommitResult, KeeperNarration
 
 logger = logging.getLogger(__name__)
 
 # KeeperNarration JSON schema（供 structured outputs 使用）
 _KEEPER_NARRATION_SCHEMA = KeeperNarration.model_json_schema()
+_DEEPSEEK_NARRATION_JSON_EXAMPLE = """\
+请只输出一个合法的 json object，不要输出 markdown，不要输出额外解释。
+example json:
+{
+  "public_narration": "面向所有玩家的公共叙事文本",
+  "npc_dialogues": [],
+  "private_clues": [],
+  "keeper_hint": "给守密人的内部提示",
+  "is_fallback": false
+}
+如果没有 NPC 台词或私有线索，请返回空数组。
+"""
 
 _SYSTEM_PROMPT = """\
 你是 Call of Cthulhu 桌游的守密人，负责将本回合的裁定结果转化为沉浸式的叙事文本。
@@ -143,6 +160,10 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
             if timeout_seconds is None
             else timeout_seconds
         )
+        self._provider_kind = detect_provider_kind(
+            model_id=self._model_id,
+            client=self._client,
+        )
 
     # ------------------------------------------------------------------
     # BaseAgent 实现
@@ -157,21 +178,35 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
             return ""
 
         user_msg = _build_render_user_message(prompt)
-        request_kwargs: dict[str, object] = {
-            "model": self._model_id,
-            "temperature": self._temperature,
-            "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
-            "response_format": {
+        system_prompt = _SYSTEM_PROMPT
+        response_format: dict[str, object]
+        if self._provider_kind == "deepseek":
+            system_prompt = "\n\n".join([_SYSTEM_PROMPT, _DEEPSEEK_NARRATION_JSON_EXAMPLE])
+            user_msg = "\n\n".join(
+                [
+                    user_msg,
+                    "再次提醒：请返回合法的 json object，并确保字段名与 example json 保持一致。",
+                ]
+            )
+            response_format = {"type": "json_object"}
+        else:
+            response_format = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "KeeperNarration",
                     "strict": True,
                     "schema": _KEEPER_NARRATION_SCHEMA,
                 },
-            },
+            }
+        request_kwargs: dict[str, object] = {
+            "model": self._model_id,
+            "temperature": self._temperature,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            "response_format": response_format,
+            "presence_penalty": 1.0,  # 鼓励模型输出与上下文不同的内容
         }
         if self._top_p is not None:
             request_kwargs["top_p"] = self._top_p
@@ -180,6 +215,8 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
                 "KeeperRenderAgent 配置了 top_k=%s，但当前 OpenAI Chat Completions 调用不会使用该参数。",
                 self._top_k,
             )
+        if self._provider_kind == "deepseek":
+            request_kwargs["max_tokens"] = 1600
 
         response = await self._client.chat.completions.create(**request_kwargs)
 

@@ -80,6 +80,7 @@ class RuntimeEvent(BaseModel):
     to_scene_id: str = Field(default="")
     to_scene_name: str = Field(default="")
     success: bool | None = Field(default=None)
+    fallback_used: bool | None = Field(default=None)
     reason: str = Field(default="")
     effects_applied: list[str] = Field(default_factory=list)
     added_flags: list[str] = Field(default_factory=list)

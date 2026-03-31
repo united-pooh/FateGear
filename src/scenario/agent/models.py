@@ -88,6 +88,13 @@ class SpatialLayer(BaseModel):
     clock_values: dict[str, int] = Field(
         default_factory=dict, description="当前会话的时钟值快照。"
     )
+    player_skill_keys: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "在场玩家持有的技能 key 列表，key 为 player_id，value 为该玩家的 skill_key 列表。"
+            "Agent 在 proposed_checks 中使用的 skill_key 必须来自此列表。"
+        ),
+    )
 
 
 class HistoryLayer(BaseModel):

@@ -19,7 +19,12 @@ from typing import Any
 from pydantic import ValidationError
 
 from .base import AgentOutputError, BaseAgent
-from .config import AgentSettings, build_openai_client, load_agent_settings
+from .config import (
+    AgentSettings,
+    build_openai_client,
+    detect_provider_kind,
+    load_agent_settings,
+)
 from .models import AgentPlanPrompt, KeeperAgentPlan
 
 logger = logging.getLogger(__name__)
@@ -76,6 +81,10 @@ def _build_user_message(prompt: AgentPlanPrompt) -> str:
         lines.append(f"可用动作：{', '.join(sp.available_action_ids)}")
     if sp.global_flags:
         lines.append(f"全局 Flag：{', '.join(sp.global_flags)}")
+    if sp.player_skill_keys:
+        lines.append("【玩家技能（proposed_checks 中的 skill_key 必须来自此列表）】")
+        for pid, skill_keys in sp.player_skill_keys.items():
+            lines.append(f"  {pid}: {', '.join(skill_keys)}")
     if sp.clock_values:
         clocks = "、".join(f"{k}={v}" for k, v in sp.clock_values.items())
         lines.append(f"时钟：{clocks}")
@@ -112,6 +121,70 @@ def _build_user_message(prompt: AgentPlanPrompt) -> str:
 
 # JSON schema 描述（供 LLM structured output 使用）
 _KEEPER_AGENT_PLAN_SCHEMA = KeeperAgentPlan.model_json_schema()
+_DEEPSEEK_PLAN_JSON_EXAMPLE = """\
+请只输出一个合法的 json object，不要输出 markdown，不要输出额外解释。
+example json:
+{
+  "intent_summary": "守密人对本批次意图的理解",
+  "proposed_checks": [
+    {
+      "player_id": "p1",
+      "action_id": "find_key",
+      "skill_key": "spot_hidden",
+      "proposed_difficulty": "normal",
+      "rationale": "为什么建议做这次检定"
+    }
+  ],
+  "proposed_effects": [],
+  "proposed_transition": null,
+  "keeper_notes": "给守密人的内部备注"
+}
+如果没有提议检定或提议效果，请返回空数组；如果没有剧情迁移，请返回 null。
+如果有剧情迁移，`proposed_transition` 必须是 object：
+{
+  "transition_id": "unlock_access",
+  "rationale": "为什么建议推进该剧情迁移"
+}
+不要把 `proposed_transition` 直接写成字符串，比如不要只写 `"unlock_access"`。
+"""
+
+
+def _normalize_plan_payload(data: object) -> object:
+    """兼容 DeepSeek 常见的轻微 schema 偏差。"""
+    if not isinstance(data, dict):
+        return data
+
+    normalized = dict(data)
+    proposed_transition = normalized.get("proposed_transition")
+    if isinstance(proposed_transition, str):
+        transition_id = proposed_transition.strip()
+        if transition_id:
+            logger.info(
+                "KeeperPlanAgent: 将字符串 proposed_transition=%r 归一化为对象。",
+                transition_id,
+            )
+            normalized["proposed_transition"] = {
+                "transition_id": transition_id,
+                "rationale": "",
+            }
+        else:
+            normalized["proposed_transition"] = None
+    elif isinstance(proposed_transition, dict):
+        if "transition_id" not in proposed_transition:
+            for alias in ("id", "transition", "transitionId"):
+                candidate = proposed_transition.get(alias)
+                if isinstance(candidate, str) and candidate.strip():
+                    logger.info(
+                        "KeeperPlanAgent: 将 proposed_transition.%s=%r 归一化为 transition_id。",
+                        alias,
+                        candidate,
+                    )
+                    rewritten = dict(proposed_transition)
+                    rewritten["transition_id"] = candidate.strip()
+                    rewritten.setdefault("rationale", "")
+                    normalized["proposed_transition"] = rewritten
+                    break
+    return normalized
 
 
 class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
@@ -168,6 +241,10 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
             if timeout_seconds is None
             else timeout_seconds
         )
+        self._provider_kind = detect_provider_kind(
+            model_id=self._model_id,
+            client=self._client,
+        )
 
     # ------------------------------------------------------------------
     # BaseAgent 实现
@@ -183,6 +260,31 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
 
         system_msg = _build_system_message(prompt)
         user_msg = _build_user_message(prompt)
+        response_format: dict[str, object]
+        if self._provider_kind == "deepseek":
+            system_msg = "\n\n".join(
+                [
+                    system_msg,
+                    _DEEPSEEK_PLAN_JSON_EXAMPLE,
+                ]
+            )
+            user_msg = "\n\n".join(
+                [
+                    user_msg,
+                    "再次提醒：请返回合法的 json object，并确保字段名与 example json 保持一致。",
+                ]
+            )
+            response_format = {"type": "json_object"}
+        else:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "KeeperAgentPlan",
+                    "strict": True,
+                    "schema": _KEEPER_AGENT_PLAN_SCHEMA,
+                },
+            }
+
         request_kwargs: dict[str, object] = {
             "model": self._model_id,
             "temperature": self._temperature,
@@ -190,14 +292,8 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
             ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "KeeperAgentPlan",
-                    "strict": True,
-                    "schema": _KEEPER_AGENT_PLAN_SCHEMA,
-                },
-            },
+            "response_format": response_format,
+            "presence_penalty": 1.0,  # 鼓励模型输出与上下文不同的内容
         }
         if self._top_p is not None:
             request_kwargs["top_p"] = self._top_p
@@ -206,6 +302,8 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
                 "KeeperPlanAgent 配置了 top_k=%s，但当前 OpenAI Chat Completions 调用不会使用该参数。",
                 self._top_k,
             )
+        if self._provider_kind == "deepseek":
+            request_kwargs["max_tokens"] = 1200
 
         # OpenAI structured outputs（response_format）
         response = await self._client.chat.completions.create(**request_kwargs)
@@ -227,7 +325,7 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
         if not raw:
             raise AgentOutputError("LLM 返回空内容。")
         try:
-            data = json.loads(raw)
+            data = _normalize_plan_payload(json.loads(raw))
             return KeeperAgentPlan.model_validate(data)
         except (json.JSONDecodeError, ValidationError) as exc:
             raise AgentOutputError(f"KeeperAgentPlan 解析失败：{exc}") from exc
@@ -268,4 +366,14 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
             if chk.player_id not in present:
                 raise AgentOutputError(
                     f"Agent 提议对不在场的玩家 '{chk.player_id}' 执行检定。"
+                )
+
+        # 校验 3：proposed_checks 中的 skill_key 必须是玩家实际持有的技能
+        player_skill_keys = prompt.spatial.player_skill_keys
+        for chk in output.proposed_checks:
+            valid_keys = player_skill_keys.get(chk.player_id)
+            if valid_keys is not None and chk.skill_key not in valid_keys:
+                raise AgentOutputError(
+                    f"Agent 为玩家 '{chk.player_id}' 提议了不存在的技能 "
+                    f"'{chk.skill_key}'，该玩家持有的技能为：{valid_keys}"
                 )

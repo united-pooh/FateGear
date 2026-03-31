@@ -193,6 +193,12 @@ class PromptBuilder:
             if ps.current_scene_id == scene_id
         ]
 
+        # 在场玩家的技能 key 列表，供 Agent 选择检定技能时参考
+        player_skill_keys: dict[str, list[str]] = {
+            pid: sorted(session.player_states[pid].investigator.skills.keys())
+            for pid in present_player_ids
+        }
+
         return SpatialLayer(
             scene_id=scene_id,
             scene_name=scene.name if scene else scene_id,
@@ -202,6 +208,7 @@ class PromptBuilder:
             available_action_ids=available_action_ids,
             global_flags=sorted(session.global_flags),
             clock_values=dict(session.clock_values),
+            player_skill_keys=player_skill_keys,
         )
 
     def _build_history_layer(

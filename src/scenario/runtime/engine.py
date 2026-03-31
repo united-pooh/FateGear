@@ -306,6 +306,7 @@ class SceneRuntime:
                             turn_no=snapshot.current_turn,
                             scene_id=scene.id,
                             scene_name=scene.name,
+                            fallback_used=plan_record.meta.fallback_used,
                             message=(
                                 f"Plan Agent 调用完成（scene={scene.id}，"
                                 f"fallback={plan_record.meta.fallback_used}）："
@@ -599,6 +600,7 @@ class SceneRuntime:
                             turn_no=snapshot.current_turn,
                             scene_id=scene.id,
                             scene_name=scene.name,
+                            fallback_used=render_record.meta.fallback_used,
                             message=(
                                 f"Render Agent 调用完成（scene={scene.id}，"
                                 f"fallback={render_record.meta.fallback_used}）"
