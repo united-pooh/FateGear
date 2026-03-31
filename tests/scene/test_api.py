@@ -19,9 +19,7 @@ def test_scenario_service_lists_sample_modules() -> None:
 def test_scenario_service_can_create_party_and_join_multiple_players() -> None:
     service = ScenarioService()
 
-    created = service.create_party(
-        {"module_id": "generic_mvp", "creator_id": "keeper"}
-    )
+    created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
     joined = service.join_party(created.session_id, {"player_id": "p2"})
     latest = service.get_party(created.session_id)
 
@@ -36,9 +34,7 @@ def test_scenario_service_can_create_party_and_join_multiple_players() -> None:
 
 def test_scenario_service_rejects_duplicate_player_join() -> None:
     service = ScenarioService()
-    created = service.create_party(
-        {"module_id": "generic_mvp", "creator_id": "keeper"}
-    )
+    created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
 
     with pytest.raises(ValueError, match="已经在会话"):
         service.join_party(created.session_id, {"player_id": "keeper"})

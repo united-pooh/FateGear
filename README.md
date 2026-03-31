@@ -459,112 +459,195 @@ async def resolve_turn(session_id: str, turn_no: int) -> list["KeeperNarration"]
 
 ## 7. 外部产品接口
 
-外部接口服务于玩家界面和 Keeper 工具界面。协议层继续使用 HTTP 与 JSON，但字段命名统一使用 `snake_case`。
+外部接口服务于玩家界面和 Keeper 工具界面。协议层使用 HTTP 与 JSON，字段命名统一使用 `snake_case`。路径均无 `/api` 前缀。
 
-### 创建会话
+### 辅助接口
 
 ```http
-POST /api/sessions
+GET /
+GET /health
+GET /modules
 ```
 
-请求：
+`GET /` 返回所有可用端点列表。`GET /health` 返回 `{"status": "ok"}`。`GET /modules` 返回当前模组目录下可用模组列表：
 
 ```json
 {
-  "module_id": "train_of_darkness",
-  "players": [
-    { "player_id": "p1", "name": "玩家A" },
-    { "player_id": "p2", "name": "玩家B" }
+  "modules": [
+    {
+      "module_id": "generic_mvp",
+      "title": "通用最小可行模组",
+      "entry_scene_id": "foyer",
+      "entry_stage_id": "setup"
+    }
   ]
 }
 ```
 
-返回：
+### 创建会话
+
+```http
+POST /sessions
+```
+
+请求（创建者即第一位玩家，其余玩家通过 join 接口加入）：
 
 ```json
 {
-  "session_id": "uuid",
-  "current_stage": "prologue",
-  "current_turn": 1
+  "module_id": "generic_mvp",
+  "creator_id": "keeper"
 }
 ```
 
-### 提交玩家动作
+返回（`PartySummary`）：
+
+```json
+{
+  "session_id": "a1b2c3d4e5f6",
+  "module_id": "generic_mvp",
+  "owner_id": "keeper",
+  "current_turn": 1,
+  "current_stage_id": "setup",
+  "resolved_ending": null,
+  "status": "waiting",
+  "pending_players": [],
+  "players": [
+    {
+      "player_id": "keeper",
+      "current_scene_id": "foyer",
+      "last_scene_id": "foyer"
+    }
+  ]
+}
+```
+
+`status` 取值：`waiting`（第 1 回合且无待结算意图）、`active`（进行中）、`ended`（已进入结局）。
+
+### 加入会话
 
 ```http
-POST /api/sessions/{session_id}/intents
+POST /sessions/{session_id}/players
 ```
 
 请求：
 
 ```json
 {
-  "turn_no": 1,
-  "player_id": "p1",
-  "raw_input": "我检查乘务员的伤口",
-  "client_scene_id": "car_4"
+  "player_id": "p2"
 }
 ```
 
-这里的 `client_scene_id` 只作为客户端参考，服务端仍以 `session_player_state.current_scene_id` 为准。
+返回与创建会话相同结构的 `PartySummary`，`players` 数组包含所有已加入玩家。
 
-### 结算当前轮
+加入限制：只允许在第 1 回合且无待结算意图时加入；同一 `player_id` 不能重复加入；会话已进入结局后不允许加入。
+
+### 列出所有会话
 
 ```http
-POST /api/sessions/{session_id}/turns/{turn_no}/resolve
+GET /sessions
 ```
 
 返回：
 
 ```json
 {
-  "turn_no": 1,
-  "resolved": true,
-  "batches": [
-    {
-      "scene_id": "car_4",
-      "public_narration": "...",
-      "npc_dialogues": []
-    }
-  ],
-  "private_messages": [
-    {
-      "player_id": "p1",
-      "content": "你注意到伤口边缘不像刀伤。"
-    }
-  ],
-  "state_changed": true,
-  "new_stage": "investigation"
+  "sessions": [ /* PartySummary 列表 */ ]
 }
 ```
 
-### 获取玩家视角当前画面
+### 获取单个会话状态
 
 ```http
-GET /api/sessions/{session_id}/view?player_id=p1
+GET /sessions/{session_id}
 ```
 
-返回的是该玩家当前可见的信息，而不是全局状态：
+返回该会话的 `PartySummary`。
+
+### 提交玩家意图（尚未实现 HTTP 路由）
+
+> ⚠️ 内部 `SceneRuntime.submit_intent()` 已实现，但当前尚未暴露为 HTTP 端点。
+
+意图有两种类型，由 `type` 字段区分：
+
+移动意图：
 
 ```json
 {
-  "turn_no": 2,
-  "scene": {
-    "scene_id": "car_4",
-    "name": "4号车厢",
-    "description": "灯光忽明忽暗……"
-  },
-  "visible_npcs": [],
-  "visible_players": [],
-  "recent_narration": [],
-  "private_clues": []
+  "type": "move",
+  "target_scene_id": "corridor"
 }
 ```
 
-### 获取 Keeper 全局面板
+动作意图：
+
+```json
+{
+  "type": "action",
+  "action_id": "examine_wound"
+}
+```
+
+服务端以 `session_player_state.current_scene_id` 为准，不接受客户端传入的场景覆盖。每位玩家在同一回合只能提交一次意图；会话已进入结局后不能继续提交。
+
+### 结算当前轮（尚未实现 HTTP 路由）
+
+> ⚠️ 内部 `SceneRuntime.resolve_turn()` 已实现，但当前尚未暴露为 HTTP 端点。
+
+结算成功后返回 `TurnResolution`：
+
+```json
+{
+  "session_id": "a1b2c3d4e5f6",
+  "turn_no": 1,
+  "next_turn": 2,
+  "scene_batches": [
+    {
+      "scene_id": "foyer",
+      "player_ids": ["keeper", "p2"],
+      "outcomes": [
+        {
+          "player_id": "keeper",
+          "scene_id": "foyer",
+          "intent_type": "action",
+          "success": true,
+          "reason": "",
+          "action_id": "examine_wound",
+          "effects_applied": ["设置标记:clue_found"]
+        }
+      ]
+    }
+  ],
+  "event_log": [ /* RuntimeEvent 列表，记录本轮所有事件 */ ],
+  "applied_flags": ["clue_found"],
+  "applied_clock_deltas": { "danger": 1 },
+  "triggered_clock_events": [],
+  "clock_values": { "danger": 1 },
+  "story_signals": [],
+  "new_stage": null,
+  "applied_story_transition_id": null,
+  "resolved_ending": null,
+  "ending_result": ""
+}
+```
+
+`scene_batches` 按场景分组，每个 batch 包含该场景内所有玩家本轮的意图结果。`event_log` 记录本轮完整处理链路，可用于审计与回放。
+
+### 获取玩家视角（尚未实现）
+
+> ⚠️ 计划接口，内部服务层尚未实现。
 
 ```http
-GET /api/sessions/{session_id}/keeper-view
+GET /sessions/{session_id}/view?player_id=p1
+```
+
+返回的是该玩家当前可见的信息，不暴露全局隐藏状态。
+
+### 获取 Keeper 全局面板（尚未实现）
+
+> ⚠️ 计划接口，内部服务层尚未实现。
+
+```http
+GET /sessions/{session_id}/keeper-view
 ```
 
 这个视图需要能看到：
@@ -580,9 +663,11 @@ GET /api/sessions/{session_id}/keeper-view
 
 为避免前后端和编排层在命名上漂移，外部接口至少稳定下面这些字段：
 
-- 会话最小字段：`session_id`、`module_id`、`current_stage`、`current_turn`
-- 玩家动作最小字段：`turn_no`、`player_id`、`raw_input`、`client_scene_id`
-- 回合结算最小字段：`turn_no`、`resolved`、`batches`、`private_messages`、`state_changed`、`new_stage`
+- 会话最小字段：`session_id`、`module_id`、`owner_id`、`current_stage_id`、`current_turn`、`status`
+- 加入请求最小字段：`player_id`
+- 玩家状态最小字段：`player_id`、`current_scene_id`、`last_scene_id`
+- 意图最小字段：`type`（`"move"` 或 `"action"`），移动附加 `target_scene_id`，动作附加 `action_id`
+- 回合结算最小字段：`session_id`、`turn_no`、`next_turn`、`scene_batches`、`new_stage`、`resolved_ending`
 - 玩家视角接口只返回该玩家当前可见信息，不暴露全局隐藏状态
 - Keeper 视角接口返回全局剧情、玩家位置、NPC 状态、计时器、可触发迁移和 Agent 备注
 

@@ -39,6 +39,8 @@ async def error_middleware(
         )
     except KeyError as exc:
         return web.json_response({"error": str(exc)}, status=404)
+    except FileNotFoundError as exc:
+        return web.json_response({"error": str(exc)}, status=404)
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
     except json.JSONDecodeError as exc:

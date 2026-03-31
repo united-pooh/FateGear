@@ -23,7 +23,9 @@ def _load_skill_templates_from_path(path: str | Path) -> tuple[SkillTemplate, ..
     return templates
 
 
-def load_base_skill_templates(path: str | Path | None = None) -> tuple[SkillTemplate, ...]:
+def load_base_skill_templates(
+    path: str | Path | None = None,
+) -> tuple[SkillTemplate, ...]:
     target = path or BASE_SKILLS_PATH
     return _load_skill_templates_from_path(target)
 
@@ -53,10 +55,13 @@ def load_skill_template_mapping(
     base_path: str | Path | None = None,
     branch_path: str | Path | None = None,
 ) -> dict[str, SkillTemplate]:
-    return {template.key: template for template in load_skill_templates(
-        base_path=base_path,
-        branch_path=branch_path,
-    )}
+    return {
+        template.key: template
+        for template in load_skill_templates(
+            base_path=base_path,
+            branch_path=branch_path,
+        )
+    }
 
 
 __all__ = [

@@ -11,6 +11,7 @@ from cards.domain.card import InvestigatorCard
 
 from ..story.models import StoryState
 
+
 class SceneInstanceState(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 

@@ -32,7 +32,10 @@ RollProvider = Callable[[], int]
 
 
 class SceneRuntime:
-    """YAML 模组的最小运行时协调器。"""
+    """YAML 模组的最小运行时协调器。
+
+    负责会话生命周期、回合结算、规则判定与剧情状态推进。
+    """
 
     def __init__(
         self,
@@ -56,6 +59,7 @@ class SceneRuntime:
         *,
         player_cards: Mapping[str, InvestigatorCard],
     ) -> SessionMapState:
+        """创建会话快照并初始化玩家、场景实例与时钟。"""
         if not player_ids:
             raise ValueError("创建会话时至少需要一个 player_id")
 
@@ -69,7 +73,9 @@ class SceneRuntime:
             player_id for player_id in player_ids if player_cards[player_id] is None
         )
         if empty_card_player_ids:
-            raise ValueError(f"player_cards 中玩家未绑定人物卡: {empty_card_player_ids}")
+            raise ValueError(
+                f"player_cards 中玩家未绑定人物卡: {empty_card_player_ids}"
+            )
 
         module = self._load_module(module_id)
         session_id = uuid4().hex[:12]
@@ -111,6 +117,7 @@ class SceneRuntime:
         *,
         investigator: InvestigatorCard,
     ) -> SessionPlayerState:
+        """向尚未开始且未结束的会话加入玩家。"""
         if investigator is None:
             raise ValueError("add_player 时必须提供 investigator 人物卡")
 
@@ -144,6 +151,7 @@ class SceneRuntime:
         player_id: str,
         intent: dict[str, object] | SceneIntent,
     ) -> None:
+        """提交并缓存玩家本回合意图。"""
         session = self._get_session(session_id)
         module = self._load_module(session.module_id)
 
@@ -172,6 +180,11 @@ class SceneRuntime:
         session.pending_intents[player_id] = validated.model_dump()
 
     def resolve_turn(self, session_id: str) -> TurnResolution:
+        """结算一个完整回合。
+
+        流程：读取快照 -> 按场景分批处理意图 -> 提交移动和效果 ->
+        推进时钟/触发事件 -> 计算剧情迁移 -> 产出结构化回合结果与事件日志。
+        """
         session = self._get_session(session_id)
         if (
             session.resolved_ending is not None
@@ -179,6 +192,7 @@ class SceneRuntime:
         ):
             raise ValueError(f"会话 {session_id} 已进入结局，不能继续结算")
 
+        # 使用深拷贝快照做“判定输入”，避免中途写入影响同回合后续判定。
         snapshot = session.model_copy(deep=True)
         module = self._load_module(session.module_id)
         scene_by_id = module.scene_map()
@@ -211,6 +225,7 @@ class SceneRuntime:
         pending_moves: dict[str, str] = {}
         scene_batches: list[SceneBatchResolution] = []
 
+        # 先按玩家当前位置分组，形成场景批次结算。
         grouped = self._group_pending_intents(snapshot)
         if not grouped:
             event_log.append(
@@ -325,12 +340,14 @@ class SceneRuntime:
                     )
                     continue
 
-                check_passed, check_reason, failure_effects = self._resolve_action_check(
-                    action=action,
-                    player_state=player_state,
-                    flag_sets=flag_sets,
-                    flag_clears=flag_clears,
-                    clock_deltas=clock_deltas,
+                check_passed, check_reason, failure_effects = (
+                    self._resolve_action_check(
+                        action=action,
+                        player_state=player_state,
+                        flag_sets=flag_sets,
+                        flag_clears=flag_clears,
+                        clock_deltas=clock_deltas,
+                    )
                 )
                 if not check_passed:
                     current_scene_name = scene_by_id[player_state.current_scene_id].name
@@ -417,6 +434,7 @@ class SceneRuntime:
                 )
             )
 
+        # 批次处理结束后统一提交状态，先清空待结算意图。
         session.pending_intents = {}
         for player_id, target_scene_id in pending_moves.items():
             player_state = session.player_states[player_id]
@@ -450,6 +468,7 @@ class SceneRuntime:
         for scene_id, action_ids in scene_action_history.items():
             session.scene_instances[scene_id].completed_action_ids.update(action_ids)
 
+        # 先应用动作层效果，再处理每回合时钟推进。
         self._apply_flag_changes(session, flag_sets=flag_sets, flag_clears=flag_clears)
         self._apply_clock_deltas(session, module=module, deltas=clock_deltas)
 
@@ -472,6 +491,7 @@ class SceneRuntime:
             triggered_clock_events=triggered_clock_events,
             turn_no=snapshot.current_turn,
         )
+        # 仅基于“本回合已提交结果”生成信号并计算剧情迁移。
         transition = self._transition_validator.can_transition(
             story_state=snapshot.story_state,
             stages=story_stage_by_id,
@@ -628,6 +648,7 @@ class SceneRuntime:
         session_state: SessionMapState,
         player_id: str,
     ) -> list[str]:
+        """查询玩家当前场景可达的目标场景列表。"""
         self._ensure_known_player(session_state, player_id)
         player_state = session_state.player_states[player_id]
         module = self._load_module(session_state.module_id)
@@ -645,6 +666,7 @@ class SceneRuntime:
         session_state: SessionMapState,
         player_id: str,
     ) -> list[ModuleAction]:
+        """查询玩家当前位置当前可执行的动作。"""
         self._ensure_known_player(session_state, player_id)
         player_state = session_state.player_states[player_id]
         module = self._load_module(session_state.module_id)
@@ -663,6 +685,7 @@ class SceneRuntime:
         return available_actions
 
     def _load_module(self, module_id: str) -> ModuleDefinition:
+        """加载并缓存模组定义。"""
         if module_id not in self._module_cache:
             self._module_cache[module_id] = load_module_by_id(
                 module_id,
@@ -671,6 +694,7 @@ class SceneRuntime:
         return self._module_cache[module_id]
 
     def _get_session(self, session_id: str) -> SessionMapState:
+        """按会话 ID 读取内存态会话。"""
         if session_id not in self._sessions:
             raise KeyError(f"未知会话: {session_id}")
         return self._sessions[session_id]
@@ -682,6 +706,7 @@ class SceneRuntime:
         flags: set[str],
         stage_id: str,
     ) -> SceneMovementRules:
+        """基于当前 flags/stage 构造当回合移动规则实例。"""
         scene_links = [
             SceneLink(
                 from_scene_id=link.from_scene_id,
@@ -702,6 +727,7 @@ class SceneRuntime:
         self,
         session: SessionMapState,
     ) -> dict[str, list[tuple[str, dict[str, object]]]]:
+        """按玩家所在场景对待结算意图分组。"""
         grouped: dict[str, list[tuple[str, dict[str, object]]]] = defaultdict(list)
         for player_id, intent in session.pending_intents.items():
             scene_id = session.player_states[player_id].current_scene_id
@@ -715,6 +741,7 @@ class SceneRuntime:
         session: SessionMapState,
         player_id: str,
     ) -> tuple[bool, str]:
+        """判断动作在当前会话快照中是否可执行，并返回失败原因。"""
         player_state = session.player_states[player_id]
         if action.scene_id != player_state.current_scene_id:
             return False, "动作不在玩家当前场景中"
@@ -738,6 +765,7 @@ class SceneRuntime:
         flag_clears: set[str],
         clock_deltas: dict[str, int],
     ) -> tuple[bool, str, list[str]]:
+        """执行动作检定并返回成功标记、失败原因和失败效果摘要。"""
         check = action.check
         if check is None:
             return True, "", []
@@ -767,6 +795,7 @@ class SceneRuntime:
         skill_value: int,
         check: ModuleActionCheck,
     ) -> int:
+        """把技能值映射为不同难度下的目标阈值。"""
         if check.difficulty == "regular":
             return skill_value
         if check.difficulty == "hard":
@@ -774,6 +803,7 @@ class SceneRuntime:
         return skill_value // 5
 
     def _next_roll(self) -> int:
+        """获取一次 1..100 的检定结果。"""
         rolled = self._roll_provider()
         if rolled < 1 or rolled > 100:
             raise ValueError(f"检定结果必须在 1..100 之间，收到: {rolled}")
@@ -783,6 +813,7 @@ class SceneRuntime:
         self,
         investigator: InvestigatorCard,
     ) -> InvestigatorCard:
+        """复制人物卡，隔离会话内状态与外部引用。"""
         return investigator.model_copy(deep=True)
 
     def _conditions_met(
@@ -790,6 +821,7 @@ class SceneRuntime:
         conditions: list[ModuleCondition],
         session: SessionMapState,
     ) -> bool:
+        """检查动作/结局条件是否满足。"""
         for condition in conditions:
             if (
                 condition.type == "flag_set"
@@ -821,6 +853,7 @@ class SceneRuntime:
         flag_clears: set[str],
         clock_deltas: dict[str, int],
     ) -> list[str]:
+        """把效果累加到暂存容器，不直接写回会话。"""
         effect_summaries: list[str] = []
         for effect in effects:
             if effect.type == "set_flag":
@@ -841,6 +874,7 @@ class SceneRuntime:
         flag_sets: set[str],
         flag_clears: set[str],
     ) -> None:
+        """把暂存的标记增删写回会话。"""
         for flag in flag_clears:
             session.global_flags.discard(flag)
         for flag in flag_sets:
@@ -853,6 +887,7 @@ class SceneRuntime:
         module: ModuleDefinition,
         deltas: dict[str, int],
     ) -> None:
+        """把时钟增量写回会话，并受模组时钟上限约束。"""
         for clock in module.clocks:
             delta = deltas.get(clock.id, 0)
             if delta == 0:
@@ -865,6 +900,7 @@ class SceneRuntime:
         session: SessionMapState,
         module: ModuleDefinition,
     ) -> list[str]:
+        """触发达到阈值且尚未触发过的时钟事件。"""
         triggered: list[str] = []
         changed = True
         while changed:
@@ -894,6 +930,7 @@ class SceneRuntime:
         module: ModuleDefinition,
         effects: list[ModuleEffect],
     ) -> None:
+        """直接应用一组效果（用于时钟阈值事件连锁）。"""
         flag_sets: set[str] = set()
         flag_clears: set[str] = set()
         clock_deltas: dict[str, int] = defaultdict(int)
@@ -921,6 +958,7 @@ class SceneRuntime:
         triggered_clock_events: list[str],
         turn_no: int,
     ) -> list[StorySignal]:
+        """把运行时事件映射为剧情状态机可消费的信号。"""
         signals: list[StorySignal] = []
         for event in events:
             if event.type == "movement_committed":
@@ -959,5 +997,6 @@ class SceneRuntime:
         session_state: SessionMapState,
         player_id: str,
     ) -> None:
+        """校验玩家存在于会话中。"""
         if player_id not in session_state.player_states:
             raise KeyError(f"未知玩家: {player_id}")

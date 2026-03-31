@@ -67,16 +67,21 @@ class ScenarioService:
         self._lock = RLock()
 
     def list_modules(self) -> list[ModuleSummary]:
+        """扫描模组目录并返回可创建会话的模组摘要。"""
         if not self._module_root.exists():
             return []
 
         modules: list[ModuleSummary] = []
-        for module_dir in sorted(self._module_root.iterdir(), key=lambda item: item.name):
+        for module_dir in sorted(
+            self._module_root.iterdir(), key=lambda item: item.name
+        ):
             if not module_dir.is_dir():
                 continue
             if not (module_dir / "module.yaml").is_file():
                 continue
-            definition = load_module_by_id(module_dir.name, module_root=self._module_root)
+            definition = load_module_by_id(
+                module_dir.name, module_root=self._module_root
+            )
             modules.append(
                 ModuleSummary(
                     module_id=definition.module_id,
@@ -91,6 +96,7 @@ class ScenarioService:
         self,
         request: CreatePartyRequest | dict[str, object],
     ) -> PartySummary:
+        """创建新会话，并自动为创建者生成默认调查员卡。"""
         payload = (
             request
             if isinstance(request, CreatePartyRequest)
@@ -114,6 +120,7 @@ class ScenarioService:
         session_id: str,
         request: JoinPartyRequest | dict[str, object],
     ) -> PartySummary:
+        """向等待中的会话加入新玩家。"""
         payload = (
             request
             if isinstance(request, JoinPartyRequest)
@@ -129,11 +136,13 @@ class ScenarioService:
             return self._build_party_summary(session)
 
     def get_party(self, session_id: str) -> PartySummary:
+        """查询单个会话摘要。"""
         with self._lock:
             session = self._runtime.get_session(session_id)
             return self._build_party_summary(session)
 
     def list_parties(self) -> list[PartySummary]:
+        """列出当前服务进程内管理的会话摘要。"""
         with self._lock:
             return [
                 self._build_party_summary(self._runtime.get_session(session_id))
@@ -141,6 +150,7 @@ class ScenarioService:
             ]
 
     def _build_party_summary(self, session: SessionMapState) -> PartySummary:
+        """把运行时会话状态映射为 API 层摘要对象。"""
         owner_id = self._owner_by_session_id.get(
             session.session_id,
             next(iter(sorted(session.player_states))),
@@ -179,6 +189,7 @@ class ScenarioService:
         )
 
     def _build_default_investigator_card(self, player_id: str) -> InvestigatorCard:
+        """构造最小可用的默认调查员卡。"""
         # FIXME: 默认姓名直接拼接 player_id，长 player_id 可能超过 Name 的 30 字符上限并触发校验失败。
         # FIXME: 默认卡目前不挂技能；在动作配置了 check 的模组中，这会导致会话虽可创建但关键动作难以推进。
         return build_investigator_card(

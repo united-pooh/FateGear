@@ -141,9 +141,7 @@ def _build_skills(
             raise ValueError(f"重复的技能 key: {resolved_definition.key}")
 
         resolved_value = (
-            resolved_definition.base
-            if input_item.value is None
-            else input_item.value
+            resolved_definition.base if input_item.value is None else input_item.value
         )
         skills[resolved_definition.key] = InvestigatorSkill(
             definition=resolved_definition,
