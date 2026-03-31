@@ -304,6 +304,82 @@ sequenceDiagram
     O->>UI: 推送本轮结果
 ```
 
+### Harness 扩展图
+
+下面这张图在不删除原有 `Scene` / `Story` 主流程节点的前提下，补上了 `Planner`、`Evaluator`、额外判定和 `Narrator` 的 harness 位置。适合“玩家临场偏离预设、需要 Agent 提议额外阻力与后果，再由运行时权威执行”的设计。
+
+```mermaid
+flowchart TD
+    U[用户提交动作]
+
+    U --> A{动作类型}
+
+    A -->|移动| S1[交给 Scene<br/>判断能不能走<br/>更新场景位置]
+    A -->|场景动作| S2[交给 Scene<br/>检查前置条件]
+
+    S2 --> C{这个动作是否需要技能检定?}
+    C -->|不需要| S3[直接按动作结果处理]
+    C -->|需要| S4[读取人物卡技能值<br/>进行检定]
+    S4 --> D{检定是否成功?}
+    D -->|成功| S5[应用成功效果<br/>例如拿到物品 / 开门 / 推进状态]
+    D -->|失败| S6[应用失败结果<br/>例如不给奖励 / 触发失败效果]
+
+    S1 --> R1[Scene 产出本轮结果]
+    S3 --> R1
+    S5 --> R1
+    S6 --> R1
+
+    R1 --> E{这轮结果有没有触发剧情条件?}
+
+    E -->|没有| L[留在循环区<br/>继续下一轮动作]
+    E -->|有| T[触发 Story]
+
+    T --> T1[推进剧情阶段]
+    T --> T2[开放出口或新区域]
+    T --> T3[触发结局判定]
+
+    T1 --> L
+    T2 --> L
+    T3 --> END[进入对应结局]
+
+    CTX[Harness Artifact<br/>turn_context / scene_state / stage_state / player_card / recent_events]
+    P[Harness: Planner Agent<br/>理解自然语言 / 归一化动作 / 提议额外判定 / 设定叙事目标]
+    EV{Harness: Evaluator Agent<br/>Planner 提议是否合理?}
+    CONTRACT[Harness Artifact<br/>turn_contract / normalized_intent / proposed_checks / stakes / narration_goal]
+
+    U --> CTX
+    CTX --> P
+    P --> EV
+    EV -->|退回修改| P
+    EV -->|通过| CONTRACT
+    CONTRACT --> A
+
+    X1{Harness 是否提议额外判定?<br/>例如 SAN / 幸运 / 受伤风险}
+    X2[交给 Scene<br/>执行额外判定]
+    X3{额外判定是否成功?}
+    X4[应用额外判定成功结果<br/>例如仅掉SAN / 无额外损伤]
+    X5[应用额外判定失败结果<br/>例如受伤 / 更多SAN损失 / 新风险状态]
+
+    S2 --> X1
+    X1 -->|不需要| C
+    X1 -->|需要| X2
+    X2 --> X3
+    X3 -->|成功| X4
+    X3 -->|失败| X5
+    X4 --> R1
+    X5 --> R1
+
+    N[Harness: Narrator Agent<br/>基于已提交结果进行守密人式叙事]
+    LOG[Harness Artifact<br/>turn_log / scene_resolution / story_resolution / narration_packet]
+    SUM[Harness Artifact<br/>session_summary / risk_summary / unresolved_clues]
+
+    L --> N
+    END --> N
+    N --> LOG
+    LOG --> SUM
+    SUM --> CTX
+```
+
 ### Python 风格核心伪代码
 
 ```python
