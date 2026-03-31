@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 from ..story.models import StorySignal
 
 if TYPE_CHECKING:
-    from ..agent.models import KeeperNarration
+    pass
 
 
 class MoveIntent(BaseModel):

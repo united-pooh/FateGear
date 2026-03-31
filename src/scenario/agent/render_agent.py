@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from .base import AgentOutputError, BaseAgent
+from .config import AgentSettings, build_openai_client, load_agent_settings
 from .models import CommitResult, KeeperNarration
 
 logger = logging.getLogger(__name__)
@@ -120,13 +121,28 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
     def __init__(
         self,
         *,
-        model_id: str = "gpt-4o",
+        model_id: str | None = None,
         openai_client: Any = None,  # openai.AsyncOpenAI
-        temperature: float = 0.9,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        top_k: int | None = None,
+        timeout_seconds: float | None = None,
+        config: AgentSettings | None = None,
     ) -> None:
-        super().__init__(model_id=model_id)
-        self._client = openai_client
-        self._temperature = temperature
+        settings = config or load_agent_settings()
+        narrator_config = settings.narrator
+        super().__init__(model_id=model_id or narrator_config.model)
+        self._client = openai_client or build_openai_client(settings.narrator_provider)
+        self._temperature = (
+            narrator_config.temperature if temperature is None else temperature
+        )
+        self._top_p = narrator_config.top_p if top_p is None else top_p
+        self._top_k = narrator_config.top_k if top_k is None else top_k
+        self.timeout_seconds = (
+            narrator_config.timeout_seconds
+            if timeout_seconds is None
+            else timeout_seconds
+        )
 
     # ------------------------------------------------------------------
     # BaseAgent 实现
@@ -141,15 +157,14 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
             return ""
 
         user_msg = _build_render_user_message(prompt)
-
-        response = await self._client.chat.completions.create(
-            model=self._model_id,
-            temperature=self._temperature,
-            messages=[
+        request_kwargs: dict[str, object] = {
+            "model": self._model_id,
+            "temperature": self._temperature,
+            "messages": [
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": user_msg},
             ],
-            response_format={
+            "response_format": {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "KeeperNarration",
@@ -157,7 +172,16 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
                     "schema": _KEEPER_NARRATION_SCHEMA,
                 },
             },
-        )
+        }
+        if self._top_p is not None:
+            request_kwargs["top_p"] = self._top_p
+        if self._top_k is not None:
+            logger.debug(
+                "KeeperRenderAgent 配置了 top_k=%s，但当前 OpenAI Chat Completions 调用不会使用该参数。",
+                self._top_k,
+            )
+
+        response = await self._client.chat.completions.create(**request_kwargs)
 
         raw_content: str = response.choices[0].message.content or ""
 

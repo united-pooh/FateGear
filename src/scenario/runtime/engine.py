@@ -278,8 +278,7 @@ class SceneRuntime:
                     scene_name=scene.name,
                     player_ids=batch_player_ids,
                     message=(
-                        f"场景批次：{scene.name}（{scene.id}），"
-                        f"玩家={batch_player_ids}"
+                        f"场景批次：{scene.name}（{scene.id}），玩家={batch_player_ids}"
                     ),
                 )
             )
@@ -329,7 +328,9 @@ class SceneRuntime:
                             proposed=proposed,
                             player_state=ps,
                         )
-                        dynamic_check_results[(proposed.player_id, proposed.action_id)] = result
+                        dynamic_check_results[
+                            (proposed.player_id, proposed.action_id)
+                        ] = result
                         logger.debug(
                             "动态检定：player=%s action=%s skill=%s roll=%s success=%s",
                             proposed.player_id,

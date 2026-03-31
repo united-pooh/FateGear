@@ -361,9 +361,7 @@ def test_generic_mvp_harness_smoke_runs_planner_and_narrator_agents() -> None:
     ]
 
     narrated_batches = [
-        batch
-        for resolution in resolutions
-        for batch in resolution.scene_batches
+        batch for resolution in resolutions for batch in resolution.scene_batches
     ]
     assert narrated_batches
     assert all(batch.narration is not None for batch in narrated_batches)
