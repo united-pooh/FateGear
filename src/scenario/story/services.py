@@ -17,6 +17,10 @@ class TransitionValidator:
         signals: list[StorySignal],
         flags: set[str],
     ) -> StoryTransition | None:
+        """从当前阶段可用迁移中选出第一个可落地的迁移。
+
+        判定顺序固定为：阶段匹配 -> required_flags -> 触发信号 -> 目标阶段解锁。
+        """
         candidate_transitions: list[StoryTransition] = sorted(
             (
                 transition
@@ -51,6 +55,7 @@ class TransitionValidator:
         signal: StorySignal,
         transition: StoryTransition,
     ) -> bool:
+        """比较一条信号是否满足迁移触发器。"""
         if signal.type != transition.trigger_type:
             return False
         if transition.trigger_type == "scene_entered":
@@ -67,6 +72,7 @@ class TransitionValidator:
         *,
         flags: set[str],
     ) -> bool:
+        """校验 required_flags 是否全部满足。"""
         return all(flag in flags for flag in required_flags)
 
     def _target_stage_unlocked(
@@ -76,6 +82,7 @@ class TransitionValidator:
         flags: set[str],
         transition: StoryTransition,
     ) -> bool:
+        """用“迁移效果后的标记集”预演目标阶段是否可进入。"""
         projected_flags: set[str] = set(flags)
         for effect in transition.effects:
             if effect.type == "set_flag":
@@ -96,6 +103,7 @@ class StoryStateService:
         stages: dict[str, StoryStage],
         turn_no: int,
     ) -> StoryState:
+        """生成迁移后的新剧情状态，不在原对象上原地修改。"""
         target_stage: StoryStage = stages[transition.target_stage_id]
         return StoryState(
             current_stage_id=transition.target_stage_id,

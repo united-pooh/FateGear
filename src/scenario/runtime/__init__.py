@@ -10,11 +10,13 @@ from .contracts import (
     TurnResolution,
 )
 from .engine import SceneRuntime
+from .rule_engine import RuleEngine
 
 __all__ = [
     "ActionIntent",
     "IntentResolution",
     "MoveIntent",
+    "RuleEngine",
     "RuntimeEvent",
     "SceneBatchResolution",
     "SceneIntent",

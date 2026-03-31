@@ -52,7 +52,4 @@ def build_test_card(
 
 
 def build_player_cards(player_ids: Iterable[str]) -> dict[str, InvestigatorCard]:
-    return {
-        player_id: build_test_card(player_id)
-        for player_id in player_ids
-    }
+    return {player_id: build_test_card(player_id) for player_id in player_ids}

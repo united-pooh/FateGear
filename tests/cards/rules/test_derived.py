@@ -89,6 +89,25 @@ def test_magic_points_calculation() -> None:
     assert calculate_magic_points(attributes) == 13
 
 
+def test_derived_stats_accept_attribute_extremes_with_hp_mp_19() -> None:
+    attributes = InvestigatorAttributes(
+        strength=99,
+        constitution=99,
+        size=99,
+        dexterity=99,
+        appearance=99,
+        intelligence=99,
+        power=99,
+        education=99,
+        luck=99,
+    )
+
+    derived = derive_stats(attributes, age=25)
+
+    assert derived.hit_points_max == 19
+    assert derived.magic_points_max == 19
+
+
 @pytest.mark.parametrize("invalid_age", ["20", 20.0, True, 0, 121])
 def test_age_validation_uses_pydantic(invalid_age: Any) -> None:
     with pytest.raises(ValidationError):

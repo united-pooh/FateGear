@@ -17,6 +17,11 @@ SpecialStateText = Annotated[str, Field(min_length=1, max_length=30)]
 
 
 class InvestigatorState(BaseModel):
+    """调查员的当前可变状态。
+
+    该模型只关心“现在是多少”，并负责在赋值时执行上限裁剪。
+    """
+
     model_config = ConfigDict(validate_assignment=True)
 
     # 理论边界来自 7版规则与当前属性范围（1..99）
@@ -33,6 +38,7 @@ class InvestigatorState(BaseModel):
     @field_validator("hit_points", mode="before")
     @classmethod
     def _clamp_hit_points(cls, value: object, info: ValidationInfo) -> object:
+        """把 HP 限制在 [0, hit_points_max]。"""
         max_value = info.data.get("hit_points_max")
         if max_value is None or not isinstance(value, int) or isinstance(value, bool):
             return value
@@ -41,6 +47,7 @@ class InvestigatorState(BaseModel):
     @field_validator("magic_points", mode="before")
     @classmethod
     def _clamp_magic_points(cls, value: object, info: ValidationInfo) -> object:
+        """把 MP 限制在 [0, magic_points_max]。"""
         max_value = info.data.get("magic_points_max")
         if max_value is None or not isinstance(value, int) or isinstance(value, bool):
             return value
@@ -49,6 +56,7 @@ class InvestigatorState(BaseModel):
     @field_validator("sanity", mode="before")
     @classmethod
     def _clamp_sanity(cls, value: object, info: ValidationInfo) -> object:
+        """把 SAN 限制在 [0, sanity_max]。"""
         max_value = info.data.get("sanity_max")
         if max_value is None or not isinstance(value, int) or isinstance(value, bool):
             return value
@@ -56,6 +64,10 @@ class InvestigatorState(BaseModel):
 
     @classmethod
     def from_derived_stats(cls, derived: DerivedStats) -> "InvestigatorState":
+        """根据派生值构造初始状态。
+
+        初始值采用满 HP/MP 和 `starting_sanity`。
+        """
         return cls.model_validate(
             {
                 "hit_points_max": derived.hit_points_max,

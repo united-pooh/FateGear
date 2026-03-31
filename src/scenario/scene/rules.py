@@ -45,7 +45,10 @@ class SceneMovementRules:
         active_flags: Collection[str] | None = None,
         active_stage_id: str | None = None,
     ) -> MovementDecision:
-        """判断两个场景之间的移动是否允许。"""
+        """判断两个场景之间的移动是否允许。
+
+        判定顺序为：是否存在连线 -> 连线锁定 -> required_flags -> required_stages。
+        """
 
         effective_links = (
             list(scene_links) if scene_links is not None else self._scene_links
@@ -66,6 +69,7 @@ class SceneMovementRules:
             if link.from_scene_id != from_scene_id or link.to_scene_id != to_scene_id:
                 continue
 
+            # 锁定优先级最高，直接返回阻塞原因。
             if link.is_locked:
                 return MovementDecision(
                     allowed=False,
@@ -102,7 +106,10 @@ class SceneMovementRules:
         active_flags: Collection[str] | None = None,
         active_stage_id: str | None = None,
     ) -> list[str]:
-        """列出当前场景下可直达的场景。"""
+        """列出当前场景下可直达的场景。
+
+        通过复用 `evaluate_transition` 保持单点判定逻辑。
+        """
 
         effective_links = (
             list(scene_links) if scene_links is not None else self._scene_links

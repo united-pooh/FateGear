@@ -304,6 +304,82 @@ sequenceDiagram
     O->>UI: 推送本轮结果
 ```
 
+### Harness 扩展图
+
+下面这张图在不删除原有 `Scene` / `Story` 主流程节点的前提下，补上了 `Planner`、`Evaluator`、额外判定和 `Narrator` 的 harness 位置。适合“玩家临场偏离预设、需要 Agent 提议额外阻力与后果，再由运行时权威执行”的设计。
+
+```mermaid
+flowchart TD
+    U[用户提交动作]
+
+    U --> A{动作类型}
+
+    A -->|移动| S1[交给 Scene<br/>判断能不能走<br/>更新场景位置]
+    A -->|场景动作| S2[交给 Scene<br/>检查前置条件]
+
+    S2 --> C{这个动作是否需要技能检定?}
+    C -->|不需要| S3[直接按动作结果处理]
+    C -->|需要| S4[读取人物卡技能值<br/>进行检定]
+    S4 --> D{检定是否成功?}
+    D -->|成功| S5[应用成功效果<br/>例如拿到物品 / 开门 / 推进状态]
+    D -->|失败| S6[应用失败结果<br/>例如不给奖励 / 触发失败效果]
+
+    S1 --> R1[Scene 产出本轮结果]
+    S3 --> R1
+    S5 --> R1
+    S6 --> R1
+
+    R1 --> E{这轮结果有没有触发剧情条件?}
+
+    E -->|没有| L[留在循环区<br/>继续下一轮动作]
+    E -->|有| T[触发 Story]
+
+    T --> T1[推进剧情阶段]
+    T --> T2[开放出口或新区域]
+    T --> T3[触发结局判定]
+
+    T1 --> L
+    T2 --> L
+    T3 --> END[进入对应结局]
+
+    CTX[Harness Artifact<br/>turn_context / scene_state / stage_state / player_card / recent_events]
+    P[Harness: Planner Agent<br/>理解自然语言 / 归一化动作 / 提议额外判定 / 设定叙事目标]
+    EV{Harness: Evaluator Agent<br/>Planner 提议是否合理?}
+    CONTRACT[Harness Artifact<br/>turn_contract / normalized_intent / proposed_checks / stakes / narration_goal]
+
+    U --> CTX
+    CTX --> P
+    P --> EV
+    EV -->|退回修改| P
+    EV -->|通过| CONTRACT
+    CONTRACT --> A
+
+    X1{Harness 是否提议额外判定?<br/>例如 SAN / 幸运 / 受伤风险}
+    X2[交给 Scene<br/>执行额外判定]
+    X3{额外判定是否成功?}
+    X4[应用额外判定成功结果<br/>例如仅掉SAN / 无额外损伤]
+    X5[应用额外判定失败结果<br/>例如受伤 / 更多SAN损失 / 新风险状态]
+
+    S2 --> X1
+    X1 -->|不需要| C
+    X1 -->|需要| X2
+    X2 --> X3
+    X3 -->|成功| X4
+    X3 -->|失败| X5
+    X4 --> R1
+    X5 --> R1
+
+    N[Harness: Narrator Agent<br/>基于已提交结果进行守密人式叙事]
+    LOG[Harness Artifact<br/>turn_log / scene_resolution / story_resolution / narration_packet]
+    SUM[Harness Artifact<br/>session_summary / risk_summary / unresolved_clues]
+
+    L --> N
+    END --> N
+    N --> LOG
+    LOG --> SUM
+    SUM --> CTX
+```
+
 ### Python 风格核心伪代码
 
 ```python
@@ -383,112 +459,211 @@ async def resolve_turn(session_id: str, turn_no: int) -> list["KeeperNarration"]
 
 ## 7. 外部产品接口
 
-外部接口服务于玩家界面和 Keeper 工具界面。协议层继续使用 HTTP 与 JSON，但字段命名统一使用 `snake_case`。
+外部接口服务于玩家界面和 Keeper 工具界面。协议层使用 HTTP 与 JSON，字段命名统一使用 `snake_case`。路径均无 `/api` 前缀。
 
-### 创建会话
+### 辅助接口
 
 ```http
-POST /api/sessions
+GET /
+GET /health
+GET /modules
 ```
 
-请求：
+`GET /` 返回所有可用端点列表。`GET /health` 返回 `{"status": "ok"}`。`GET /modules` 返回当前模组目录下可用模组列表：
 
 ```json
 {
-  "module_id": "train_of_darkness",
-  "players": [
-    { "player_id": "p1", "name": "玩家A" },
-    { "player_id": "p2", "name": "玩家B" }
+  "modules": [
+    {
+      "module_id": "generic_mvp",
+      "title": "通用最小可行模组",
+      "entry_scene_id": "foyer",
+      "entry_stage_id": "setup"
+    }
   ]
 }
 ```
 
-返回：
+### 创建会话
+
+```http
+POST /sessions
+```
+
+请求（创建者即第一位玩家，其余玩家通过 join 接口加入）：
 
 ```json
 {
-  "session_id": "uuid",
-  "current_stage": "prologue",
-  "current_turn": 1
+  "module_id": "generic_mvp",
+  "creator_id": "keeper"
 }
 ```
 
-### 提交玩家动作
+返回（`PartySummary`）：
+
+```json
+{
+  "session_id": "a1b2c3d4e5f6",
+  "module_id": "generic_mvp",
+  "owner_id": "keeper",
+  "current_turn": 1,
+  "current_stage_id": "setup",
+  "resolved_ending": null,
+  "status": "waiting",
+  "pending_players": [],
+  "players": [
+    {
+      "player_id": "keeper",
+      "current_scene_id": "foyer",
+      "last_scene_id": "foyer"
+    }
+  ]
+}
+```
+
+`status` 取值：`waiting`（第 1 回合且无待结算意图）、`active`（进行中）、`ended`（已进入结局）。
+
+### 加入会话
 
 ```http
-POST /api/sessions/{session_id}/intents
+POST /sessions/{session_id}/players
 ```
 
 请求：
 
 ```json
 {
-  "turn_no": 1,
-  "player_id": "p1",
-  "raw_input": "我检查乘务员的伤口",
-  "client_scene_id": "car_4"
+  "player_id": "p2"
 }
 ```
 
-这里的 `client_scene_id` 只作为客户端参考，服务端仍以 `session_player_state.current_scene_id` 为准。
+返回与创建会话相同结构的 `PartySummary`，`players` 数组包含所有已加入玩家。
 
-### 结算当前轮
+加入限制：只允许在第 1 回合且无待结算意图时加入；同一 `player_id` 不能重复加入；会话已进入结局后不允许加入。
+
+### 列出所有会话
 
 ```http
-POST /api/sessions/{session_id}/turns/{turn_no}/resolve
+GET /sessions
 ```
 
 返回：
 
 ```json
 {
-  "turn_no": 1,
-  "resolved": true,
-  "batches": [
-    {
-      "scene_id": "car_4",
-      "public_narration": "...",
-      "npc_dialogues": []
-    }
-  ],
-  "private_messages": [
-    {
-      "player_id": "p1",
-      "content": "你注意到伤口边缘不像刀伤。"
-    }
-  ],
-  "state_changed": true,
-  "new_stage": "investigation"
+  "sessions": [ /* PartySummary 列表 */ ]
 }
 ```
 
-### 获取玩家视角当前画面
+### 获取单个会话状态
 
 ```http
-GET /api/sessions/{session_id}/view?player_id=p1
+GET /sessions/{session_id}
 ```
 
-返回的是该玩家当前可见的信息，而不是全局状态：
+返回该会话的 `PartySummary`。
+
+### 提交玩家意图
+
+```http
+POST /sessions/{session_id}/intents
+```
+
+请求体：
 
 ```json
 {
-  "turn_no": 2,
-  "scene": {
-    "scene_id": "car_4",
-    "name": "4号车厢",
-    "description": "灯光忽明忽暗……"
-  },
-  "visible_npcs": [],
-  "visible_players": [],
-  "recent_narration": [],
-  "private_clues": []
+  "player_id": "keeper",
+  "intent": {
+    "type": "move",
+    "target_scene_id": "corridor"
+  }
 }
 ```
 
-### 获取 Keeper 全局面板
+意图有两种类型，由 `type` 字段区分：
+
+移动意图：
+
+```json
+{
+  "type": "move",
+  "target_scene_id": "corridor"
+}
+```
+
+动作意图：
+
+```json
+{
+  "type": "action",
+  "action_id": "examine_wound"
+}
+```
+
+服务端以 `session_player_state.current_scene_id` 为准，不接受客户端传入的场景覆盖。每位玩家在同一回合只能提交一次意图；会话已进入结局后不能继续提交。
+
+### 结算当前轮
 
 ```http
-GET /api/sessions/{session_id}/keeper-view
+POST /sessions/{session_id}/resolve
+```
+
+结算成功后返回 `TurnResolution`：
+
+```json
+{
+  "session_id": "a1b2c3d4e5f6",
+  "turn_no": 1,
+  "next_turn": 2,
+  "scene_batches": [
+    {
+      "scene_id": "foyer",
+      "player_ids": ["keeper", "p2"],
+      "outcomes": [
+        {
+          "player_id": "keeper",
+          "scene_id": "foyer",
+          "intent_type": "action",
+          "success": true,
+          "reason": "",
+          "action_id": "examine_wound",
+          "effects_applied": ["设置标记:clue_found"]
+        }
+      ]
+    }
+  ],
+  "event_log": [ /* RuntimeEvent 列表，记录本轮所有事件 */ ],
+  "applied_flags": ["clue_found"],
+  "applied_clock_deltas": { "danger": 1 },
+  "triggered_clock_events": [],
+  "clock_values": { "danger": 1 },
+  "story_signals": [],
+  "new_stage": null,
+  "applied_story_transition_id": null,
+  "resolved_ending": null,
+  "ending_result": ""
+}
+```
+
+`scene_batches` 按场景分组，每个 batch 包含该场景内所有玩家本轮的意图结果。`event_log` 记录本轮完整处理链路，可用于审计与回放。
+
+### 获取玩家视角（尚未实现）
+
+> ⚠️ 计划接口，内部服务层尚未实现。
+
+```http
+GET /sessions/{session_id}/view?player_id=p1
+```
+
+返回的是该玩家当前可见的信息，不暴露全局隐藏状态。
+
+### 获取 Keeper 全局面板（尚未实现）
+
+> ⚠️ 计划接口，内部服务层尚未实现。
+
+```http
+GET /sessions/{session_id}/keeper-view
 ```
 
 这个视图需要能看到：
@@ -504,9 +679,11 @@ GET /api/sessions/{session_id}/keeper-view
 
 为避免前后端和编排层在命名上漂移，外部接口至少稳定下面这些字段：
 
-- 会话最小字段：`session_id`、`module_id`、`current_stage`、`current_turn`
-- 玩家动作最小字段：`turn_no`、`player_id`、`raw_input`、`client_scene_id`
-- 回合结算最小字段：`turn_no`、`resolved`、`batches`、`private_messages`、`state_changed`、`new_stage`
+- 会话最小字段：`session_id`、`module_id`、`owner_id`、`current_stage_id`、`current_turn`、`status`
+- 加入请求最小字段：`player_id`
+- 玩家状态最小字段：`player_id`、`current_scene_id`、`last_scene_id`
+- 意图最小字段：`type`（`"move"` 或 `"action"`），移动附加 `target_scene_id`，动作附加 `action_id`
+- 回合结算最小字段：`session_id`、`turn_no`、`next_turn`、`scene_batches`、`new_stage`、`resolved_ending`
 - 玩家视角接口只返回该玩家当前可见信息，不暴露全局隐藏状态
 - Keeper 视角接口返回全局剧情、玩家位置、NPC 状态、计时器、可触发迁移和 Agent 备注
 
@@ -872,8 +1049,8 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 #### 4.3 回合接口
 
-- [ ] `POST /sessions/{session_id}/intents`
-- [ ] `POST /sessions/{session_id}/turns/{turn_no}/resolve`
+- [x] `POST /sessions/{session_id}/intents`
+- [x] `POST /sessions/{session_id}/resolve`
 - [ ] `GET /sessions/{session_id}/turns/{turn_no}`
 - [ ] `GET /sessions/{session_id}/keeper-view`
 
@@ -888,7 +1065,7 @@ FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是�
 
 #### 5.1 规则引擎骨架
 
-- [ ] 先实现通用“动作 -> 是否需要判定 -> 执行判定 -> 返回结果”流程
+- [x] 先实现通用“动作 -> 是否需要判定 -> 执行判定 -> 返回结果”流程
 - [ ] 定义 `CheckRequest`
 - [ ] 定义 `CheckResult`
 - [ ] 定义 `RuleEffect`
