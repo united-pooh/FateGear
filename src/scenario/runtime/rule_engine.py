@@ -12,6 +12,7 @@ from random import randint
 
 from cards.domain.card import InvestigatorCard
 
+from ..agent.models import ProposedCheck
 from ..module.models import ModuleAction, ModuleActionCheck, ModuleDefinition
 from ..module.types import ModuleCondition, ModuleEffect
 from ..session.state import SessionMapState, SessionPlayerState
@@ -154,6 +155,68 @@ class RuleEngine:
                     triggered.append(trigger_id)
                     changed = True
         return triggered
+
+    def resolve_proposed_check(
+        self,
+        *,
+        proposed: ProposedCheck,
+        player_state: SessionPlayerState,
+    ) -> dict:
+        """执行 Agent 提议的动态检定，返回标准检定结果字典。
+
+        返回字段：
+        - player_id: str
+        - action_id: str
+        - skill_key: str
+        - proposed_difficulty: str
+        - roll_value: int
+        - threshold: int
+        - success: bool
+        - success_level: str  ("extreme" / "hard" / "regular" / "fail")
+        - rationale: str
+
+        若玩家没有对应技能，``success`` 为 False，``roll_value`` 为 0。
+        """
+        skill = player_state.investigator.skills.get(proposed.skill_key)
+        if skill is None:
+            return {
+                "player_id": proposed.player_id,
+                "action_id": proposed.action_id,
+                "skill_key": proposed.skill_key,
+                "proposed_difficulty": proposed.proposed_difficulty,
+                "roll_value": 0,
+                "threshold": 0,
+                "success": False,
+                "success_level": "fail",
+                "rationale": proposed.rationale,
+                "note": f"缺少技能 {proposed.skill_key}",
+            }
+        roll = self._next_roll()
+        sv = skill.value
+        if roll <= sv // 5:
+            level = "extreme"
+            success = True
+        elif roll <= sv // 2:
+            level = "hard"
+            success = True
+        elif roll <= sv:
+            level = "regular"
+            success = True
+        else:
+            level = "fail"
+            success = False
+        # proposed_difficulty 用于叙事参考，不改变实际阈值
+        return {
+            "player_id": proposed.player_id,
+            "action_id": proposed.action_id,
+            "skill_key": proposed.skill_key,
+            "proposed_difficulty": proposed.proposed_difficulty,
+            "roll_value": roll,
+            "threshold": sv,
+            "success": success,
+            "success_level": level,
+            "rationale": proposed.rationale,
+        }
 
     def clone_card(self, investigator: InvestigatorCard) -> InvestigatorCard:
         """复制人物卡，隔离会话内状态与外部引用。"""

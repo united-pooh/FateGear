@@ -6,3 +6,4 @@ pyclean
 pytest
 mypy
 ruff
+openai

@@ -132,7 +132,7 @@ async def handle_submit_intent(request: web.Request) -> web.Response:
 
 async def handle_resolve_turn(request: web.Request) -> web.Response:
     session_id = request.match_info["session_id"]
-    resolution = _service(request).resolve_turn(session_id)
+    resolution = await _service(request).resolve_turn(session_id)
     return web.json_response(resolution.model_dump())
 
 

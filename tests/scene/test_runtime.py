@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -36,7 +37,7 @@ def _submit_and_resolve(
 ) -> TurnResolution:
     for player_id, intent in intents.items():
         runtime.submit_intent(session_id, player_id, intent)
-    resolution = runtime.resolve_turn(session_id)
+    resolution = asyncio.run(runtime.resolve_turn(session_id))
     if history is not None:
         history.append(resolution)
     return resolution
@@ -48,7 +49,7 @@ def _resolve_turn(
     session_id: str,
     history: list[TurnResolution] | None = None,
 ) -> TurnResolution:
-    resolution = runtime.resolve_turn(session_id)
+    resolution = asyncio.run(runtime.resolve_turn(session_id))
     if history is not None:
         history.append(resolution)
     return resolution
@@ -204,7 +205,7 @@ def test_add_player_rejects_join_after_session_has_started() -> None:
         player_cards=build_player_cards(["kp"]),
     )
 
-    runtime.resolve_turn(session.session_id)
+    asyncio.run(runtime.resolve_turn(session.session_id))
 
     with pytest.raises(ValueError, match="已经开始"):
         runtime.add_player(

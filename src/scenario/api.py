@@ -176,10 +176,10 @@ class ScenarioService:
             session = self._runtime.get_session(session_id)
             return self._build_party_summary(session)
 
-    def resolve_turn(self, session_id: str) -> TurnResolution:
+    async def resolve_turn(self, session_id: str) -> TurnResolution:
         """结算当前会话的一个完整回合。"""
         with self._lock:
-            return self._runtime.resolve_turn(session_id)
+            return await self._runtime.resolve_turn(session_id)
 
     def get_party(self, session_id: str) -> PartySummary:
         """查询单个会话摘要。"""

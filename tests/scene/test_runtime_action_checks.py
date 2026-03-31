@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -29,7 +30,7 @@ def _submit_and_resolve(
 ) -> TurnResolution:
     for player_id, intent in intents.items():
         runtime.submit_intent(session_id, player_id, intent)
-    return runtime.resolve_turn(session_id)
+    return asyncio.run(runtime.resolve_turn(session_id))
 
 
 def test_action_check_failure_does_not_apply_success_effects() -> None:

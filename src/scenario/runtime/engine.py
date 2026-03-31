@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
@@ -9,6 +10,10 @@ from uuid import uuid4
 
 from cards.domain.card import InvestigatorCard
 
+from ..agent.models import CommitResult, KeeperAgentPlan
+from ..agent.plan_agent import KeeperPlanAgent
+from ..agent.prompt_builder import PromptBuilder
+from ..agent.render_agent import KeeperRenderAgent
 from ..io.module_loader import MODULE_ROOT, load_module_by_id
 from ..module.models import ModuleAction, ModuleDefinition
 from ..scene.models import SceneLink
@@ -18,14 +23,16 @@ from ..story.models import StorySignal, StoryState
 from ..story.services import StoryStateService, TransitionValidator
 from .contracts import (
     IntentResolution,
+    MoveIntent,
     RuntimeEvent,
     SCENE_INTENT_ADAPTER,
     SceneBatchResolution,
     SceneIntent,
     TurnResolution,
-    MoveIntent,
 )
 from .rule_engine import RollProvider, RuleEngine
+
+logger = logging.getLogger(__name__)
 
 
 class SceneRuntime:
@@ -40,7 +47,19 @@ class SceneRuntime:
         module_root: str | Path | None = None,
         roll_provider: RollProvider | None = None,
         rule_engine: RuleEngine | None = None,
+        plan_agent: KeeperPlanAgent | None = None,
+        render_agent: KeeperRenderAgent | None = None,
+        prompt_builder: PromptBuilder | None = None,
     ) -> None:
+        """
+        Args:
+            module_root: 模组根目录，默认从 MODULE_ROOT 读取。
+            roll_provider: 骰子随机数提供者（测试时可注入固定值）。
+            rule_engine: 规则引擎，默认自动创建。
+            plan_agent: Plan 阶段 Agent；为 None 时跳过 Planner，规则引擎按 YAML 默认逻辑处理。
+            render_agent: Render 阶段 Agent；为 None 时 SceneBatchResolution.narration 为 None。
+            prompt_builder: PromptBuilder；为 None 时若 plan_agent 不为 None 则自动创建默认实例。
+        """
         self._module_root = (
             Path(module_root) if module_root is not None else MODULE_ROOT
         )
@@ -49,6 +68,12 @@ class SceneRuntime:
         self._transition_validator = TransitionValidator()
         self._story_state_service = StoryStateService()
         self._rule_engine = rule_engine or RuleEngine(roll_provider=roll_provider)
+        self._plan_agent = plan_agent
+        self._render_agent = render_agent
+        # 如果传入了 plan_agent 但没有传 prompt_builder，则自动创建默认实例
+        self._prompt_builder = prompt_builder or (
+            PromptBuilder() if plan_agent is not None else None
+        )
 
     def create_session(
         self,
@@ -177,11 +202,17 @@ class SceneRuntime:
 
         session.pending_intents[player_id] = validated.model_dump()
 
-    def resolve_turn(self, session_id: str) -> TurnResolution:
-        """结算一个完整回合。
+    async def resolve_turn(self, session_id: str) -> TurnResolution:
+        """结算一个完整回合（异步）。
 
-        流程：读取快照 -> 按场景分批处理意图 -> 提交移动和效果 ->
-        推进时钟/触发事件 -> 计算剧情迁移 -> 产出结构化回合结果与事件日志。
+        流程：
+        1. 读取快照，按场景分批分组
+        2. 每批次：[Plan Agent] → [规则引擎 + 动态检定] → [提交效果] → [Render Agent]
+        3. 跨批次：推进时钟 / 触发时钟事件 / 计算剧情迁移 / 写 event_log
+
+        若 ``plan_agent`` 未配置，步骤 2 中的 Plan 阶段被跳过，
+        规则引擎按 YAML 定义的静态检定与效果运行（与原有行为完全兼容）。
+        若 ``render_agent`` 未配置，``SceneBatchResolution.narration`` 保持 None。
         """
         session = self._get_session(session_id)
         if (
@@ -238,20 +269,108 @@ class SceneRuntime:
             if not intents:
                 continue
 
+            batch_player_ids = [player_id for player_id, _ in intents]
             event_log.append(
                 RuntimeEvent(
                     type="scene_batch_started",
                     turn_no=snapshot.current_turn,
                     scene_id=scene.id,
                     scene_name=scene.name,
-                    player_ids=[player_id for player_id, _ in intents],
+                    player_ids=batch_player_ids,
                     message=(
                         f"场景批次：{scene.name}（{scene.id}），"
-                        f"玩家={[player_id for player_id, _ in intents]}"
+                        f"玩家={batch_player_ids}"
                     ),
                 )
             )
+
+            # ------------------------------------------------------------------
+            # Plan 阶段：调用 KeeperPlanAgent 产出结构化提议
+            # ------------------------------------------------------------------
+            plan: KeeperAgentPlan | None = None
+            # 本批次 Agent 提议的动态检定结果，key 为 (player_id, action_id)
+            dynamic_check_results: dict[tuple[str, str], dict] = {}
+
+            if self._plan_agent is not None and self._prompt_builder is not None:
+                try:
+                    agent_prompt = self._prompt_builder.build(
+                        session=snapshot,
+                        module=module,
+                        scene_id=scene.id,
+                        recent_events=event_log,
+                    )
+                    plan_record = await self._plan_agent.call(agent_prompt)
+                    plan = plan_record.output
+                    event_log.append(
+                        RuntimeEvent(
+                            type="plan_agent_called",
+                            turn_no=snapshot.current_turn,
+                            scene_id=scene.id,
+                            scene_name=scene.name,
+                            message=(
+                                f"Plan Agent 调用完成（scene={scene.id}，"
+                                f"fallback={plan_record.meta.fallback_used}）："
+                                f"提议检定数={len(plan.proposed_checks)}，"
+                                f"提议效果数={len(plan.proposed_effects)}，"
+                                f"提议迁移={'有' if plan.proposed_transition else '无'}"
+                            ),
+                        )
+                    )
+                    # 执行 Agent 提议的动态检定（在规则引擎静态检定之前）
+                    for proposed in plan.proposed_checks:
+                        ps = snapshot.player_states.get(proposed.player_id)
+                        if ps is None:
+                            logger.warning(
+                                "Plan Agent 提议对未知玩家 %s 执行检定，已跳过",
+                                proposed.player_id,
+                            )
+                            continue
+                        result = self._rule_engine.resolve_proposed_check(
+                            proposed=proposed,
+                            player_state=ps,
+                        )
+                        dynamic_check_results[(proposed.player_id, proposed.action_id)] = result
+                        logger.debug(
+                            "动态检定：player=%s action=%s skill=%s roll=%s success=%s",
+                            proposed.player_id,
+                            proposed.action_id,
+                            proposed.skill_key,
+                            result.get("roll_value"),
+                            result.get("success"),
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Plan Agent 调用失败（scene=%s）：%s，继续按规则引擎默认逻辑处理",
+                        scene.id,
+                        exc,
+                    )
+                    event_log.append(
+                        RuntimeEvent(
+                            type="plan_agent_skipped",
+                            turn_no=snapshot.current_turn,
+                            scene_id=scene.id,
+                            scene_name=scene.name,
+                            message=f"Plan Agent 调用失败（scene={scene.id}）：{exc}",
+                        )
+                    )
+            else:
+                event_log.append(
+                    RuntimeEvent(
+                        type="plan_agent_skipped",
+                        turn_no=snapshot.current_turn,
+                        scene_id=scene.id,
+                        scene_name=scene.name,
+                        message=f"Plan Agent 未配置，scene={scene.id} 按规则引擎默认逻辑处理",
+                    )
+                )
+
+            # ------------------------------------------------------------------
+            # 规则判定阶段：逐意图处理（移动 / 动作 / 动态检定覆盖）
+            # ------------------------------------------------------------------
             outcomes: list[IntentResolution] = []
+            # 本批次已完成的动态检定结果，最终传入 CommitResult
+            batch_resolved_checks: list[dict] = list(dynamic_check_results.values())
+
             for player_id, intent_payload in intents:
                 intent = SCENE_INTENT_ADAPTER.validate_python(intent_payload)
                 player_state = snapshot.player_states[player_id]
@@ -338,15 +457,39 @@ class SceneRuntime:
                     )
                     continue
 
-                check_passed, check_reason, failure_effects = (
-                    self._rule_engine.resolve_action_check(
-                        action=action,
-                        player_state=player_state,
-                        flag_sets=flag_sets,
-                        flag_clears=flag_clears,
-                        clock_deltas=clock_deltas,
+                # 检查 Agent 是否已为此 (player_id, action_id) 提议过动态检定。
+                # 若有，使用动态检定结果决定成败；否则走 YAML 静态检定。
+                dynamic_result = dynamic_check_results.get((player_id, action.id))
+                if dynamic_result is not None:
+                    check_passed = dynamic_result["success"]
+                    check_reason = (
+                        ""
+                        if check_passed
+                        else (
+                            action.check.failure_reason
+                            if action.check
+                            else f"动态检定失败（{dynamic_result['skill_key']}）"
+                        )
                     )
-                )
+                    failure_effects: list[str] = []
+                    if not check_passed:
+                        failure_effects = self._rule_engine.queue_effects(
+                            action.effects_on_failure,
+                            flag_sets=flag_sets,
+                            flag_clears=flag_clears,
+                            clock_deltas=clock_deltas,
+                        )
+                else:
+                    check_passed, check_reason, failure_effects = (
+                        self._rule_engine.resolve_action_check(
+                            action=action,
+                            player_state=player_state,
+                            flag_sets=flag_sets,
+                            flag_clears=flag_clears,
+                            clock_deltas=clock_deltas,
+                        )
+                    )
+
                 if not check_passed:
                     current_scene_name = scene_by_id[player_state.current_scene_id].name
                     event_log.append(
@@ -424,11 +567,75 @@ class SceneRuntime:
                     )
                 )
 
+            # ------------------------------------------------------------------
+            # Render 阶段：基于本批次已结算结果调用 KeeperRenderAgent 生成叙事
+            # ------------------------------------------------------------------
+            batch_narration = None
+            if self._render_agent is not None:
+                # 从本批次 outcomes 提取已生效效果摘要
+                batch_effects = []
+                for outcome in outcomes:
+                    batch_effects.extend(outcome.effects_applied)
+
+                commit = CommitResult(
+                    session_id=session_id,
+                    turn_no=snapshot.current_turn,
+                    scene_id=scene.id,
+                    resolved_checks=batch_resolved_checks,
+                    applied_effects=batch_effects,
+                    # 剧情迁移信息此时还未计算，放空（叙事可在无迁移情况下正常生成）
+                    applied_transition_id=None,
+                    new_stage_id=None,
+                    resolved_ending=None,
+                    event_summary=[e.message for e in event_log[-10:]],
+                )
+                try:
+                    render_record = await self._render_agent.call(commit)
+                    batch_narration = render_record.output
+                    event_log.append(
+                        RuntimeEvent(
+                            type="render_agent_called",
+                            turn_no=snapshot.current_turn,
+                            scene_id=scene.id,
+                            scene_name=scene.name,
+                            message=(
+                                f"Render Agent 调用完成（scene={scene.id}，"
+                                f"fallback={render_record.meta.fallback_used}）"
+                            ),
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Render Agent 调用失败（scene=%s）：%s",
+                        scene.id,
+                        exc,
+                    )
+                    event_log.append(
+                        RuntimeEvent(
+                            type="render_agent_skipped",
+                            turn_no=snapshot.current_turn,
+                            scene_id=scene.id,
+                            scene_name=scene.name,
+                            message=f"Render Agent 调用失败（scene={scene.id}）：{exc}",
+                        )
+                    )
+            else:
+                event_log.append(
+                    RuntimeEvent(
+                        type="render_agent_skipped",
+                        turn_no=snapshot.current_turn,
+                        scene_id=scene.id,
+                        scene_name=scene.name,
+                        message=f"Render Agent 未配置，scene={scene.id} 无叙事输出",
+                    )
+                )
+
             scene_batches.append(
                 SceneBatchResolution(
                     scene_id=scene.id,
-                    player_ids=[player_id for player_id, _ in intents],
+                    player_ids=batch_player_ids,
                     outcomes=outcomes,
+                    narration=batch_narration,
                 )
             )
 

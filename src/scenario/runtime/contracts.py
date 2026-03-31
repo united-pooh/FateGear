@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
 
 from ..story.models import StorySignal
+
+if TYPE_CHECKING:
+    from ..agent.models import KeeperNarration
 
 
 class MoveIntent(BaseModel):
@@ -38,6 +41,11 @@ class SceneBatchResolution(BaseModel):
     scene_id: str
     player_ids: list[str] = Field(default_factory=list)
     outcomes: list[IntentResolution] = Field(default_factory=list)
+    # 运行时用 Any 避免循环导入；类型检查时为 KeeperNarration | None
+    narration: Any = Field(
+        default=None,
+        description="Render 阶段 Agent 对本批次结果生成的叙事（KeeperNarration）；无 Agent 时为 None。",
+    )
 
 
 class RuntimeEvent(BaseModel):
@@ -54,6 +62,10 @@ class RuntimeEvent(BaseModel):
         "story_transition_applied",
         "ending_reached",
         "turn_completed",
+        "plan_agent_called",
+        "plan_agent_skipped",
+        "render_agent_called",
+        "render_agent_skipped",
     ]
     message: str
     turn_no: int

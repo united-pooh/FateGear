@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from scenario.api import ScenarioService
@@ -74,7 +76,7 @@ def test_scenario_service_submit_intent_and_resolve_turn() -> None:
             "intent": {"type": "move", "target_scene_id": "storage"},
         },
     )
-    first_resolution = service.resolve_turn(created.session_id)
+    first_resolution = asyncio.run(service.resolve_turn(created.session_id))
     service.submit_intent(
         created.session_id,
         {
@@ -82,7 +84,7 @@ def test_scenario_service_submit_intent_and_resolve_turn() -> None:
             "intent": {"type": "action", "action_id": "find_key"},
         },
     )
-    second_resolution = service.resolve_turn(created.session_id)
+    second_resolution = asyncio.run(service.resolve_turn(created.session_id))
     latest = service.get_party(created.session_id)
 
     assert submitted.pending_players == ["keeper"]
