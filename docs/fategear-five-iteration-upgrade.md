@@ -17,7 +17,7 @@
 4. `SceneRuntime.resolve_turn` 过重，承担计划、规则、效果、迁移、叙事和提交，后续 NPC、线索、持久化都会继续挤压这里。
 5. 模组 schema 太薄，缺少 NPC、线索、世界书、氛围、节奏、安全提示等严肃 KP 需要的准备信息。
 6. PromptBuilder 之前不是上下文引擎：`worldview_brief` 为空，动作描述为空，可用动作与可达场景没有足够上下文筛选。
-7. Render 在完整提交前运行，无法可靠叙述最终迁移、时钟阈值和结局。
+7. Render 原先在完整提交前运行，无法可靠叙述最终迁移、时钟阈值和结局；本轮已将 Render 后移到权威提交之后。
 8. 测试目前证明 MVP 能跑，不能证明产品级 KP 能维持氛围、人设、隐私和长期一致性。
 
 ## 五轮升级计划
@@ -38,7 +38,7 @@
 - `tests/scene/test_prompt_builder.py`
 - `tests/scene/test_runtime_smoke.py`
 
-残余风险：Render 仍在完整提交前运行；本轮只解决“输入给模型的信息”，不解决最终叙事时序。
+残余风险：Narrator 已能看到最终迁移和结局，但仍缺少玩家/守密人视图隔离。
 
 ### 第 2 轮：校验与作者诊断
 
@@ -65,6 +65,9 @@
 ### 第 4 轮：调查连续性和 NPC/线索状态
 
 目标：从静态提示升级到会话内的调查状态。
+
+已部分落地：
+- Render 调用后移到权威提交之后，`CommitResult` 能携带 `applied_transition_id`、`new_stage_id` 和 `resolved_ending`。
 
 应继续完成：
 - `SessionNPCState`、`SessionClueState`、`ClueGraph`。

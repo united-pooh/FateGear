@@ -10,12 +10,16 @@
 - `tokoyami_subset` 示例模组展示常暗列车的 NPC、世界书、氛围和安全边界写法。
 - 新增五轮升级审计文档：`docs/fategear-five-iteration-upgrade.md`。
 
+### Changed
+- Render Agent 调用后移到权威状态提交之后，叙事输入现在能看到本回合最终剧情迁移、新阶段和结局。
+
 ### Tests
 - loader 测试覆盖 NarrativeContext 成功加载、重复 NPC、坏世界书引用和缺失触发条件。
 - loader 测试覆盖非法 action skill_key。
 - selector 测试覆盖优先级排序、上下文预算裁剪和跳过原因。
 - PromptBuilder 测试覆盖世界书、氛围、KP 文风和 keeper-only 条目的公开渲染隔离。
 - Runtime smoke 测试覆盖 Planner 与 Narrator 都能收到选中的叙事上下文。
+- Runtime smoke 测试覆盖 Narrator 能看到最终 `applied_transition_id`、`new_stage_id` 和 `resolved_ending`。
 
 ## 2026-03-30
 

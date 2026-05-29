@@ -374,6 +374,10 @@ def test_generic_mvp_harness_smoke_runs_planner_and_narrator_agents() -> None:
         if record.prompt.resolved_checks
     ]
     assert dynamic_check_turns == [2, 3, 6, 7]
+    final_render_prompt = narrator.records[-1].prompt
+    assert final_render_prompt.applied_transition_id == "escape_facility"
+    assert final_render_prompt.new_stage_id == "escaped"
+    assert final_render_prompt.resolved_ending == "escaped"
 
     assert all(
         any(event.type == "plan_agent_called" for event in resolution.event_log)

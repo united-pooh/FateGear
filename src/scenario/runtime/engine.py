@@ -255,6 +255,7 @@ class SceneRuntime:
         scene_action_history: dict[str, set[str]] = defaultdict(set)
         pending_moves: dict[str, str] = {}
         scene_batches: list[SceneBatchResolution] = []
+        render_payloads: dict[str, tuple[list[dict], list[str]]] = {}
 
         # 先按玩家当前位置分组，形成场景批次结算。
         grouped = self._group_pending_intents(snapshot)
@@ -572,92 +573,17 @@ class SceneRuntime:
                     )
                 )
 
-            # ------------------------------------------------------------------
-            # Render 阶段：基于本批次已结算结果调用 KeeperRenderAgent 生成叙事
-            # ------------------------------------------------------------------
-            batch_narration = None
-            if self._render_agent is not None:
-                # 从本批次 outcomes 提取已生效效果摘要
-                batch_effects = []
-                for outcome in outcomes:
-                    batch_effects.extend(outcome.effects_applied)
-                render_narrative = (
-                    self._prompt_builder.build_narrative_context(
-                        session=snapshot,
-                        module=module,
-                        scene_id=scene.id,
-                        recent_events=event_log,
-                        include_keeper=False,
-                    )
-                    if self._prompt_builder is not None
-                    else None
-                )
-
-                commit = CommitResult(
-                    session_id=session_id,
-                    turn_no=snapshot.current_turn,
-                    scene_id=scene.id,
-                    resolved_checks=batch_resolved_checks,
-                    applied_effects=batch_effects,
-                    # 剧情迁移信息此时还未计算，放空（叙事可在无迁移情况下正常生成）
-                    applied_transition_id=None,
-                    new_stage_id=None,
-                    resolved_ending=None,
-                    event_summary=[e.message for e in event_log[-10:]],
-                    **(
-                        {"narrative": render_narrative}
-                        if render_narrative is not None
-                        else {}
-                    ),
-                )
-                try:
-                    render_record = await self._render_agent.call(commit)
-                    batch_narration = render_record.output
-                    event_log.append(
-                        RuntimeEvent(
-                            type="render_agent_called",
-                            turn_no=snapshot.current_turn,
-                            scene_id=scene.id,
-                            scene_name=scene.name,
-                            fallback_used=render_record.meta.fallback_used,
-                            message=(
-                                f"Render Agent 调用完成（scene={scene.id}，"
-                                f"fallback={render_record.meta.fallback_used}）"
-                            ),
-                        )
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "Render Agent 调用失败（scene=%s）：%s",
-                        scene.id,
-                        exc,
-                    )
-                    event_log.append(
-                        RuntimeEvent(
-                            type="render_agent_skipped",
-                            turn_no=snapshot.current_turn,
-                            scene_id=scene.id,
-                            scene_name=scene.name,
-                            message=f"Render Agent 调用失败（scene={scene.id}）：{exc}",
-                        )
-                    )
-            else:
-                event_log.append(
-                    RuntimeEvent(
-                        type="render_agent_skipped",
-                        turn_no=snapshot.current_turn,
-                        scene_id=scene.id,
-                        scene_name=scene.name,
-                        message=f"Render Agent 未配置，scene={scene.id} 无叙事输出",
-                    )
-                )
+            batch_effects: list[str] = []
+            for outcome in outcomes:
+                batch_effects.extend(outcome.effects_applied)
+            render_payloads[scene.id] = (batch_resolved_checks, batch_effects)
 
             scene_batches.append(
                 SceneBatchResolution(
                     scene_id=scene.id,
                     player_ids=batch_player_ids,
                     outcomes=outcomes,
-                    narration=batch_narration,
+                    narration=None,
                 )
             )
 
@@ -851,6 +777,18 @@ class SceneRuntime:
                     message=f"达成结局：{ending_stage.id}，结果：{ending_stage.description}",
                 )
             )
+        await self._render_scene_batches(
+            session=session,
+            module=module,
+            scene_by_id=scene_by_id,
+            snapshot_turn=snapshot.current_turn,
+            scene_batches=scene_batches,
+            render_payloads=render_payloads,
+            event_log=event_log,
+            applied_story_transition_id=applied_story_transition_id,
+            new_stage=new_stage,
+            resolved_ending=resolved_ending,
+        )
         event_log.append(
             RuntimeEvent(
                 type="turn_completed",
@@ -881,6 +819,99 @@ class SceneRuntime:
             resolved_ending=resolved_ending,
             ending_result=ending_result,
         )
+
+    async def _render_scene_batches(
+        self,
+        *,
+        session: SessionMapState,
+        module: ModuleDefinition,
+        scene_by_id: dict[str, object],
+        snapshot_turn: int,
+        scene_batches: list[SceneBatchResolution],
+        render_payloads: dict[str, tuple[list[dict], list[str]]],
+        event_log: list[RuntimeEvent],
+        applied_story_transition_id: str | None,
+        new_stage: str | None,
+        resolved_ending: str | None,
+    ) -> None:
+        """在权威提交后，为每个场景批次生成只读叙事。"""
+        for batch in scene_batches:
+            scene = scene_by_id[batch.scene_id]
+            if self._render_agent is None:
+                event_log.append(
+                    RuntimeEvent(
+                        type="render_agent_skipped",
+                        turn_no=snapshot_turn,
+                        scene_id=batch.scene_id,
+                        scene_name=scene.name,
+                        message=(
+                            f"Render Agent 未配置，scene={batch.scene_id} 无叙事输出"
+                        ),
+                    )
+                )
+                continue
+
+            resolved_checks, batch_effects = render_payloads.get(
+                batch.scene_id, ([], [])
+            )
+            render_narrative = (
+                self._prompt_builder.build_narrative_context(
+                    session=session,
+                    module=module,
+                    scene_id=batch.scene_id,
+                    recent_events=event_log,
+                    include_keeper=False,
+                )
+                if self._prompt_builder is not None
+                else None
+            )
+            commit = CommitResult(
+                session_id=session.session_id,
+                turn_no=snapshot_turn,
+                scene_id=batch.scene_id,
+                resolved_checks=resolved_checks,
+                applied_effects=batch_effects,
+                applied_transition_id=applied_story_transition_id,
+                new_stage_id=new_stage,
+                resolved_ending=resolved_ending,
+                event_summary=[e.message for e in event_log[-10:]],
+                **(
+                    {"narrative": render_narrative}
+                    if render_narrative is not None
+                    else {}
+                ),
+            )
+            try:
+                render_record = await self._render_agent.call(commit)
+                batch.narration = render_record.output
+                event_log.append(
+                    RuntimeEvent(
+                        type="render_agent_called",
+                        turn_no=snapshot_turn,
+                        scene_id=batch.scene_id,
+                        scene_name=scene.name,
+                        fallback_used=render_record.meta.fallback_used,
+                        message=(
+                            f"Render Agent 调用完成（scene={batch.scene_id}，"
+                            f"fallback={render_record.meta.fallback_used}）"
+                        ),
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Render Agent 调用失败（scene=%s）：%s",
+                    batch.scene_id,
+                    exc,
+                )
+                event_log.append(
+                    RuntimeEvent(
+                        type="render_agent_skipped",
+                        turn_no=snapshot_turn,
+                        scene_id=batch.scene_id,
+                        scene_name=scene.name,
+                        message=f"Render Agent 调用失败（scene={batch.scene_id}）：{exc}",
+                    )
+                )
 
     def list_reachable_scenes(
         self,
