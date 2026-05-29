@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Protocol
+
+from cards.domain.skills import SkillTemplate
 
 from .models import ModuleDefinition
 from .types import ModuleCondition, ModuleEffect
@@ -23,6 +25,7 @@ def validate_module_definition(
     *,
     definition: ModuleDefinition,
     source: Path,
+    skill_templates: Mapping[str, SkillTemplate] | None = None,
 ) -> None:
     scene_ids = _ensure_unique_ids(
         definition.scenes,
@@ -131,6 +134,13 @@ def validate_module_definition(
             raise ModuleValidationError(
                 f"模组文件 {source} 的 action[{action.id}] 引用了不存在的 scene_id="
                 f"{action.scene_id!r}"
+            )
+        if action.check is not None and skill_templates is not None:
+            _validate_action_check_skill(
+                action_id=action.id,
+                skill_key=action.check.skill_key,
+                source=source,
+                skill_templates=skill_templates,
             )
         _validate_conditions(
             action.conditions,
@@ -363,6 +373,42 @@ def _validate_action_refs(
             raise ModuleValidationError(
                 f"模组文件 {source} 的 {owner} 引用了不存在的 action_id={action_id!r}"
             )
+
+
+def _validate_action_check_skill(
+    *,
+    action_id: str,
+    skill_key: str,
+    source: Path,
+    skill_templates: Mapping[str, SkillTemplate],
+) -> None:
+    template_key, separator, branch_key = skill_key.partition(":")
+    template = skill_templates.get(template_key)
+    owner = f"action[{action_id}].check.skill_key"
+    if template is None:
+        raise ModuleValidationError(
+            f"模组文件 {source} 的 {owner} 引用了未知技能模板 {template_key!r}"
+        )
+    if not separator:
+        if template.is_branch_skill:
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 {owner}={skill_key!r} 缺少分支技能后缀"
+            )
+        return
+    if not branch_key:
+        raise ModuleValidationError(
+            f"模组文件 {source} 的 {owner}={skill_key!r} 缺少分支技能 key"
+        )
+    if not template.is_branch_skill:
+        raise ModuleValidationError(
+            f"模组文件 {source} 的 {owner}={skill_key!r} 不是合法分支技能"
+        )
+    if template.allow_custom_branch:
+        return
+    if branch_key not in {option.key for option in template.branch_options}:
+        raise ModuleValidationError(
+            f"模组文件 {source} 的 {owner}={skill_key!r} 未定义合法分支"
+        )
 
 
 def _validate_npc_refs(

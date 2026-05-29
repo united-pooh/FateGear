@@ -44,8 +44,11 @@
 
 目标：让模组作者写错时早失败、好理解、可迁移。
 
+已落地：
+- loader 调用人物卡技能模板注册表，在加载 YAML 时校验 `action.check.skill_key`。
+- 未知技能模板、分支技能缺少后缀、非法分支技能会直接抛出 `ModuleValidationError`。
+
 应继续完成：
-- 校验未知 skill key。
 - 校验 action aliases、expected inputs、fail-forward 元数据。
 - 增加更系统的坏 YAML fixtures。
 - 输出更精确的字段路径诊断。
@@ -55,7 +58,7 @@
 目标：把世界书能力从“能选中”推进到“可审计、可调预算、可解释跳过原因”。
 
 应继续完成：
-- 单独的 selector 测试覆盖预算裁剪、排序稳定性、关键词命中、NPC 关联命中。
+- 继续扩展 selector 测试，覆盖关键词命中和 NPC 关联命中。
 - 暴露 selection trace 给日志和调试 API。
 - 给 Plan/Render 分别设置预算。
 

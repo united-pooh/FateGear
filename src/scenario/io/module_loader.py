@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml  # type: ignore[import-untyped]
+from cards import load_skill_template_mapping
 from pydantic import ValidationError
 
 from ..module.models import ModuleDefinition
@@ -28,7 +29,11 @@ def load_module_definition(path: str | Path) -> ModuleDefinition:
             f"模组文件 {file_path} 结构校验失败: {exc}"
         ) from exc
 
-    validate_module_definition(definition=definition, source=file_path)
+    validate_module_definition(
+        definition=definition,
+        source=file_path,
+        skill_templates=load_skill_template_mapping(),
+    )
     return definition
 
 

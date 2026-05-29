@@ -6,11 +6,14 @@
 - 新增只读 NarrativeContext v0：模组可声明 NPC 人设卡、世界书条目、氛围配置、KP 文风控制和安全边界。
 - 新增确定性 `NarrativeContextSelector`，按场景、阶段、动作、关键词、NPC、优先级和预算选择本轮叙事上下文。
 - Plan/Render Agent 输入增加 `narrative` 层，并在 prompt 中注入上下文；不改变 `KeeperAgentPlan` / `KeeperNarration` 输出 schema。
+- 模组 loader 接入人物卡技能模板注册表，加载期拒绝未知技能模板、缺失分支后缀和非法分支技能。
 - `tokoyami_subset` 示例模组展示常暗列车的 NPC、世界书、氛围和安全边界写法。
 - 新增五轮升级审计文档：`docs/fategear-five-iteration-upgrade.md`。
 
 ### Tests
 - loader 测试覆盖 NarrativeContext 成功加载、重复 NPC、坏世界书引用和缺失触发条件。
+- loader 测试覆盖非法 action skill_key。
+- selector 测试覆盖优先级排序、上下文预算裁剪和跳过原因。
 - PromptBuilder 测试覆盖世界书、氛围、KP 文风和 keeper-only 条目的公开渲染隔离。
 - Runtime smoke 测试覆盖 Planner 与 Narrator 都能收到选中的叙事上下文。
 

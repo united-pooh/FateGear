@@ -175,6 +175,60 @@ endings: []
         ),
         (
             """
+module_id: invalid_unknown_skill
+title: 坏技能
+version: 1
+entry_scene_id: start
+entry_stage_id: intro
+flags: [ready]
+scenes:
+  - id: start
+    name: 起点
+links: []
+actions:
+  - id: inspect
+    scene_id: start
+    name: 检查
+    kind: investigate
+    check:
+      skill_key: impossible_skill
+clocks: []
+story_stages:
+  - id: intro
+    name: 开场
+endings: []
+""",
+            "未知技能模板",
+        ),
+        (
+            """
+module_id: invalid_branch_skill
+title: 坏分支技能
+version: 1
+entry_scene_id: start
+entry_stage_id: intro
+flags: [ready]
+scenes:
+  - id: start
+    name: 起点
+links: []
+actions:
+  - id: inspect
+    scene_id: start
+    name: 检查
+    kind: investigate
+    check:
+      skill_key: science
+clocks: []
+story_stages:
+  - id: intro
+    name: 开场
+endings: []
+""",
+            "缺少分支技能后缀",
+        ),
+        (
+            """
 module_id: invalid_clock_ref
 title: 坏时钟引用
 version: 1
