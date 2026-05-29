@@ -45,6 +45,8 @@ async def error_middleware(
         return web.json_response({"error": str(exc)}, status=404)
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
+    except PermissionError as exc:
+        return web.json_response({"error": str(exc)}, status=403)
     except json.JSONDecodeError as exc:
         return web.json_response(
             {"error": f"请求体不是合法 JSON: {exc}"},
@@ -59,6 +61,12 @@ async def error_middleware(
 
 def _service(request: web.Request) -> ScenarioService:
     return request.app[APP_SERVICE_KEY]
+
+
+def _query_param(request: web.Request, key: str) -> str | None:
+    query = getattr(request, "query", {})
+    value = query.get(key)
+    return str(value) if value is not None else None
 
 
 async def _read_json_body(request: web.Request) -> dict[str, object]:
@@ -117,13 +125,20 @@ async def handle_get_session(request: web.Request) -> web.Response:
 async def handle_get_player_view(request: web.Request) -> web.Response:
     session_id = request.match_info["session_id"]
     player_id = request.match_info["player_id"]
-    view = _service(request).get_player_view(session_id, player_id)
+    view = _service(request).get_player_view(
+        session_id,
+        player_id,
+        requester_id=_query_param(request, "requester_id"),
+    )
     return web.json_response(view.model_dump())
 
 
 async def handle_get_keeper_view(request: web.Request) -> web.Response:
     session_id = request.match_info["session_id"]
-    view = _service(request).get_keeper_view(session_id)
+    view = _service(request).get_keeper_view(
+        session_id,
+        requester_id=_query_param(request, "requester_id"),
+    )
     return web.json_response(view.model_dump())
 
 
@@ -160,11 +175,17 @@ async def handle_resolve_turn(request: web.Request) -> web.Response:
     expected_turn = payload.get("expected_turn")
     if expected_turn is not None and not isinstance(expected_turn, int):
         raise ValueError("expected_turn 必须是整数")
+    requester_id = payload.get("requester_id")
+    if requester_id is not None and not isinstance(requester_id, str):
+        raise ValueError("requester_id 必须是字符串")
     resolution = await _service(request).resolve_turn(
         session_id,
         expected_turn=expected_turn,
     )
-    view = _service(request).build_keeper_turn_view(resolution=resolution)
+    view = _service(request).build_keeper_turn_view(
+        resolution=resolution,
+        requester_id=requester_id,
+    )
     return web.json_response(view.model_dump())
 
 

@@ -175,6 +175,38 @@ def test_scenario_service_builds_player_and_keeper_session_views() -> None:
     assert keeper_view.current_turn == 2
 
 
+def test_scenario_service_enforces_view_requester_scope() -> None:
+    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
+    service.join_party(created.session_id, {"player_id": "p2"})
+
+    assert (
+        service.get_player_view(
+            created.session_id,
+            "p2",
+            requester_id="p2",
+        ).player_id
+        == "p2"
+    )
+    assert (
+        service.get_player_view(
+            created.session_id,
+            "p2",
+            requester_id="keeper",
+        ).player_id
+        == "p2"
+    )
+    assert service.get_keeper_view(
+        created.session_id,
+        requester_id="keeper",
+    ).session_id == created.session_id
+
+    with pytest.raises(PermissionError, match="无权查看玩家"):
+        service.get_player_view(created.session_id, "keeper", requester_id="p2")
+    with pytest.raises(PermissionError, match="无权查看守密人视图"):
+        service.get_keeper_view(created.session_id, requester_id="p2")
+
+
 def test_scenario_service_rejects_duplicate_intent_submission() -> None:
     service = ScenarioService()
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})

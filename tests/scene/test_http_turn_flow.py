@@ -4,6 +4,7 @@ import asyncio
 import json
 
 import main
+import pytest
 from scenario.api import ScenarioService
 from scenario.runtime import SceneRuntime
 
@@ -15,10 +16,12 @@ class _FakeRequest:
         app,
         payload: dict[str, object] | None = None,
         match_info: dict[str, str] | None = None,
+        query: dict[str, str] | None = None,
     ) -> None:
         self.app = app
         self._payload = payload
         self.match_info = match_info or {}
+        self.query = query or {}
 
     @property
     def can_read_body(self) -> bool:
@@ -131,5 +134,37 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
         assert player_view["player_id"] == "keeper"
         assert player_view["current_scene_id"] == "storage"
         assert keeper_view["player_scene_ids"]["keeper"] == "storage"
+
+    asyncio.run(run())
+
+
+def test_http_view_handlers_reject_wrong_requester_scope() -> None:
+    async def run() -> None:
+        service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+        app = main.create_app(service)
+        created = service.create_party(
+            {"module_id": "generic_mvp", "creator_id": "keeper"}
+        )
+        service.join_party(created.session_id, {"player_id": "p2"})
+
+        with pytest.raises(PermissionError, match="无权查看守密人视图"):
+            await main.handle_get_keeper_view(
+                _FakeRequest(
+                    app=app,
+                    match_info={"session_id": created.session_id},
+                    query={"requester_id": "p2"},
+                )
+            )
+        with pytest.raises(PermissionError, match="无权查看玩家"):
+            await main.handle_get_player_view(
+                _FakeRequest(
+                    app=app,
+                    match_info={
+                        "session_id": created.session_id,
+                        "player_id": "keeper",
+                    },
+                    query={"requester_id": "p2"},
+                )
+            )
 
     asyncio.run(run())

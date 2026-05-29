@@ -220,10 +220,16 @@ class ScenarioService:
         *,
         resolution: TurnResolution,
         player_id: str,
+        requester_id: str | None = None,
     ) -> PlayerTurnView:
         """把内部 TurnResolution 投影为单个玩家可见的回合视图。"""
         with self._lock:
             session = self._runtime.get_session(resolution.session_id)
+            self._ensure_player_view_access(
+                session,
+                player_id=player_id,
+                requester_id=requester_id,
+            )
             return self._turn_view_builder.build_player_turn_view(
                 resolution=resolution,
                 session=session,
@@ -234,10 +240,12 @@ class ScenarioService:
         self,
         *,
         resolution: TurnResolution,
+        requester_id: str | None = None,
     ) -> KeeperTurnView:
         """把内部 TurnResolution 投影为守密人视图。"""
         with self._lock:
             session = self._runtime.get_session(resolution.session_id)
+            self._ensure_keeper_access(session, requester_id=requester_id)
             return self._turn_view_builder.build_keeper_turn_view(
                 resolution=resolution,
                 session=session,
@@ -288,10 +296,21 @@ class ScenarioService:
                 party=self._build_party_summary(session),
             )
 
-    def get_player_view(self, session_id: str, player_id: str) -> PlayerSessionView:
+    def get_player_view(
+        self,
+        session_id: str,
+        player_id: str,
+        *,
+        requester_id: str | None = None,
+    ) -> PlayerSessionView:
         """查询单个玩家当前可见会话视图。"""
         with self._lock:
             session = self._runtime.get_session(session_id)
+            self._ensure_player_view_access(
+                session,
+                player_id=player_id,
+                requester_id=requester_id,
+            )
             module = load_module_by_id(session.module_id, module_root=self._module_root)
             return self._scenario_view_builder.build_player_session_view(
                 runtime=self._runtime,
@@ -300,10 +319,16 @@ class ScenarioService:
                 player_id=player_id,
             )
 
-    def get_keeper_view(self, session_id: str) -> KeeperSessionView:
+    def get_keeper_view(
+        self,
+        session_id: str,
+        *,
+        requester_id: str | None = None,
+    ) -> KeeperSessionView:
         """查询守密人当前会话视图。"""
         with self._lock:
             session = self._runtime.get_session(session_id)
+            self._ensure_keeper_access(session, requester_id=requester_id)
             return self._scenario_view_builder.build_keeper_session_view(
                 session=session
             )
@@ -318,10 +343,7 @@ class ScenarioService:
 
     def _build_party_summary(self, session: SessionMapState) -> PartySummary:
         """把运行时会话状态映射为 API 层摘要对象。"""
-        owner_id = self._owner_by_session_id.get(
-            session.session_id,
-            next(iter(sorted(session.player_states))),
-        )
+        owner_id = self._session_owner_id(session)
         if (
             session.resolved_ending is not None
             or session.story_state.resolved_ending_id is not None
@@ -353,6 +375,39 @@ class ScenarioService:
             status=status,
             pending_players=sorted(session.pending_intents),
             players=players,
+        )
+
+    def _ensure_player_view_access(
+        self,
+        session: SessionMapState,
+        *,
+        player_id: str,
+        requester_id: str | None,
+    ) -> None:
+        if requester_id is None:
+            return
+        allowed = {player_id, self._session_owner_id(session)}
+        if requester_id not in allowed:
+            raise PermissionError(
+                f"玩家 {requester_id} 无权查看玩家 {player_id} 的会话视图"
+            )
+
+    def _ensure_keeper_access(
+        self,
+        session: SessionMapState,
+        *,
+        requester_id: str | None,
+    ) -> None:
+        if requester_id is None:
+            return
+        owner_id = self._session_owner_id(session)
+        if requester_id != owner_id:
+            raise PermissionError(f"玩家 {requester_id} 无权查看守密人视图")
+
+    def _session_owner_id(self, session: SessionMapState) -> str:
+        return self._owner_by_session_id.get(
+            session.session_id,
+            next(iter(sorted(session.player_states))),
         )
 
     def _build_default_investigator_card(
