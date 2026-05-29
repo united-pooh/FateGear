@@ -18,6 +18,7 @@
 ### Changed
 - Render Agent 调用后移到权威状态提交之后，叙事输入现在能看到本回合最终剧情迁移、新阶段和结局。
 - HTTP `POST /sessions/{session_id}/resolve` 改为返回守密人视图，避免裸返内部 `TurnResolution`。
+- `SceneRuntime.resolve_turn` 增加 per-session `asyncio.Lock`、回合历史和 `expected_turn` 幂等重放；`ScenarioService.resolve_turn` 不再持有 `RLock` 跨 `await`。
 
 ### Tests
 - loader 测试覆盖 NarrativeContext 成功加载、重复 NPC、坏世界书引用和缺失触发条件。
@@ -30,6 +31,7 @@
 - API/HTTP 测试覆盖当前玩家视图和守密人视图。
 - IntentNormalizer 测试覆盖自然语言移动、动作别名匹配和澄清路径。
 - API/HTTP 测试覆盖自然语言意图提交。
+- Runtime/API/HTTP 测试覆盖 expected-turn 回放和并发同回合防双提交。
 
 ## 2026-03-30
 

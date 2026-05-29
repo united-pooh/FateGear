@@ -112,6 +112,7 @@ class TurnResolution(BaseModel):
     triggered_clock_events: list[str] = Field(default_factory=list)
     clock_values: dict[str, int] = Field(default_factory=dict)
     story_signals: list[StorySignal] = Field(default_factory=list)
+    current_stage_id: str = Field(default="")
     new_stage: str | None = Field(default=None)
     applied_story_transition_id: str | None = Field(default=None)
     resolved_ending: str | None = Field(default=None)

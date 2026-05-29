@@ -65,8 +65,9 @@ class TurnViewBuilder:
             next_turn=resolution.next_turn,
             player_id=player_id,
             current_scene_id=player_state.current_scene_id,
-            current_stage_id=session.story_state.current_stage_id,
-            resolved_ending=session.resolved_ending,
+            current_stage_id=resolution.current_stage_id
+            or session.story_state.current_stage_id,
+            resolved_ending=resolution.resolved_ending or session.resolved_ending,
             scenes=scenes,
         )
 
@@ -95,8 +96,9 @@ class TurnViewBuilder:
             session_id=resolution.session_id,
             turn_no=resolution.turn_no,
             next_turn=resolution.next_turn,
-            current_stage_id=session.story_state.current_stage_id,
-            resolved_ending=session.resolved_ending,
+            current_stage_id=resolution.current_stage_id
+            or session.story_state.current_stage_id,
+            resolved_ending=resolution.resolved_ending or session.resolved_ending,
             scenes=scenes,
             event_log=resolution.event_log,
         )

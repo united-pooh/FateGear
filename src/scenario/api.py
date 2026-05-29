@@ -188,10 +188,25 @@ class ScenarioService:
             session = self._runtime.get_session(session_id)
             return self._build_party_summary(session)
 
-    async def resolve_turn(self, session_id: str) -> TurnResolution:
+    async def resolve_turn(
+        self,
+        session_id: str,
+        *,
+        expected_turn: int | None = None,
+    ) -> TurnResolution:
         """结算当前会话的一个完整回合。"""
-        with self._lock:
-            return await self._runtime.resolve_turn(session_id)
+        return await self._runtime.resolve_turn(
+            session_id,
+            expected_turn=expected_turn,
+        )
+
+    def get_turn_resolution(self, session_id: str, turn_no: int) -> TurnResolution:
+        """读取已结算回合结果。"""
+        return self._runtime.get_turn_resolution(session_id, turn_no)
+
+    def list_resolved_turns(self, session_id: str) -> list[int]:
+        """列出已结算回合编号。"""
+        return self._runtime.list_resolved_turns(session_id)
 
     def build_player_turn_view(
         self,

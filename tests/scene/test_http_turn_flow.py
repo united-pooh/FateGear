@@ -76,9 +76,18 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
             _FakeRequest(
                 app=app,
                 match_info={"session_id": created["session_id"]},
+                payload={"expected_turn": 1},
             )
         )
         resolved = json.loads(resolve_response.text)
+        replay_response = await main.handle_resolve_turn(
+            _FakeRequest(
+                app=app,
+                match_info={"session_id": created["session_id"]},
+                payload={"expected_turn": 1},
+            )
+        )
+        replayed = json.loads(replay_response.text)
         player_view_response = await main.handle_get_player_view(
             _FakeRequest(
                 app=app,
@@ -102,6 +111,7 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
         assert submit_response.status == 200
         assert text_submit_response.status == 200
         assert resolve_response.status == 200
+        assert replay_response.status == 200
         assert player_view_response.status == 200
         assert keeper_view_response.status == 200
         assert [player["player_id"] for player in joined["players"]] == ["keeper", "p2"]
@@ -113,6 +123,9 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
         }
         assert resolved["turn_no"] == 1
         assert resolved["next_turn"] == 2
+        assert replayed["turn_no"] == 1
+        assert replayed["next_turn"] == 2
+        assert resolved == replayed
         assert all(scene["outcomes"][0]["success"] for scene in resolved["scenes"])
         assert resolved["event_log"][0]["type"] == "turn_started"
         assert player_view["player_id"] == "keeper"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Mapping
@@ -64,6 +65,8 @@ class SceneRuntime:
             Path(module_root) if module_root is not None else MODULE_ROOT
         )
         self._sessions: dict[str, SessionMapState] = {}
+        self._session_locks: dict[str, asyncio.Lock] = {}
+        self._turn_history: dict[str, dict[int, TurnResolution]] = defaultdict(dict)
         self._module_cache: dict[str, ModuleDefinition] = {}
         self._transition_validator = TransitionValidator()
         self._story_state_service = StoryStateService()
@@ -127,10 +130,13 @@ class SceneRuntime:
             player_states=player_states,
         )
         self._sessions[session_id] = session
+        self._session_locks[session_id] = asyncio.Lock()
         return session
 
     def destroy_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
+        self._session_locks.pop(session_id, None)
+        self._turn_history.pop(session_id, None)
 
     def get_session(self, session_id: str) -> SessionMapState:
         return self._get_session(session_id)
@@ -204,7 +210,12 @@ class SceneRuntime:
 
         session.pending_intents[player_id] = validated.model_dump()
 
-    async def resolve_turn(self, session_id: str) -> TurnResolution:
+    async def resolve_turn(
+        self,
+        session_id: str,
+        *,
+        expected_turn: int | None = None,
+    ) -> TurnResolution:
         """结算一个完整回合（异步）。
 
         流程：
@@ -216,7 +227,42 @@ class SceneRuntime:
         规则引擎按 YAML 定义的静态检定与效果运行（与原有行为完全兼容）。
         若 ``render_agent`` 未配置，``SceneBatchResolution.narration`` 保持 None。
         """
+        lock = self._get_session_lock(session_id)
+        async with lock:
+            return await self._resolve_turn_locked(
+                session_id,
+                expected_turn=expected_turn,
+            )
+
+    def get_turn_resolution(self, session_id: str, turn_no: int) -> TurnResolution:
+        """读取已结算回合结果，用于回放或重复请求幂等返回。"""
+        self._get_session(session_id)
+        resolution = self._turn_history.get(session_id, {}).get(turn_no)
+        if resolution is None:
+            raise KeyError(f"会话 {session_id} 不存在已结算回合: {turn_no}")
+        return resolution.model_copy(deep=True)
+
+    def list_resolved_turns(self, session_id: str) -> list[int]:
+        """列出已结算回合编号。"""
+        self._get_session(session_id)
+        return sorted(self._turn_history.get(session_id, {}))
+
+    async def _resolve_turn_locked(
+        self,
+        session_id: str,
+        *,
+        expected_turn: int | None = None,
+    ) -> TurnResolution:
+        """持有会话异步锁时执行一次权威回合结算。"""
         session = self._get_session(session_id)
+        requested_turn = expected_turn or session.current_turn
+        if requested_turn < session.current_turn:
+            return self.get_turn_resolution(session_id, requested_turn)
+        if requested_turn > session.current_turn:
+            raise ValueError(
+                f"会话 {session_id} 当前是第 {session.current_turn} 回合，"
+                f"不能提前结算第 {requested_turn} 回合"
+            )
         if (
             session.resolved_ending is not None
             or session.story_state.resolved_ending_id is not None
@@ -803,7 +849,7 @@ class SceneRuntime:
                 ),
             )
         )
-        return TurnResolution(
+        resolution = TurnResolution(
             session_id=session_id,
             turn_no=snapshot.current_turn,
             next_turn=session.current_turn,
@@ -814,11 +860,16 @@ class SceneRuntime:
             triggered_clock_events=triggered_clock_events,
             clock_values=dict(session.clock_values),
             story_signals=story_signals,
+            current_stage_id=session.story_state.current_stage_id,
             new_stage=new_stage,
             applied_story_transition_id=applied_story_transition_id,
             resolved_ending=resolved_ending,
             ending_result=ending_result,
         )
+        self._turn_history[session_id][resolution.turn_no] = resolution.model_copy(
+            deep=True
+        )
+        return resolution
 
     async def _render_scene_batches(
         self,
@@ -968,6 +1019,15 @@ class SceneRuntime:
         if session_id not in self._sessions:
             raise KeyError(f"未知会话: {session_id}")
         return self._sessions[session_id]
+
+    def _get_session_lock(self, session_id: str) -> asyncio.Lock:
+        """按会话 ID 读取异步锁，确保 resolve_turn 不会双提交。"""
+        self._get_session(session_id)
+        lock = self._session_locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._session_locks[session_id] = lock
+        return lock
 
     def _movement_rules(
         self,

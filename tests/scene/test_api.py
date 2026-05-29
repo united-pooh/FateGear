@@ -95,6 +95,27 @@ def test_scenario_service_submit_intent_and_resolve_turn() -> None:
     assert latest.pending_players == []
 
 
+def test_scenario_service_replays_expected_turn() -> None:
+    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
+    service.submit_intent(
+        created.session_id,
+        {
+            "player_id": "keeper",
+            "intent": {"type": "move", "target_scene_id": "storage"},
+        },
+    )
+
+    first = asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
+    replay = asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
+    latest = service.get_party(created.session_id)
+
+    assert first.model_dump() == replay.model_dump()
+    assert latest.current_turn == 2
+    assert service.list_resolved_turns(created.session_id) == [1]
+    assert service.get_turn_resolution(created.session_id, 1).turn_no == 1
+
+
 def test_scenario_service_submit_text_intent_accepts_clear_move() -> None:
     service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})

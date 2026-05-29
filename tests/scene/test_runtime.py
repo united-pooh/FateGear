@@ -177,6 +177,71 @@ def test_create_session_initializes_players_scenes_clocks_and_story_stage() -> N
     assert set(session.scene_instances) == {"foyer", "storage", "control", "exit"}
 
 
+def test_resolve_turn_replays_expected_turn_without_double_commit() -> None:
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    runtime.submit_intent(
+        session.session_id,
+        "p1",
+        {"type": "move", "target_scene_id": "storage"},
+    )
+
+    first = asyncio.run(runtime.resolve_turn(session.session_id, expected_turn=1))
+    replay = asyncio.run(runtime.resolve_turn(session.session_id, expected_turn=1))
+
+    assert first.turn_no == 1
+    assert replay.turn_no == 1
+    assert session.current_turn == 2
+    assert session.player_states["p1"].current_scene_id == "storage"
+    assert runtime.list_resolved_turns(session.session_id) == [1]
+    assert (
+        runtime.get_turn_resolution(session.session_id, 1).model_dump()
+        == first.model_dump()
+    )
+
+
+def test_resolve_turn_rejects_future_expected_turn() -> None:
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+
+    with pytest.raises(ValueError, match="不能提前结算"):
+        asyncio.run(runtime.resolve_turn(session.session_id, expected_turn=2))
+
+
+def test_concurrent_resolve_with_same_expected_turn_is_idempotent() -> None:
+    async def run() -> tuple[TurnResolution, TurnResolution, int]:
+        runtime = _runtime_with_deterministic_success()
+        session = runtime.create_session(
+            "generic_mvp",
+            ["p1"],
+            player_cards=build_player_cards(["p1"]),
+        )
+        runtime.submit_intent(
+            session.session_id,
+            "p1",
+            {"type": "move", "target_scene_id": "storage"},
+        )
+        first, second = await asyncio.gather(
+            runtime.resolve_turn(session.session_id, expected_turn=1),
+            runtime.resolve_turn(session.session_id, expected_turn=1),
+        )
+        return first, second, session.current_turn
+
+    first, second, current_turn = asyncio.run(run())
+
+    assert first.turn_no == second.turn_no == 1
+    assert first.model_dump() == second.model_dump()
+    assert current_turn == 2
+
+
 def test_add_player_joins_waiting_session_at_entry_scene() -> None:
     runtime = _runtime_with_deterministic_success()
     session = runtime.create_session(

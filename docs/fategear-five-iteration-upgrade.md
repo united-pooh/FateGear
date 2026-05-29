@@ -82,10 +82,15 @@
 
 目标：让守密人能运营、回放、审计一局游戏。
 
+已部分落地：
+- `SceneRuntime.resolve_turn(expected_turn=...)` 增加 per-session `asyncio.Lock` 和回合历史；重复结算同一 expected turn 会返回历史结果，不会双提交。
+- `ScenarioService.resolve_turn` 不再在 `RLock` 内跨 `await`。
+- HTTP `POST /sessions/{session_id}/resolve` 支持可选 `expected_turn`，可用于客户端幂等重试。
+
 应继续完成：
 - KeeperView / PlayerView 的鉴权、持久化与前端消费。
-- turn replay、event log、dice log、Agent log。
-- 幂等 resolve 和持久化 StateStore。
+- 持久化 StateStore、dice log、Agent log。
+- 跨进程 turn replay。
 - 完整 tokoyami 分支回归与 Agent 失败降级回归。
 
 ## 本轮边界

@@ -156,7 +156,14 @@ async def handle_submit_text_intent(request: web.Request) -> web.Response:
 
 async def handle_resolve_turn(request: web.Request) -> web.Response:
     session_id = request.match_info["session_id"]
-    resolution = await _service(request).resolve_turn(session_id)
+    payload = await _read_json_body(request)
+    expected_turn = payload.get("expected_turn")
+    if expected_turn is not None and not isinstance(expected_turn, int):
+        raise ValueError("expected_turn 必须是整数")
+    resolution = await _service(request).resolve_turn(
+        session_id,
+        expected_turn=expected_turn,
+    )
     view = _service(request).build_keeper_turn_view(resolution=resolution)
     return web.json_response(view.model_dump())
 
