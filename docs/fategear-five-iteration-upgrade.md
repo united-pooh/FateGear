@@ -91,12 +91,13 @@
 - `TurnResolution` 新增 `dice_rolls` 与 `agent_calls` 审计摘要，记录静态/动态检定骰点、阈值、成功等级，以及 Plan/Render 调用元数据。
 - `BaseAgent` 会把 LLM token 用量回填到 `AgentCallMeta`，供运行时审计摘要和后续日志落库使用。
 - `ScenarioService` 增加基于 `requester_id` 的视图访问边界：玩家视图仅本人或团主可看，守密人视图仅团主可看；HTTP 层将权限错误映射为 403。
+- `tokoyami_subset` 已有真结局、坏结局、多人推进回归；新增离线 Plan/Render Agent 降级回归，证明 LLM 不可用时静态规则仍推进且审计记录 fallback。
 
 应继续完成：
 - 正式身份认证、令牌校验、前端消费与访问日志。
 - 数据库级 StateStore、完整 dice log、完整 Agent prompt/output log。
 - 跨进程互斥锁与事务提交。
-- 完整 tokoyami 分支回归与 Agent 失败降级回归。
+- 更细的 Agent 失败分类、重试错误持久化与线上可观测性。
 
 ## 本轮边界
 

@@ -43,6 +43,7 @@
 - StateStore 测试覆盖会话恢复、回合历史恢复、删除清理，以及 JSON 叙事往返后的玩家视图过滤。
 - Runtime/StateStore 测试覆盖静态骰点审计、动态骰点审计、Agent 调用审计和持久化往返。
 - API/HTTP 测试覆盖玩家视图和守密人视图的 requester 边界。
+- Runtime smoke 测试覆盖离线 Plan/Render Agent 降级，验证 fallback 审计与静态规则推进。
 
 ## 2026-03-30
 

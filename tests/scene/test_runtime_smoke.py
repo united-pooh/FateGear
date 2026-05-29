@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from cards import build_investigator_from_mapping, load_skill_template_mapping
+from scenario.agent import KeeperPlanAgent, KeeperRenderAgent
+from scenario.agent.config import AgentModelConfig, AgentSettings, OpenAIProviderConfig
 from scenario.runtime import SceneRuntime, TurnResolution
+from tests.scene.card_fixtures import build_player_cards
 
 
 class FixedRollProvider:
@@ -150,6 +153,29 @@ def _submit_and_resolve(
     for player_id, intent in intents.items():
         runtime.submit_intent(session_id, player_id, intent)
     return asyncio.run(runtime.resolve_turn(session_id))
+
+
+def _offline_agent_settings() -> AgentSettings:
+    provider = OpenAIProviderConfig()
+    return AgentSettings(
+        default_provider=provider,
+        planner_provider=provider,
+        narrator_provider=provider,
+        planner=AgentModelConfig(
+            model="offline-planner",
+            temperature=0.0,
+            top_p=1.0,
+            top_k=None,
+            timeout_seconds=1.0,
+        ),
+        narrator=AgentModelConfig(
+            model="offline-narrator",
+            temperature=0.0,
+            top_p=1.0,
+            top_k=None,
+            timeout_seconds=1.0,
+        ),
+    )
 
 
 def test_generic_mvp_cards_smoke_happy_path_reaches_escaped() -> None:
@@ -448,3 +474,44 @@ def test_runtime_passes_narrative_context_to_planner_and_narrator() -> None:
         "safety:body_horror_limit",
     ]
     assert session.story_state.current_stage_id == "informed"
+
+
+def test_offline_agents_fallback_is_audited_and_keeps_static_rules() -> None:
+    settings = _offline_agent_settings()
+    planner = KeeperPlanAgent(config=settings)
+    narrator = KeeperRenderAgent(config=settings)
+    planner.max_retries = 0
+    narrator.max_retries = 0
+    runtime = SceneRuntime(
+        roll_provider=lambda: 1,
+        plan_agent=planner,
+        render_agent=narrator,
+    )
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+
+    _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "move", "target_scene_id": "storage"}},
+    )
+    resolution = _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "action", "action_id": "find_key"}},
+    )
+
+    assert resolution.scene_batches[0].narration.is_fallback is True
+    assert resolution.scene_batches[0].outcomes[0].success is True
+    assert "key_found" in session.global_flags
+    assert resolution.dice_rolls[0].source == "static_action_check"
+    assert resolution.dice_rolls[0].roll_value == 1
+    assert [call.stage for call in resolution.agent_calls] == ["plan", "render"]
+    assert all(call.fallback_used is True for call in resolution.agent_calls)
+    assert [call.model_id for call in resolution.agent_calls] == [
+        "offline-planner",
+        "offline-narrator",
+    ]
