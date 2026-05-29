@@ -58,6 +58,10 @@ actions:
     scene_id: storage
     name: 搜索钥匙
     kind: search
+    description: 在储藏室的箱子和备用工具之间寻找能打开控制室的钥匙。
+    aliases: [找钥匙, 搜钥匙, 翻箱子, 搜索储藏室]
+    expected_inputs: [钥匙, 箱子, 工具]
+    stakes: 成功会找到控制室钥匙；失败会浪费本回合机会。
     once: true
     check:
       skill_key: spot_hidden
@@ -71,6 +75,10 @@ actions:
     scene_id: storage
     name: 解锁控制室
     kind: operate
+    description: 使用钥匙和锁匠技巧尝试打开控制室门锁。
+    aliases: [开门, 开锁, 解锁门, 打开控制室]
+    expected_inputs: [控制室门, 门锁, 钥匙]
+    stakes: 成功会打开通往控制室的路径。
     once: true
     required_stages: [setup]
     check:
@@ -89,6 +97,10 @@ actions:
     scene_id: control
     name: 启动终端
     kind: operate
+    description: 校准中央终端，让逃生系统恢复响应。
+    aliases: [启动机器, 启动系统, 操作终端, 校准终端]
+    expected_inputs: [终端, 机器, 系统]
+    stakes: 成功会启动安全门控制系统，也可能触发警报。
     once: true
     required_stages: [access_opened]
     check:
@@ -106,6 +118,10 @@ actions:
     scene_id: control
     name: 打开安全门
     kind: operate
+    description: 通过中央终端打开通往外部的安全门。
+    aliases: [打开出口, 开安全门, 打开安全门, 开出口]
+    expected_inputs: [安全门, 出口, 终端]
+    stakes: 成功会打开逃离设施的出口。
     once: true
     required_stages: [system_primed]
     check:

@@ -307,7 +307,7 @@ class PromptBuilder:
                         intent_type="action",
                         action_id=action_id,
                         action_name=action.name if action else action_id,
-                        action_description="",  # 可在 ModuleAction 扩展 description 后填充
+                        action_description=action.description if action else "",
                     )
                 )
             else:

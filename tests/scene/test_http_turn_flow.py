@@ -63,6 +63,14 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
             )
         )
         submitted = json.loads(submit_response.text)
+        text_submit_response = await main.handle_submit_text_intent(
+            _FakeRequest(
+                app=app,
+                match_info={"session_id": created["session_id"]},
+                payload={"player_id": "p2", "text": "我也想去储藏室"},
+            )
+        )
+        text_submitted = json.loads(text_submit_response.text)
 
         resolve_response = await main.handle_resolve_turn(
             _FakeRequest(
@@ -92,14 +100,20 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
         assert create_response.status == 201
         assert join_response.status == 200
         assert submit_response.status == 200
+        assert text_submit_response.status == 200
         assert resolve_response.status == 200
         assert player_view_response.status == 200
         assert keeper_view_response.status == 200
         assert [player["player_id"] for player in joined["players"]] == ["keeper", "p2"]
         assert submitted["pending_players"] == ["keeper"]
+        assert text_submitted["accepted"] is True
+        assert text_submitted["normalization"]["intent_payload"] == {
+            "type": "move",
+            "target_scene_id": "storage",
+        }
         assert resolved["turn_no"] == 1
         assert resolved["next_turn"] == 2
-        assert resolved["scenes"][0]["outcomes"][0]["success"] is True
+        assert all(scene["outcomes"][0]["success"] for scene in resolved["scenes"])
         assert resolved["event_log"][0]["type"] == "turn_started"
         assert player_view["player_id"] == "keeper"
         assert player_view["current_scene_id"] == "storage"

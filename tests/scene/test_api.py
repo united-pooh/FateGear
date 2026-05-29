@@ -95,6 +95,40 @@ def test_scenario_service_submit_intent_and_resolve_turn() -> None:
     assert latest.pending_players == []
 
 
+def test_scenario_service_submit_text_intent_accepts_clear_move() -> None:
+    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
+
+    response = service.submit_text_intent(
+        created.session_id,
+        {"player_id": "keeper", "text": "我去储藏室"},
+    )
+    latest = service.get_party(created.session_id)
+
+    assert response.accepted is True
+    assert response.normalization.intent_payload == {
+        "type": "move",
+        "target_scene_id": "storage",
+    }
+    assert latest.pending_players == ["keeper"]
+
+
+def test_scenario_service_submit_text_intent_clarifies_unclear_input() -> None:
+    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
+
+    response = service.submit_text_intent(
+        created.session_id,
+        {"player_id": "keeper", "text": "我开始跳舞"},
+    )
+    latest = service.get_party(created.session_id)
+
+    assert response.accepted is False
+    assert response.normalization.intent_payload is None
+    assert response.normalization.clarification_question
+    assert latest.pending_players == []
+
+
 def test_scenario_service_builds_player_and_keeper_session_views() -> None:
     service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})

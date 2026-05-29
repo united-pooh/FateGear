@@ -16,6 +16,7 @@ if str(SRC) not in sys.path:
 from scenario.api import (  # noqa: E402
     CreatePartyRequest,
     JoinPartyRequest,
+    RawPlayerIntent,
     ScenarioService,
     SubmitIntentRequest,
 )
@@ -86,6 +87,7 @@ async def handle_root(request: web.Request) -> web.Response:
                 "keeper_view": "GET /sessions/{session_id}/keeper-view",
                 "join_party": "POST /sessions/{session_id}/players",
                 "submit_intent": "POST /sessions/{session_id}/intents",
+                "submit_text_intent": "POST /sessions/{session_id}/text-intents",
                 "resolve_turn": "POST /sessions/{session_id}/resolve (keeper view)",
             },
         }
@@ -145,6 +147,13 @@ async def handle_submit_intent(request: web.Request) -> web.Response:
     return web.json_response(party.model_dump())
 
 
+async def handle_submit_text_intent(request: web.Request) -> web.Response:
+    session_id = request.match_info["session_id"]
+    payload = RawPlayerIntent.model_validate(await _read_json_body(request))
+    response = _service(request).submit_text_intent(session_id, payload)
+    return web.json_response(response.model_dump())
+
+
 async def handle_resolve_turn(request: web.Request) -> web.Response:
     session_id = request.match_info["session_id"]
     resolution = await _service(request).resolve_turn(session_id)
@@ -170,6 +179,10 @@ def create_app(service: ScenarioService) -> web.Application:
             web.get("/sessions/{session_id}/keeper-view", handle_get_keeper_view),
             web.post("/sessions/{session_id}/players", handle_join_session),
             web.post("/sessions/{session_id}/intents", handle_submit_intent),
+            web.post(
+                "/sessions/{session_id}/text-intents",
+                handle_submit_text_intent,
+            ),
             web.post("/sessions/{session_id}/resolve", handle_resolve_turn),
         ]
     )

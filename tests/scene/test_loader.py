@@ -229,6 +229,32 @@ endings: []
         ),
         (
             """
+module_id: invalid_duplicate_alias
+title: 重复动作别名
+version: 1
+entry_scene_id: start
+entry_stage_id: intro
+flags: [ready]
+scenes:
+  - id: start
+    name: 起点
+links: []
+actions:
+  - id: inspect
+    scene_id: start
+    name: 检查
+    kind: investigate
+    aliases: [检查, 检查]
+clocks: []
+story_stages:
+  - id: intro
+    name: 开场
+endings: []
+""",
+            "重复 alias",
+        ),
+        (
+            """
 module_id: invalid_clock_ref
 title: 坏时钟引用
 version: 1

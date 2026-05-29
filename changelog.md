@@ -8,7 +8,10 @@
 - Plan/Render Agent 输入增加 `narrative` 层，并在 prompt 中注入上下文；不改变 `KeeperAgentPlan` / `KeeperNarration` 输出 schema。
 - 模组 loader 接入人物卡技能模板注册表，加载期拒绝未知技能模板、缺失分支后缀和非法分支技能。
 - 新增玩家/守密人视图投影：`PlayerTurnView`、`KeeperTurnView`、`PlayerSessionView`、`KeeperSessionView`。
+- 新增确定性 `IntentNormalizer`，支持自然语言移动/动作匹配、动作别名和澄清问题。
+- `ModuleAction` 新增 `description`、`aliases`、`expected_inputs`、`stakes`、`fail_forward_hint` 作者字段。
 - HTTP 新增 `GET /sessions/{session_id}/players/{player_id}/view` 与 `GET /sessions/{session_id}/keeper-view`。
+- HTTP 新增 `POST /sessions/{session_id}/text-intents`，用于提交自然语言玩家意图。
 - `tokoyami_subset` 示例模组展示常暗列车的 NPC、世界书、氛围和安全边界写法。
 - 新增五轮升级审计文档：`docs/fategear-five-iteration-upgrade.md`。
 
@@ -25,6 +28,8 @@
 - Runtime smoke 测试覆盖 Narrator 能看到最终 `applied_transition_id`、`new_stage_id` 和 `resolved_ending`。
 - 视图测试覆盖玩家 payload 不泄漏他人私有线索、keeper-only NPC 台词和 `keeper_hint`。
 - API/HTTP 测试覆盖当前玩家视图和守密人视图。
+- IntentNormalizer 测试覆盖自然语言移动、动作别名匹配和澄清路径。
+- API/HTTP 测试覆盖自然语言意图提交。
 
 ## 2026-03-30
 

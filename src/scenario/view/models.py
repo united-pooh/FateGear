@@ -11,6 +11,8 @@ class PlayerActionView(BaseModel):
     action_id: str
     name: str
     kind: str
+    description: str = ""
+    stakes: str = ""
 
 
 class PublicDialogueView(BaseModel):

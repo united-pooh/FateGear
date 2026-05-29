@@ -135,6 +135,7 @@ def validate_module_definition(
                 f"模组文件 {source} 的 action[{action.id}] 引用了不存在的 scene_id="
                 f"{action.scene_id!r}"
             )
+        _validate_action_authoring_terms(action, source=source)
         if action.check is not None and skill_templates is not None:
             _validate_action_check_skill(
                 action_id=action.id,
@@ -373,6 +374,17 @@ def _validate_action_refs(
             raise ModuleValidationError(
                 f"模组文件 {source} 的 {owner} 引用了不存在的 action_id={action_id!r}"
             )
+
+
+def _validate_action_authoring_terms(action, *, source: Path) -> None:
+    owner = f"action[{action.id}]"
+    terms = [*action.aliases, *action.expected_inputs]
+    for term in terms:
+        if not term.strip():
+            raise ModuleValidationError(f"模组文件 {source} 的 {owner} 包含空别名")
+    normalized = [term.strip().lower() for term in action.aliases]
+    if len(normalized) != len(set(normalized)):
+        raise ModuleValidationError(f"模组文件 {source} 的 {owner} 包含重复 alias")
 
 
 def _validate_action_check_skill(

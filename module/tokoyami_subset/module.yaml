@@ -133,6 +133,9 @@ actions:
     scene_id: car_6
     name: 查看便签
     kind: investigate
+    description: 阅读车厢门上的便签，确认列车里的求生规则。
+    aliases: [看便签, 读便签, 查看纸条, 读纸条]
+    expected_inputs: [便签, 纸条, 车门]
     once: true
     required_stages: [awake]
     effects_on_success:
@@ -145,6 +148,9 @@ actions:
     scene_id: car_4
     name: 救醒乘务员
     kind: assist
+    description: 检查乘务员状态并尝试让她恢复意识。
+    aliases: [救乘务员, 叫醒乘务员, 急救乘务员, 查看乘务员]
+    expected_inputs: [乘务员, 急救, 呼唤]
     once: true
     effects_on_success:
       - type: set_flag
@@ -154,6 +160,9 @@ actions:
     scene_id: car_3
     name: 寻找钥匙
     kind: search
+    description: 在3号车厢杂乱行李间寻找驾驶室钥匙。
+    aliases: [找钥匙, 搜钥匙, 翻行李, 搜索行李]
+    expected_inputs: [钥匙, 行李, 箱子]
     once: true
     required_stages: [informed]
     conditions:
@@ -167,6 +176,9 @@ actions:
     scene_id: car_2
     name: 潜行通过
     kind: stealth
+    description: 避免制造声音，穿过循声者所在的车厢。
+    aliases: [潜行, 悄悄过去, 躲开循声者, 安静通过]
+    expected_inputs: [循声者, 潜行, 声音]
     once: true
     required_stages: [key_ready]
     conditions:
@@ -181,6 +193,9 @@ actions:
     scene_id: head_car
     name: 全速前进
     kind: operate
+    description: 推动驾驶室操纵杆，让列车冲破黑暗。
+    aliases: [加速, 全速, 往前开, 推操纵杆]
+    expected_inputs: [操纵杆, 驾驶室, 加速]
     once: true
     required_stages: [breakthrough]
     conditions:
@@ -196,6 +211,9 @@ actions:
     scene_id: head_car
     name: 拉下制动杆
     kind: operate
+    description: 拉下制动杆，让列车在黑暗中减速。
+    aliases: [刹车, 制动, 拉制动杆, 减速]
+    expected_inputs: [制动杆, 刹车, 减速]
     once: true
     required_stages: [breakthrough]
     conditions:

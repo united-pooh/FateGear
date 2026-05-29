@@ -172,9 +172,13 @@ def _build_user_message(prompt: AgentPlanPrompt) -> str:
                     f"  - {intent.player_id} 试图移动到 {intent.target_scene_id}"
                 )
             elif intent.intent_type == "action":
-                lines.append(
-                    f"  - {intent.player_id} 执行动作「{intent.action_name or intent.action_id}」"
+                action_line = (
+                    f"  - {intent.player_id} 执行动作「"
+                    f"{intent.action_name or intent.action_id}」"
                 )
+                if intent.action_description:
+                    action_line += f"：{intent.action_description}"
+                lines.append(action_line)
     else:
         lines.append(f"\n【第 {prompt.turn_no} 回合：本场景无待结算意图。】")
 

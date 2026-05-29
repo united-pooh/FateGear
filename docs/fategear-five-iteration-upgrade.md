@@ -11,7 +11,7 @@
 
 ## 批判审计
 
-1. 当前输入仍是结构化 `move/action`，不是自然语言跑团输入。它能跑状态机，但还不是成熟 AI KP。
+1. 当前输入原先仍是结构化 `move/action`，不是自然语言跑团输入；本轮已加入确定性自然语言归一化入口，但还不是完整 LLM 意图理解。
 2. 私密信息隔离不足。`private_clues` 与 `visibility_state` 已有名字，但还没有完整玩家视图、守密人视图和可审计投递通道。
 3. Agent 边界还不够硬。Planner 可以提议动态检定，但难度未完全落入权威规则模型，`proposed_effects` 与 `proposed_transition` 仍没有完整执行闭环。
 4. `SceneRuntime.resolve_turn` 过重，承担计划、规则、效果、迁移、叙事和提交，后续 NPC、线索、持久化都会继续挤压这里。
@@ -47,10 +47,12 @@
 已落地：
 - loader 调用人物卡技能模板注册表，在加载 YAML 时校验 `action.check.skill_key`。
 - 未知技能模板、分支技能缺少后缀、非法分支技能会直接抛出 `ModuleValidationError`。
+- `ModuleAction` 增加 `description`、`aliases`、`expected_inputs`、`stakes`、`fail_forward_hint`，用于自然语言匹配与玩家可见行动说明。
+- `IntentNormalizer` 能把明确的自然语言移动/动作输入归一化为结构化 intent，不明确时返回澄清问题和候选项。
 
 应继续完成：
-- 校验 action aliases、expected inputs、fail-forward 元数据。
-- 增加更系统的坏 YAML fixtures。
+- 用 LLM/规则混合方式处理更长、更含糊的玩家声明。
+- 让 fail-forward 元数据真正参与失败叙事和线索迁移。
 - 输出更精确的字段路径诊断。
 
 ### 第 3 轮：上下文检索和预算硬化

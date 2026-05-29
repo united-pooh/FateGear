@@ -12,6 +12,7 @@ from cards.domain.card import InvestigatorCard
 from cards.domain.skills import SkillTemplate
 from pydantic import BaseModel, Field
 
+from .intent import IntentNormalizer, NormalizedIntentResult, RawPlayerIntent
 from .io import MODULE_ROOT, load_module_by_id
 from .module.models import ModuleDefinition
 from .runtime import SceneIntent, SceneRuntime, TurnResolution
@@ -59,6 +60,12 @@ class PartySummary(BaseModel):
     players: list[PartyPlayerSummary] = Field(default_factory=list)
 
 
+class SubmitTextIntentResponse(BaseModel):
+    accepted: bool
+    normalization: NormalizedIntentResult
+    party: PartySummary | None = None
+
+
 class ScenarioService:
     """提供建团、查团、加入团等最小接口能力。"""
 
@@ -78,6 +85,7 @@ class ScenarioService:
         self._skill_templates = load_skill_template_mapping()
         self._scenario_view_builder = ScenarioViewBuilder()
         self._turn_view_builder = TurnViewBuilder()
+        self._intent_normalizer = IntentNormalizer()
 
     def list_modules(self) -> list[ModuleSummary]:
         """扫描模组目录并返回可创建会话的模组摘要。"""
@@ -218,6 +226,45 @@ class ScenarioService:
         with self._lock:
             session = self._runtime.get_session(session_id)
             return self._build_party_summary(session)
+
+    def submit_text_intent(
+        self,
+        session_id: str,
+        request: RawPlayerIntent | dict[str, object],
+    ) -> SubmitTextIntentResponse:
+        """提交自然语言意图；可明确归一化时自动写入 pending intent。"""
+        payload = (
+            request
+            if isinstance(request, RawPlayerIntent)
+            else RawPlayerIntent.model_validate(request)
+        )
+        with self._lock:
+            session = self._runtime.get_session(session_id)
+            module = load_module_by_id(session.module_id, module_root=self._module_root)
+            normalization = self._intent_normalizer.normalize(
+                runtime=self._runtime,
+                session=session,
+                module=module,
+                player_id=payload.player_id,
+                raw_text=payload.text,
+            )
+            if not normalization.accepted or normalization.intent_payload is None:
+                return SubmitTextIntentResponse(
+                    accepted=False,
+                    normalization=normalization,
+                    party=self._build_party_summary(session),
+                )
+            self._runtime.submit_intent(
+                session_id,
+                payload.player_id,
+                normalization.intent_payload,
+            )
+            session = self._runtime.get_session(session_id)
+            return SubmitTextIntentResponse(
+                accepted=True,
+                normalization=normalization,
+                party=self._build_party_summary(session),
+            )
 
     def get_player_view(self, session_id: str, player_id: str) -> PlayerSessionView:
         """查询单个玩家当前可见会话视图。"""

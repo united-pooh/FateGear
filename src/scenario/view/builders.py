@@ -179,6 +179,8 @@ class ScenarioViewBuilder:
                     action_id=action.id,
                     name=action.name,
                     kind=action.kind,
+                    description=action.description,
+                    stakes=action.stakes,
                 )
                 for action in runtime.list_available_actions(session, player_id)
             ],

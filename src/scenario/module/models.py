@@ -45,7 +45,7 @@ ActionCheckDifficulty = Literal["regular", "hard", "extreme"]
 
 
 class ModuleActionCheck(BaseModel):
-    # FIXME: 这里使用了裸 str；应考虑复用 cards 的 SkillKey 约束，尽早在加载期拦截非法 skill_key。
+    # 加载期会用 cards 技能模板注册表做语义校验。
     skill_key: str = Field(..., min_length=1, max_length=50)
     difficulty: ActionCheckDifficulty = "regular"
     failure_reason: str = Field(default="检定失败", max_length=200)
@@ -56,6 +56,11 @@ class ModuleAction(BaseModel):
     scene_id: str = Field(..., min_length=1, max_length=30)
     name: str = Field(..., min_length=1, max_length=100)
     kind: str = Field(..., min_length=1, max_length=30)
+    description: str = Field(default="", max_length=500)
+    aliases: list[str] = Field(default_factory=list, max_length=12)
+    expected_inputs: list[str] = Field(default_factory=list, max_length=8)
+    stakes: str = Field(default="", max_length=300)
+    fail_forward_hint: str = Field(default="", max_length=300)
     once: bool = Field(default=True)
     required_stages: list[str] = Field(default_factory=list, max_length=10)
     conditions: list[ModuleCondition] = Field(default_factory=list)
