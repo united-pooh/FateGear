@@ -69,6 +69,21 @@ def validate_module_definition(
         clock.id: {threshold.value for threshold in clock.threshold_events}
         for clock in definition.clocks
     }
+    npc_ids = _ensure_unique_ids(
+        definition.narrative_context.npcs,
+        source=source,
+        object_name="npc",
+    )
+    _ensure_unique_ids(
+        definition.narrative_context.lorebook_entries,
+        source=source,
+        object_name="lorebook_entry",
+    )
+    _ensure_unique_ids(
+        definition.narrative_context.safety_boundaries,
+        source=source,
+        object_name="safety_boundary",
+    )
 
     if definition.entry_scene_id not in scene_ids:
         raise ModuleValidationError(
@@ -197,6 +212,14 @@ def validate_module_definition(
         clock_ids=clock_ids,
         clock_thresholds=clock_thresholds,
     )
+    _validate_narrative_context(
+        definition=definition,
+        source=source,
+        scene_ids=scene_ids,
+        story_stage_ids=story_stage_ids,
+        action_ids=action_ids,
+        npc_ids=npc_ids,
+    )
 
 
 def _ensure_unique_ids(
@@ -312,6 +335,133 @@ def _validate_stage_refs(
             raise ModuleValidationError(
                 f"模组文件 {source} 的 {owner} 引用了不存在的 stage={stage_id!r}"
             )
+
+
+def _validate_scene_refs(
+    scenes: Sequence[str],
+    *,
+    source: Path,
+    owner: str,
+    scene_ids: set[str],
+) -> None:
+    for scene_id in scenes:
+        if scene_id not in scene_ids:
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 {owner} 引用了不存在的 scene_id={scene_id!r}"
+            )
+
+
+def _validate_action_refs(
+    actions: Sequence[str],
+    *,
+    source: Path,
+    owner: str,
+    action_ids: set[str],
+) -> None:
+    for action_id in actions:
+        if action_id not in action_ids:
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 {owner} 引用了不存在的 action_id={action_id!r}"
+            )
+
+
+def _validate_npc_refs(
+    npcs: Sequence[str],
+    *,
+    source: Path,
+    owner: str,
+    npc_ids: set[str],
+) -> None:
+    for npc_id in npcs:
+        if npc_id not in npc_ids:
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 {owner} 引用了不存在的 npc_id={npc_id!r}"
+            )
+
+
+def _validate_narrative_context(
+    *,
+    definition: ModuleDefinition,
+    source: Path,
+    scene_ids: set[str],
+    story_stage_ids: set[str],
+    action_ids: set[str],
+    npc_ids: set[str],
+) -> None:
+    narrative = definition.narrative_context
+
+    for npc in narrative.npcs:
+        owner = f"narrative_context.npcs[{npc.id}]"
+        _validate_scene_refs(
+            npc.active_scene_ids,
+            source=source,
+            owner=owner,
+            scene_ids=scene_ids,
+        )
+        _validate_stage_refs(
+            npc.active_stage_ids,
+            source=source,
+            owner=owner,
+            stage_ids=story_stage_ids,
+        )
+
+    for entry in narrative.lorebook_entries:
+        owner = f"narrative_context.lorebook_entries[{entry.id}]"
+        if not entry.always_on and not (
+            entry.keywords
+            or entry.scope_scene_ids
+            or entry.scope_stage_ids
+            or entry.scope_action_ids
+            or entry.npc_ids
+        ):
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 {owner} 缺少触发条件；"
+                "请设置 keywords/scope_* 或 always_on=true"
+            )
+        for keyword in entry.keywords:
+            if not keyword.strip():
+                raise ModuleValidationError(
+                    f"模组文件 {source} 的 {owner} 包含空 keyword"
+                )
+        _validate_scene_refs(
+            entry.scope_scene_ids,
+            source=source,
+            owner=owner,
+            scene_ids=scene_ids,
+        )
+        _validate_stage_refs(
+            entry.scope_stage_ids,
+            source=source,
+            owner=owner,
+            stage_ids=story_stage_ids,
+        )
+        _validate_action_refs(
+            entry.scope_action_ids,
+            source=source,
+            owner=owner,
+            action_ids=action_ids,
+        )
+        _validate_npc_refs(
+            entry.npc_ids,
+            source=source,
+            owner=owner,
+            npc_ids=npc_ids,
+        )
+
+    for boundary in narrative.safety_boundaries:
+        owner = f"narrative_context.safety_boundaries[{boundary.id}]"
+        _validate_scene_refs(
+            boundary.scope_scene_ids,
+            source=source,
+            owner=owner,
+            scene_ids=scene_ids,
+        )
+        _validate_stage_refs(
+            boundary.scope_stage_ids,
+            source=source,
+            owner=owner,
+            stage_ids=story_stage_ids,
+        )
 
 
 def _validate_story_transitions(

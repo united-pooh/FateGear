@@ -4,6 +4,71 @@ version: 1
 entry_scene_id: car_6
 entry_stage_id: awake
 
+narrative_context:
+  worldview_brief: 常暗列车像被遗忘在现实背面的末班车，车厢越向前越接近出口，也越接近列车真正的饥饿。
+  max_lore_entries: 4
+  max_context_chars: 2200
+  npcs:
+    - id: attendant
+      name: 昏迷的乘务员
+      role: 线索保管者
+      public_description: 她倒在座椅边，制服胸牌被划花，指尖还攥着半截车票。
+      persona: 刚苏醒时会先确认调查员是否仍是人类，然后才肯说出列车前方的事。
+      speaking_style: 声音很轻，句尾常被车轮声吞掉。
+      goals:
+        - 引导调查员找到驾驶室钥匙。
+        - 避免让循声者听见完整的人声。
+      knowledge_boundary: 她知道钥匙曾被藏进3号车厢的行李堆，但不知道驾驶室之后会发生什么。
+      secrets:
+        - 她曾经拉下制动杆，导致上一批乘客被黑暗吞没。
+      active_scene_ids: [car_4]
+      active_stage_ids: [awake, informed]
+  lorebook_entries:
+    - id: note_warning
+      title: 门上便签
+      content: 便签的字迹像是仓促写下的求生规则：不要回头数车厢，听见后方咀嚼声时继续向前。
+      scope_scene_ids: [car_6]
+      scope_action_ids: [inspect_note]
+      priority: 300
+      insertion_order: 10
+    - id: clicker_hunting_rule
+      title: 循声者的狩猎方式
+      content: 循声者不会追逐光，它追逐完整的人声、急促的脚步和金属撞击后的回音。
+      keywords: [循声者, 喘息, 潜行]
+      scope_scene_ids: [car_2]
+      priority: 260
+      insertion_order: 20
+    - id: rear_threat_texture
+      title: 后方威胁的质感
+      content: 后方的大嘴不会立刻出现；它先让座椅缝隙渗出温热腥气，再让车厢连接处响起湿润的咀嚼声。
+      scope_stage_ids: [informed, key_ready, breakthrough]
+      priority: 180
+      insertion_order: 30
+      visibility: keeper
+  safety_boundaries:
+    - id: body_horror_limit
+      severity: warning
+      note: 可以保持克制的身体恐怖，但避免过度细化现实创伤过程。
+  atmosphere:
+    tone: 密闭、潮湿、追赶感逐步逼近。
+    sensory_palette: [铁轨震颤, 冷白灯, 旧布座椅的潮味, 远处咀嚼声]
+    pacing_hint: 每次成功都应打开一小段路，同时让后方威胁更近。
+    tension_axis: 出口的希望与后方吞噬感同步增强。
+    escalation_rules:
+      - rear_threat 时钟上升后，优先描写声音和气味逼近，而不是直接展示怪物。
+    forbidden_reveals:
+      - 不要提前说明列车的真实来源。
+    style_rules:
+      - 先给调查员可观察的物，再给异常的解释。
+      - 线索要能被玩家复述，恐怖感不能遮蔽行动目标。
+  prose_controls:
+    paragraph_limit: 3
+    horror_intensity: 4
+    dice_visibility: summarize
+    style_rules:
+      - 使用简洁中文，避免华丽堆砌。
+      - 保持 KP 口吻，不替玩家做心理决定。
+
 flags:
   - note_read
   - key_hint_known

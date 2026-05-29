@@ -383,3 +383,35 @@ def test_generic_mvp_harness_smoke_runs_planner_and_narrator_agents() -> None:
         any(event.type == "render_agent_called" for event in resolution.event_log)
         for resolution in resolutions
     )
+
+
+def test_runtime_passes_narrative_context_to_planner_and_narrator() -> None:
+    planner = FakePlannerAgent()
+    narrator = FakeNarratorAgent()
+    runtime = SceneRuntime(plan_agent=planner, render_agent=narrator)
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards={"p1": build_investigator_from_mapping(
+            _load_investigator_payload(),
+            skill_templates=load_skill_template_mapping(),
+            skill_inputs=[{"template_key": "spot_hidden", "value": 80}],
+        )},
+    )
+
+    resolution = _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "action", "action_id": "inspect_note"}},
+    )
+
+    assert resolution.scene_batches[0].narration is not None
+    assert planner.records[0].prompt.narrative.selected_ids == [
+        "lore:note_warning",
+        "safety:body_horror_limit",
+    ]
+    assert narrator.records[0].prompt.narrative.selected_ids == [
+        "lore:note_warning",
+        "safety:body_horror_limit",
+    ]
+    assert session.story_state.current_stage_id == "informed"

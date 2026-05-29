@@ -11,8 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Sequence
 
+from ..context import NarrativeContextLayer, NarrativeContextSelector
 from ..module.models import ModuleDefinition
-from ..runtime.contracts import RuntimeEvent
 from ..session.state import SessionMapState
 from ..story.models import StoryState
 from .models import (
@@ -65,6 +65,7 @@ class PromptBuilder:
         coc_rule_summary: str = _DEFAULT_COC_RULE_SUMMARY,
         keeper_role_hint: str = "你是 Call of Cthulhu 桌游的守密人，负责裁定玩家行动并推进故事。",
         history_size: int = _DEFAULT_HISTORY_SIZE,
+        narrative_selector: NarrativeContextSelector | None = None,
     ) -> None:
         """
         Args:
@@ -75,6 +76,7 @@ class PromptBuilder:
         self._coc_rule_summary = coc_rule_summary
         self._keeper_role_hint = keeper_role_hint
         self._history_size = history_size
+        self._narrative_selector = narrative_selector or NarrativeContextSelector()
 
     # ------------------------------------------------------------------
     # 主入口
@@ -86,7 +88,7 @@ class PromptBuilder:
         session: SessionMapState,
         module: ModuleDefinition,
         scene_id: str,
-        recent_events: Sequence[RuntimeEvent] | None = None,
+        recent_events: Sequence[object] | None = None,
         keeper_hidden_notes: str = "",
         pending_intents: dict[str, dict[str, object]] | None = None,
     ) -> AgentPlanPrompt:
@@ -104,7 +106,19 @@ class PromptBuilder:
             AgentPlanPrompt：可直接传入 KeeperPlanAgent.call()。
         """
         system = self._build_system_layer()
-        module_layer = self._build_module_layer(session=session, module=module)
+        narrative = self.build_narrative_context(
+            session=session,
+            module=module,
+            scene_id=scene_id,
+            recent_events=recent_events or [],
+            pending_intents=pending_intents,
+            include_keeper=True,
+        )
+        module_layer = self._build_module_layer(
+            session=session,
+            module=module,
+            narrative=narrative,
+        )
         spatial = self._build_spatial_layer(
             session=session, module=module, scene_id=scene_id
         )
@@ -128,7 +142,27 @@ class PromptBuilder:
             spatial=spatial,
             history=history,
             keeper_private=keeper_private,
+            narrative=narrative,
             pending_intents=pending_intents,
+        )
+
+    def build_narrative_context(
+        self,
+        *,
+        session: SessionMapState,
+        module: ModuleDefinition,
+        scene_id: str,
+        recent_events: Sequence[object] | None = None,
+        pending_intents: dict[str, dict[str, object]] | None = None,
+        include_keeper: bool = True,
+    ) -> NarrativeContextLayer:
+        return self._narrative_selector.select(
+            session=session,
+            module=module,
+            scene_id=scene_id,
+            recent_events=recent_events or [],
+            pending_intents=pending_intents,
+            include_keeper=include_keeper,
         )
 
     # ------------------------------------------------------------------
@@ -143,7 +177,11 @@ class PromptBuilder:
         )
 
     def _build_module_layer(
-        self, *, session: SessionMapState, module: ModuleDefinition
+        self,
+        *,
+        session: SessionMapState,
+        module: ModuleDefinition,
+        narrative: NarrativeContextLayer,
     ) -> ModuleLayer:
         story: StoryState = session.story_state
         stage_map = module.story_stage_map()
@@ -160,7 +198,7 @@ class PromptBuilder:
         return ModuleLayer(
             module_id=module.module_id,
             module_title=module.title,
-            worldview_brief="",  # 可在 ModuleDefinition 扩展 worldview 字段后填充
+            worldview_brief=narrative.worldview_brief,
             current_stage_id=story.current_stage_id,
             current_stage_description=stage_description,
             available_transition_ids=available_transition_ids,
@@ -212,13 +250,13 @@ class PromptBuilder:
         )
 
     def _build_history_layer(
-        self, *, recent_events: Sequence[RuntimeEvent]
+        self, *, recent_events: Sequence[object]
     ) -> HistoryLayer:
         # 取最近 N 条事件的 message 作为摘要
         summaries = [
-            event.message
+            str(message)
             for event in recent_events[-self._history_size :]
-            if event.message
+            if (message := getattr(event, "message", ""))
         ]
         return HistoryLayer(
             recent_events_summary=summaries,

@@ -14,6 +14,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from ..context.models import NarrativeContextLayer
+
 
 # ---------------------------------------------------------------------------
 # 公共枚举
@@ -152,6 +154,7 @@ class AgentPlanPrompt(BaseModel):
     spatial: SpatialLayer
     history: HistoryLayer = Field(default_factory=HistoryLayer)
     keeper_private: KeeperPrivateLayer = Field(default_factory=KeeperPrivateLayer)
+    narrative: NarrativeContextLayer = Field(default_factory=NarrativeContextLayer)
 
     # 本轮待结算的意图列表
     pending_intents: list[PlayerIntentSummary] = Field(default_factory=list)
@@ -275,6 +278,9 @@ class CommitResult(BaseModel):
 
     # 本轮运行时事件摘要（精简版）
     event_summary: list[str] = Field(default_factory=list)
+
+    # 本轮叙事生成可参考的只读上下文
+    narrative: NarrativeContextLayer = Field(default_factory=NarrativeContextLayer)
 
 
 # ---------------------------------------------------------------------------

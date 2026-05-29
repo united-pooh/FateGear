@@ -18,6 +18,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from ..context import NarrativeContextLayer
 from .base import AgentOutputError, BaseAgent
 from .config import (
     AgentSettings,
@@ -52,6 +53,61 @@ def _build_system_message(prompt: AgentPlanPrompt) -> str:
             "【可触发剧情迁移（仅参考，不代表授权）】"
             + "、".join(mod.available_transition_ids)
         )
+
+    # 叙事上下文：只读指导，不改变规则权威。
+    narrative = getattr(prompt, "narrative", NarrativeContextLayer())
+    if narrative.has_content():
+        lines.append("【只读叙事上下文：不得直接改写 flag、clock 或剧情迁移】")
+    if narrative.atmosphere.tone:
+        lines.append(f"氛围基调：{narrative.atmosphere.tone}")
+    if narrative.atmosphere.sensory_palette:
+        lines.append("感官词库：" + "、".join(narrative.atmosphere.sensory_palette))
+    if narrative.atmosphere.pacing_hint:
+        lines.append(f"节奏提示：{narrative.atmosphere.pacing_hint}")
+    if narrative.atmosphere.escalation_rules:
+        lines.append("张力推进：" + "；".join(narrative.atmosphere.escalation_rules))
+    if narrative.atmosphere.forbidden_reveals:
+        lines.append(
+            "禁止提前揭示：" + "；".join(narrative.atmosphere.forbidden_reveals)
+        )
+    prose = narrative.prose_controls
+    if narrative.has_content():
+        lines.append(
+            "KP写法："
+            f"语言={prose.language}；"
+            f"人称={prose.narrative_person}；"
+            f"时态={prose.tense}；"
+            f"段落上限={prose.paragraph_limit}；"
+            f"恐怖强度={prose.horror_intensity}；"
+            f"骰点呈现={prose.dice_visibility}；"
+            f"线索公平={prose.clue_fairness}"
+        )
+    if prose.style_rules:
+        lines.append("文风规则：" + "；".join(prose.style_rules))
+    if narrative.selected_safety_boundaries:
+        lines.append("【安全边界】")
+        for boundary in narrative.selected_safety_boundaries:
+            lines.append(f"- {boundary.severity}:{boundary.note}")
+    if narrative.selected_npcs:
+        lines.append("【在场/相关 NPC 人设卡】")
+        for npc in narrative.selected_npcs:
+            npc_parts = [
+                f"{npc.name}({npc.npc_id})",
+                npc.role,
+                npc.public_description,
+                f"人设：{npc.persona}" if npc.persona else "",
+                f"口吻：{npc.speaking_style}" if npc.speaking_style else "",
+                (
+                    f"知识边界：{npc.knowledge_boundary}"
+                    if npc.knowledge_boundary
+                    else ""
+                ),
+            ]
+            if npc.goals:
+                npc_parts.append("目标：" + "；".join(npc.goals))
+            if npc.secrets:
+                npc_parts.append("守密人秘密：" + "；".join(npc.secrets))
+            lines.append("；".join(part for part in npc_parts if part))
 
     # 守密人私有层
     priv = prompt.keeper_private
@@ -88,6 +144,17 @@ def _build_user_message(prompt: AgentPlanPrompt) -> str:
     if sp.clock_values:
         clocks = "、".join(f"{k}={v}" for k, v in sp.clock_values.items())
         lines.append(f"时钟：{clocks}")
+
+    narrative = getattr(prompt, "narrative", NarrativeContextLayer())
+    if narrative.selected_lorebook_entries:
+        lines.append("【本轮触发的世界书条目】")
+        for entry in narrative.selected_lorebook_entries:
+            lines.append(
+                f"  - {entry.title}（{entry.entry_id}，{entry.selection_reason}）："
+                f"{entry.content}"
+            )
+    if narrative.selected_ids:
+        lines.append("已注入叙事上下文ID：" + ", ".join(narrative.selected_ids))
 
     # 历史层
     hist = prompt.history

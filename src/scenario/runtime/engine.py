@@ -70,9 +70,11 @@ class SceneRuntime:
         self._rule_engine = rule_engine or RuleEngine(roll_provider=roll_provider)
         self._plan_agent = plan_agent
         self._render_agent = render_agent
-        # 如果传入了 plan_agent 但没有传 prompt_builder，则自动创建默认实例
+        # 如果传入了 Agent 但没有传 prompt_builder，则自动创建默认实例
         self._prompt_builder = prompt_builder or (
-            PromptBuilder() if plan_agent is not None else None
+            PromptBuilder()
+            if plan_agent is not None or render_agent is not None
+            else None
         )
 
     def create_session(
@@ -287,6 +289,7 @@ class SceneRuntime:
             # Plan 阶段：调用 KeeperPlanAgent 产出结构化提议
             # ------------------------------------------------------------------
             plan: KeeperAgentPlan | None = None
+            agent_prompt = None
             # 本批次 Agent 提议的动态检定结果，key 为 (player_id, action_id)
             dynamic_check_results: dict[tuple[str, str], dict] = {}
 
@@ -578,6 +581,17 @@ class SceneRuntime:
                 batch_effects = []
                 for outcome in outcomes:
                     batch_effects.extend(outcome.effects_applied)
+                render_narrative = (
+                    self._prompt_builder.build_narrative_context(
+                        session=snapshot,
+                        module=module,
+                        scene_id=scene.id,
+                        recent_events=event_log,
+                        include_keeper=False,
+                    )
+                    if self._prompt_builder is not None
+                    else None
+                )
 
                 commit = CommitResult(
                     session_id=session_id,
@@ -590,6 +604,11 @@ class SceneRuntime:
                     new_stage_id=None,
                     resolved_ending=None,
                     event_summary=[e.message for e in event_log[-10:]],
+                    **(
+                        {"narrative": render_narrative}
+                        if render_narrative is not None
+                        else {}
+                    ),
                 )
                 try:
                     render_record = await self._render_agent.call(commit)

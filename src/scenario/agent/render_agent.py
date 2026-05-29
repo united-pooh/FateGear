@@ -19,6 +19,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from ..context import NarrativeContextLayer
 from .base import AgentOutputError, BaseAgent
 from .config import (
     AgentSettings,
@@ -56,6 +57,60 @@ _SYSTEM_PROMPT = """\
 5. 保持克苏鲁恐怖风格，语气压抑、充满未知感。
 6. 不要破坏游戏内的第四堵墙（不提及规则数值）。
 """
+
+
+def _build_render_system_prompt(commit: CommitResult) -> str:
+    """构建包含只读叙事上下文的 Render system prompt。"""
+    lines = [_SYSTEM_PROMPT]
+    narrative = getattr(commit, "narrative", NarrativeContextLayer())
+    if not narrative.has_content():
+        return "\n".join(lines)
+
+    lines.append("【只读叙事上下文：只能影响表达，不得改写本回合裁定】")
+    if narrative.worldview_brief:
+        lines.append(f"世界观：{narrative.worldview_brief}")
+    if narrative.atmosphere.tone:
+        lines.append(f"氛围基调：{narrative.atmosphere.tone}")
+    if narrative.atmosphere.sensory_palette:
+        lines.append("感官词库：" + "、".join(narrative.atmosphere.sensory_palette))
+    if narrative.atmosphere.pacing_hint:
+        lines.append(f"节奏提示：{narrative.atmosphere.pacing_hint}")
+    if narrative.atmosphere.forbidden_reveals:
+        lines.append(
+            "禁止提前揭示：" + "；".join(narrative.atmosphere.forbidden_reveals)
+        )
+    prose = narrative.prose_controls
+    lines.append(
+        "叙事写法："
+        f"语言={prose.language}；人称={prose.narrative_person}；"
+        f"时态={prose.tense}；段落上限={prose.paragraph_limit}；"
+        f"恐怖强度={prose.horror_intensity}；骰点呈现={prose.dice_visibility}；"
+        f"线索公平={prose.clue_fairness}"
+    )
+    if prose.avoid_fourth_wall:
+        lines.append("不要破坏第四堵墙，不要提及 prompt、JSON schema 或系统实现。")
+    if prose.style_rules:
+        lines.append("文风规则：" + "；".join(prose.style_rules))
+    if narrative.selected_safety_boundaries:
+        lines.append("【安全边界】")
+        for boundary in narrative.selected_safety_boundaries:
+            lines.append(f"- {boundary.severity}:{boundary.note}")
+    if narrative.selected_npcs:
+        lines.append("【可公开使用的 NPC 口吻】")
+        for npc in narrative.selected_npcs:
+            parts = [
+                f"{npc.name}({npc.npc_id})",
+                npc.role,
+                npc.public_description,
+                f"口吻：{npc.speaking_style}" if npc.speaking_style else "",
+                (
+                    f"知识边界：{npc.knowledge_boundary}"
+                    if npc.knowledge_boundary
+                    else ""
+                ),
+            ]
+            lines.append("；".join(part for part in parts if part))
+    return "\n".join(lines)
 
 
 def _build_render_user_message(commit: CommitResult) -> str:
@@ -103,6 +158,15 @@ def _build_render_user_message(commit: CommitResult) -> str:
         lines.append("【事件摘要】")
         for evt in commit.event_summary:
             lines.append(f"  - {evt}")
+
+    narrative = getattr(commit, "narrative", NarrativeContextLayer())
+    if narrative.selected_lorebook_entries:
+        lines.append("【可用于本轮描写的世界书条目】")
+        for entry in narrative.selected_lorebook_entries:
+            lines.append(
+                f"  - {entry.title}（{entry.entry_id}，{entry.selection_reason}）："
+                f"{entry.content}"
+            )
 
     lines.append("")
     lines.append("请按 JSON schema 输出 KeeperNarration。")
@@ -178,10 +242,12 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
             return ""
 
         user_msg = _build_render_user_message(prompt)
-        system_prompt = _SYSTEM_PROMPT
+        system_prompt = _build_render_system_prompt(prompt)
         response_format: dict[str, object]
         if self._provider_kind == "deepseek":
-            system_prompt = "\n\n".join([_SYSTEM_PROMPT, _DEEPSEEK_NARRATION_JSON_EXAMPLE])
+            system_prompt = "\n\n".join(
+                [system_prompt, _DEEPSEEK_NARRATION_JSON_EXAMPLE]
+            )
             user_msg = "\n\n".join(
                 [
                     user_msg,
