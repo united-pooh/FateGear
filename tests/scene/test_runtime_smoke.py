@@ -374,6 +374,16 @@ def test_generic_mvp_harness_smoke_runs_planner_and_narrator_agents() -> None:
         if record.prompt.resolved_checks
     ]
     assert dynamic_check_turns == [2, 3, 6, 7]
+    dice_rolls = [roll for resolution in resolutions for roll in resolution.dice_rolls]
+    assert [
+        (roll.turn_no, roll.source, roll.action_id, roll.skill_key, roll.roll_value)
+        for roll in dice_rolls
+    ] == [
+        (2, "dynamic_agent_check", "find_key", "spot_hidden", 22),
+        (3, "dynamic_agent_check", "unlock_control_door", "art_craft:locksmith", 28),
+        (6, "dynamic_agent_check", "prime_machine", "science:physics", 30),
+        (7, "dynamic_agent_check", "open_exit", "science:physics", 18),
+    ]
     final_render_prompt = narrator.records[-1].prompt
     assert final_render_prompt.applied_transition_id == "escape_facility"
     assert final_render_prompt.new_stage_id == "escaped"
@@ -387,6 +397,25 @@ def test_generic_mvp_harness_smoke_runs_planner_and_narrator_agents() -> None:
         any(event.type == "render_agent_called" for event in resolution.event_log)
         for resolution in resolutions
     )
+    assert all(
+        [call.stage for call in resolution.agent_calls] == ["plan", "render"]
+        for resolution in resolutions
+    )
+    assert all(
+        call.fallback_used is False
+        for resolution in resolutions
+        for call in resolution.agent_calls
+    )
+    assert resolutions[1].agent_calls[0].output_summary == {
+        "proposed_checks": 1,
+        "proposed_effects": 0,
+        "has_transition": False,
+    }
+    assert resolutions[1].agent_calls[1].output_summary == {
+        "npc_dialogues": 0,
+        "private_clues": 0,
+        "is_fallback": False,
+    }
 
 
 def test_runtime_passes_narrative_context_to_planner_and_narrator() -> None:

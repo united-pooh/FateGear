@@ -88,10 +88,12 @@
 - HTTP `POST /sessions/{session_id}/resolve` 支持可选 `expected_turn`，可用于客户端幂等重试。
 - 新增 `JsonScenarioStateStore`，可将会话快照与已结算回合保存为 JSON，并在新运行时实例启动时恢复。
 - 玩家/守密人回合视图支持读取 JSON 往返后的叙事 dict，避免持久化后私密线索过滤失效。
+- `TurnResolution` 新增 `dice_rolls` 与 `agent_calls` 审计摘要，记录静态/动态检定骰点、阈值、成功等级，以及 Plan/Render 调用元数据。
+- `BaseAgent` 会把 LLM token 用量回填到 `AgentCallMeta`，供运行时审计摘要和后续日志落库使用。
 
 应继续完成：
 - KeeperView / PlayerView 的鉴权、持久化与前端消费。
-- 数据库级 StateStore、dice log、Agent log。
+- 数据库级 StateStore、完整 dice log、完整 Agent prompt/output log。
 - 跨进程互斥锁与事务提交。
 - 完整 tokoyami 分支回归与 Agent 失败降级回归。
 

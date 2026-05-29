@@ -58,25 +58,81 @@ class RuleEngine:
         clock_deltas: dict[str, int],
     ) -> tuple[bool, str, list[str]]:
         """执行动作检定并返回成功标记、失败原因和失败效果摘要。"""
+        passed, reason, failure_effects, _ = self.resolve_action_check_detail(
+            action=action,
+            player_state=player_state,
+            flag_sets=flag_sets,
+            flag_clears=flag_clears,
+            clock_deltas=clock_deltas,
+        )
+        return passed, reason, failure_effects
+
+    def resolve_action_check_detail(
+        self,
+        *,
+        action: ModuleAction,
+        player_state: SessionPlayerState,
+        flag_sets: set[str],
+        flag_clears: set[str],
+        clock_deltas: dict[str, int],
+    ) -> tuple[bool, str, list[str], dict | None]:
+        """执行动作检定，并返回可持久化的骰点审计详情。"""
         check = action.check
         if check is None:
-            return True, "", []
+            return True, "", [], None
 
         skill = player_state.investigator.skills.get(check.skill_key)
+        if skill is None:
+            failure_effects = self.queue_effects(
+                action.effects_on_failure,
+                flag_sets=flag_sets,
+                flag_clears=flag_clears,
+                clock_deltas=clock_deltas,
+            )
+            return (
+                False,
+                f"缺少技能 {check.skill_key}",
+                failure_effects,
+                {
+                    "player_id": player_state.player_id,
+                    "action_id": action.id,
+                    "skill_key": check.skill_key,
+                    "difficulty": check.difficulty,
+                    "roll_value": 0,
+                    "threshold": 0,
+                    "success": False,
+                    "success_level": "fail",
+                    "reason": f"缺少技能 {check.skill_key}",
+                    "note": f"缺少技能 {check.skill_key}",
+                },
+            )
+
+        roll = self._next_roll()
+        threshold = self._difficulty_threshold(skill.value, check)
+        success = roll <= threshold
+        detail = {
+            "player_id": player_state.player_id,
+            "action_id": action.id,
+            "skill_key": check.skill_key,
+            "difficulty": check.difficulty,
+            "roll_value": roll,
+            "threshold": threshold,
+            "success": success,
+            "success_level": (
+                self._success_level(roll, skill.value) if success else "fail"
+            ),
+            "reason": "" if success else check.failure_reason,
+        }
+        if success:
+            return True, "", [], detail
+
         failure_effects = self.queue_effects(
             action.effects_on_failure,
             flag_sets=flag_sets,
             flag_clears=flag_clears,
             clock_deltas=clock_deltas,
         )
-        if skill is None:
-            return False, f"缺少技能 {check.skill_key}", failure_effects
-
-        roll = self._next_roll()
-        threshold = self._difficulty_threshold(skill.value, check)
-        if roll <= threshold:
-            return True, "", []
-        return False, check.failure_reason, failure_effects
+        return False, check.failure_reason, failure_effects, detail
 
     def queue_effects(
         self,
@@ -193,18 +249,8 @@ class RuleEngine:
             }
         roll = self._next_roll()
         sv = skill.value
-        if roll <= sv // 5:
-            level = "extreme"
-            success = True
-        elif roll <= sv // 2:
-            level = "hard"
-            success = True
-        elif roll <= sv:
-            level = "regular"
-            success = True
-        else:
-            level = "fail"
-            success = False
+        level = self._success_level(roll, sv)
+        success = level != "fail"
         # proposed_difficulty 用于叙事参考，不改变实际阈值
         return {
             "player_id": proposed.player_id,
@@ -260,6 +306,15 @@ class RuleEngine:
         if check.difficulty == "hard":
             return skill_value // 2
         return skill_value // 5
+
+    def _success_level(self, roll: int, skill_value: int) -> str:
+        if roll <= skill_value // 5:
+            return "extreme"
+        if roll <= skill_value // 2:
+            return "hard"
+        if roll <= skill_value:
+            return "regular"
+        return "fail"
 
     def _next_roll(self) -> int:
         rolled = self._roll_provider()

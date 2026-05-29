@@ -97,6 +97,7 @@ class BaseAgent(ABC, Generic[PromptT, OutputT]):
                       空字符串表示未绑定，由子类或环境变量决定。
         """
         self._model_id = model_id
+        self._last_usage: dict[str, int] = {}
 
     @property
     def model_id(self) -> str:
@@ -132,12 +133,15 @@ class BaseAgent(ABC, Generic[PromptT, OutputT]):
             meta.attempt = attempt
             t0 = time.monotonic()
             try:
+                self._last_usage = {}
                 raw = await asyncio.wait_for(
                     self._call_llm(prompt),
                     timeout=self.timeout_seconds,
                 )
                 output = self._parse_output(raw)
                 self._validate_output(output, prompt)
+                meta.input_tokens = int(self._last_usage.get("input_tokens", 0))
+                meta.output_tokens = int(self._last_usage.get("output_tokens", 0))
                 meta.latency_ms = int((time.monotonic() - t0) * 1000)
                 break  # 成功，跳出重试循环
             except asyncio.TimeoutError:

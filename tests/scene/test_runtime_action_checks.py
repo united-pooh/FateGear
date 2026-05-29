@@ -62,6 +62,18 @@ def test_action_check_failure_does_not_apply_success_effects() -> None:
     assert outcome.reason == "你没有在杂物中找到任何钥匙线索。"
     assert "key_found" not in session.global_flags
     assert "find_key" not in session.completed_actions
+    assert len(resolution.dice_rolls) == 1
+    roll = resolution.dice_rolls[0]
+    assert roll.source == "static_action_check"
+    assert roll.turn_no == 2
+    assert roll.player_id == "p1"
+    assert roll.action_id == "find_key"
+    assert roll.action_name == "搜索钥匙"
+    assert roll.skill_key == "spot_hidden"
+    assert roll.roll_value == 90
+    assert roll.threshold == 10
+    assert roll.success is False
+    assert roll.success_level == "fail"
 
 
 def test_create_session_requires_player_cards_for_all_players() -> None:

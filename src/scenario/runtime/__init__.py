@@ -2,6 +2,8 @@
 
 from .contracts import (
     ActionIntent,
+    AgentCallAudit,
+    DiceRollAudit,
     IntentResolution,
     MoveIntent,
     RuntimeEvent,
@@ -14,6 +16,8 @@ from .rule_engine import RuleEngine
 
 __all__ = [
     "ActionIntent",
+    "AgentCallAudit",
+    "DiceRollAudit",
     "IntentResolution",
     "MoveIntent",
     "RuleEngine",

@@ -15,6 +15,7 @@
 - `tokoyami_subset` 示例模组展示常暗列车的 NPC、世界书、氛围和安全边界写法。
 - 新增五轮升级审计文档：`docs/fategear-five-iteration-upgrade.md`。
 - 新增 `JsonScenarioStateStore`，支持把会话快照和回合结算历史持久化到本地 JSON 并在运行时启动时恢复。
+- `TurnResolution` 新增 `dice_rolls` 与 `agent_calls` 审计摘要，用于回放静态/动态检定和 Plan/Render 调用元数据。
 
 ### Changed
 - Render Agent 调用后移到权威状态提交之后，叙事输入现在能看到本回合最终剧情迁移、新阶段和结局。
@@ -22,6 +23,8 @@
 - `SceneRuntime.resolve_turn` 增加 per-session `asyncio.Lock`、回合历史和 `expected_turn` 幂等重放；`ScenarioService.resolve_turn` 不再持有 `RLock` 跨 `await`。
 - `ScenarioService` 可接收 `state_store` 创建可恢复运行时，并会为恢复会话重建稳定 owner 映射。
 - 玩家/守密人回合视图兼容 JSON 往返后的叙事 dict，继续保持私密线索与 keeper-only 内容隔离。
+- 静态动作检定现在会生成结构化骰点详情，并与动态 Agent 检定一起传入 Render 和回合审计。
+- `BaseAgent` 会把后端返回的 token 用量写入 `AgentCallMeta`，方便运行时审计和后续日志落库。
 
 ### Tests
 - loader 测试覆盖 NarrativeContext 成功加载、重复 NPC、坏世界书引用和缺失触发条件。
@@ -36,6 +39,7 @@
 - API/HTTP 测试覆盖自然语言意图提交。
 - Runtime/API/HTTP 测试覆盖 expected-turn 回放和并发同回合防双提交。
 - StateStore 测试覆盖会话恢复、回合历史恢复、删除清理，以及 JSON 叙事往返后的玩家视图过滤。
+- Runtime/StateStore 测试覆盖静态骰点审计、动态骰点审计、Agent 调用审计和持久化往返。
 
 ## 2026-03-30
 

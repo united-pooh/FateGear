@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from ..story.models import StorySignal
 
@@ -101,12 +101,50 @@ class RuntimeEvent(BaseModel):
         return self.message
 
 
+class DiceRollAudit(BaseModel):
+    source: Literal["static_action_check", "dynamic_agent_check"]
+    turn_no: int = Field(default=0)
+    player_id: str = Field(default="")
+    scene_id: str = Field(default="")
+    scene_name: str = Field(default="")
+    action_id: str = Field(default="")
+    action_name: str = Field(default="")
+    skill_key: str = Field(default="")
+    difficulty: str = Field(default="")
+    proposed_difficulty: str = Field(default="")
+    roll_value: int = Field(default=0)
+    threshold: int = Field(default=0)
+    success: bool = Field(default=False)
+    success_level: str = Field(default="")
+    reason: str = Field(default="")
+    note: str = Field(default="")
+
+
+class AgentCallAudit(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    stage: Literal["plan", "render"]
+    turn_no: int = Field(default=0)
+    scene_id: str = Field(default="")
+    scene_name: str = Field(default="")
+    model_id: str = Field(default="")
+    latency_ms: int = Field(default=0)
+    attempt: int = Field(default=1)
+    fallback_used: bool = Field(default=False)
+    input_tokens: int = Field(default=0)
+    output_tokens: int = Field(default=0)
+    selected_context_ids: list[str] = Field(default_factory=list)
+    output_summary: dict[str, object] = Field(default_factory=dict)
+
+
 class TurnResolution(BaseModel):
     session_id: str
     turn_no: int
     next_turn: int
     scene_batches: list[SceneBatchResolution] = Field(default_factory=list)
     event_log: list[RuntimeEvent] = Field(default_factory=list)
+    dice_rolls: list[DiceRollAudit] = Field(default_factory=list)
+    agent_calls: list[AgentCallAudit] = Field(default_factory=list)
     applied_flags: list[str] = Field(default_factory=list)
     applied_clock_deltas: dict[str, int] = Field(default_factory=dict)
     triggered_clock_events: list[str] = Field(default_factory=list)

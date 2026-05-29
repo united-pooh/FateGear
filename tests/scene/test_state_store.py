@@ -11,7 +11,13 @@ from scenario.agent.models import (
     PrivateClue,
     VisibleScope,
 )
-from scenario.runtime import SceneBatchResolution, SceneRuntime, TurnResolution
+from scenario.runtime import (
+    AgentCallAudit,
+    DiceRollAudit,
+    SceneBatchResolution,
+    SceneRuntime,
+    TurnResolution,
+)
 from scenario.store import JsonScenarioStateStore
 from scenario.view import TurnViewBuilder
 from tests.scene.card_fixtures import build_player_cards
@@ -93,6 +99,28 @@ def test_json_state_store_narration_round_trip_keeps_player_view_filters(
         session_id=session.session_id,
         turn_no=1,
         next_turn=2,
+        dice_rolls=[
+            DiceRollAudit(
+                source="static_action_check",
+                turn_no=1,
+                player_id="p1",
+                scene_id="foyer",
+                action_id="find_key",
+                skill_key="spot_hidden",
+                roll_value=42,
+                threshold=80,
+                success=True,
+            )
+        ],
+        agent_calls=[
+            AgentCallAudit(
+                stage="render",
+                turn_no=1,
+                scene_id="foyer",
+                fallback_used=False,
+                output_summary={"private_clues": 2},
+            )
+        ],
         scene_batches=[
             SceneBatchResolution(
                 scene_id="foyer",
@@ -133,6 +161,8 @@ def test_json_state_store_narration_round_trip_keeps_player_view_filters(
     payload = json.dumps(view.model_dump(), ensure_ascii=False)
 
     assert isinstance(loaded.scene_batches[0].narration, dict)
+    assert loaded.dice_rolls[0].roll_value == 42
+    assert loaded.agent_calls[0].output_summary == {"private_clues": 2}
     assert "公共叙事" in payload
     assert "公开台词" in payload
     assert "p1 私密" in payload

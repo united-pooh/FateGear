@@ -24,6 +24,8 @@ from ..session.state import SceneInstanceState, SessionMapState, SessionPlayerSt
 from ..story.models import StorySignal, StoryState
 from ..story.services import StoryStateService, TransitionValidator
 from .contracts import (
+    AgentCallAudit,
+    DiceRollAudit,
     IntentResolution,
     MoveIntent,
     RuntimeEvent,
@@ -290,6 +292,7 @@ class SceneRuntime:
         snapshot = session.model_copy(deep=True)
         module = self._load_module(session.module_id)
         scene_by_id = module.scene_map()
+        action_by_id = module.action_map()
         story_stage_by_id = module.story_stage_map()
         movement_rules = self._movement_rules(
             module=module,
@@ -308,6 +311,8 @@ class SceneRuntime:
                 source_stage_id=snapshot.story_state.current_stage_id,
             )
         ]
+        dice_rolls: list[DiceRollAudit] = []
+        agent_calls: list[AgentCallAudit] = []
 
         flag_sets: set[str] = set()
         flag_clears: set[str] = set()
@@ -367,6 +372,23 @@ class SceneRuntime:
                     )
                     plan_record = await self._plan_agent.call(agent_prompt)
                     plan = plan_record.output
+                    agent_calls.append(
+                        self._build_agent_call_audit(
+                            stage="plan",
+                            turn_no=snapshot.current_turn,
+                            scene_id=scene.id,
+                            scene_name=scene.name,
+                            record=plan_record,
+                            selected_context_ids=agent_prompt.narrative.selected_ids,
+                            output_summary={
+                                "proposed_checks": len(plan.proposed_checks),
+                                "proposed_effects": len(plan.proposed_effects),
+                                "has_transition": (
+                                    plan.proposed_transition is not None
+                                ),
+                            },
+                        )
+                    )
                     event_log.append(
                         RuntimeEvent(
                             type="plan_agent_called",
@@ -399,6 +421,16 @@ class SceneRuntime:
                         dynamic_check_results[
                             (proposed.player_id, proposed.action_id)
                         ] = result
+                        dice_rolls.append(
+                            self._build_dice_roll_audit(
+                                source="dynamic_agent_check",
+                                turn_no=snapshot.current_turn,
+                                scene_id=scene.id,
+                                scene_name=scene.name,
+                                action=action_by_id.get(proposed.action_id),
+                                result=result,
+                            )
+                        )
                         logger.debug(
                             "动态检定：player=%s action=%s skill=%s roll=%s success=%s",
                             proposed.player_id,
@@ -488,7 +520,7 @@ class SceneRuntime:
                     )
                     continue
 
-                action = module.action_map()[intent.action_id]
+                action = action_by_id[intent.action_id]
                 available, reason = self._rule_engine.can_execute_action(
                     action=action,
                     session=snapshot,
@@ -549,8 +581,8 @@ class SceneRuntime:
                             clock_deltas=clock_deltas,
                         )
                 else:
-                    check_passed, check_reason, failure_effects = (
-                        self._rule_engine.resolve_action_check(
+                    check_passed, check_reason, failure_effects, check_detail = (
+                        self._rule_engine.resolve_action_check_detail(
                             action=action,
                             player_state=player_state,
                             flag_sets=flag_sets,
@@ -558,6 +590,18 @@ class SceneRuntime:
                             clock_deltas=clock_deltas,
                         )
                     )
+                    if check_detail is not None:
+                        batch_resolved_checks.append(check_detail)
+                        dice_rolls.append(
+                            self._build_dice_roll_audit(
+                                source="static_action_check",
+                                turn_no=snapshot.current_turn,
+                                scene_id=scene.id,
+                                scene_name=scene.name,
+                                action=action,
+                                result=check_detail,
+                            )
+                        )
 
                 if not check_passed:
                     current_scene_name = scene_by_id[player_state.current_scene_id].name
@@ -848,6 +892,7 @@ class SceneRuntime:
             scene_batches=scene_batches,
             render_payloads=render_payloads,
             event_log=event_log,
+            agent_calls=agent_calls,
             applied_story_transition_id=applied_story_transition_id,
             new_stage=new_stage,
             resolved_ending=resolved_ending,
@@ -872,6 +917,8 @@ class SceneRuntime:
             next_turn=session.current_turn,
             scene_batches=scene_batches,
             event_log=event_log,
+            dice_rolls=dice_rolls,
+            agent_calls=agent_calls,
             applied_flags=applied_flags,
             applied_clock_deltas=combined_clock_deltas,
             triggered_clock_events=triggered_clock_events,
@@ -900,6 +947,7 @@ class SceneRuntime:
         scene_batches: list[SceneBatchResolution],
         render_payloads: dict[str, tuple[list[dict], list[str]]],
         event_log: list[RuntimeEvent],
+        agent_calls: list[AgentCallAudit],
         applied_story_transition_id: str | None,
         new_stage: str | None,
         resolved_ending: str | None,
@@ -954,6 +1002,41 @@ class SceneRuntime:
             try:
                 render_record = await self._render_agent.call(commit)
                 batch.narration = render_record.output
+                agent_calls.append(
+                    self._build_agent_call_audit(
+                        stage="render",
+                        turn_no=snapshot_turn,
+                        scene_id=batch.scene_id,
+                        scene_name=scene.name,
+                        record=render_record,
+                        selected_context_ids=commit.narrative.selected_ids,
+                        output_summary={
+                            "npc_dialogues": len(
+                                getattr(
+                                    render_record.output,
+                                    "npc_dialogues",
+                                    [],
+                                )
+                                or []
+                            ),
+                            "private_clues": len(
+                                getattr(
+                                    render_record.output,
+                                    "private_clues",
+                                    [],
+                                )
+                                or []
+                            ),
+                            "is_fallback": bool(
+                                getattr(
+                                    render_record.output,
+                                    "is_fallback",
+                                    False,
+                                )
+                            ),
+                        },
+                    )
+                )
                 event_log.append(
                     RuntimeEvent(
                         type="render_agent_called",
@@ -1076,6 +1159,62 @@ class SceneRuntime:
         if self._state_store is None:
             return
         self._state_store.save_turn(resolution)
+
+    def _build_dice_roll_audit(
+        self,
+        *,
+        source: str,
+        turn_no: int,
+        scene_id: str,
+        scene_name: str,
+        action: ModuleAction | None,
+        result: dict,
+    ) -> DiceRollAudit:
+        return DiceRollAudit(
+            source=source,
+            turn_no=turn_no,
+            player_id=str(result.get("player_id", "")),
+            scene_id=scene_id,
+            scene_name=scene_name,
+            action_id=str(result.get("action_id") or getattr(action, "id", "")),
+            action_name=getattr(action, "name", ""),
+            skill_key=str(result.get("skill_key", "")),
+            difficulty=str(result.get("difficulty", "")),
+            proposed_difficulty=str(result.get("proposed_difficulty", "")),
+            roll_value=int(result.get("roll_value", 0) or 0),
+            threshold=int(result.get("threshold", 0) or 0),
+            success=bool(result.get("success", False)),
+            success_level=str(result.get("success_level", "")),
+            reason=str(result.get("reason", "")),
+            note=str(result.get("note", "")),
+        )
+
+    def _build_agent_call_audit(
+        self,
+        *,
+        stage: str,
+        turn_no: int,
+        scene_id: str,
+        scene_name: str,
+        record: object,
+        selected_context_ids: list[str],
+        output_summary: dict[str, object],
+    ) -> AgentCallAudit:
+        meta = getattr(record, "meta", None)
+        return AgentCallAudit(
+            stage=stage,
+            turn_no=turn_no,
+            scene_id=scene_id,
+            scene_name=scene_name,
+            model_id=str(getattr(meta, "model_id", "")),
+            latency_ms=int(getattr(meta, "latency_ms", 0) or 0),
+            attempt=int(getattr(meta, "attempt", 1) or 1),
+            fallback_used=bool(getattr(meta, "fallback_used", False)),
+            input_tokens=int(getattr(meta, "input_tokens", 0) or 0),
+            output_tokens=int(getattr(meta, "output_tokens", 0) or 0),
+            selected_context_ids=list(selected_context_ids),
+            output_summary=output_summary,
+        )
 
     def _movement_rules(
         self,
