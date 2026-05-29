@@ -95,6 +95,31 @@ def test_scenario_service_submit_intent_and_resolve_turn() -> None:
     assert latest.pending_players == []
 
 
+def test_scenario_service_builds_player_and_keeper_session_views() -> None:
+    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
+    service.join_party(created.session_id, {"player_id": "p2"})
+    service.submit_intent(
+        created.session_id,
+        {
+            "player_id": "keeper",
+            "intent": {"type": "move", "target_scene_id": "storage"},
+        },
+    )
+    asyncio.run(service.resolve_turn(created.session_id))
+
+    player_view = service.get_player_view(created.session_id, "keeper")
+    keeper_view = service.get_keeper_view(created.session_id)
+
+    assert player_view.player_id == "keeper"
+    assert player_view.current_scene_id == "storage"
+    assert {action.action_id for action in player_view.available_actions} >= {
+        "find_key"
+    }
+    assert keeper_view.player_scene_ids == {"keeper": "storage", "p2": "foyer"}
+    assert keeper_view.current_turn == 2
+
+
 def test_scenario_service_rejects_duplicate_intent_submission() -> None:
     service = ScenarioService()
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})

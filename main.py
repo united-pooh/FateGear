@@ -82,9 +82,11 @@ async def handle_root(request: web.Request) -> web.Response:
                 "list_parties": "GET /sessions",
                 "create_party": "POST /sessions",
                 "get_party": "GET /sessions/{session_id}",
+                "player_view": "GET /sessions/{session_id}/players/{player_id}/view",
+                "keeper_view": "GET /sessions/{session_id}/keeper-view",
                 "join_party": "POST /sessions/{session_id}/players",
                 "submit_intent": "POST /sessions/{session_id}/intents",
-                "resolve_turn": "POST /sessions/{session_id}/resolve",
+                "resolve_turn": "POST /sessions/{session_id}/resolve (keeper view)",
             },
         }
     )
@@ -110,6 +112,19 @@ async def handle_get_session(request: web.Request) -> web.Response:
     return web.json_response(party.model_dump())
 
 
+async def handle_get_player_view(request: web.Request) -> web.Response:
+    session_id = request.match_info["session_id"]
+    player_id = request.match_info["player_id"]
+    view = _service(request).get_player_view(session_id, player_id)
+    return web.json_response(view.model_dump())
+
+
+async def handle_get_keeper_view(request: web.Request) -> web.Response:
+    session_id = request.match_info["session_id"]
+    view = _service(request).get_keeper_view(session_id)
+    return web.json_response(view.model_dump())
+
+
 async def handle_create_session(request: web.Request) -> web.Response:
     payload = CreatePartyRequest.model_validate(await _read_json_body(request))
     party = _service(request).create_party(payload)
@@ -133,7 +148,8 @@ async def handle_submit_intent(request: web.Request) -> web.Response:
 async def handle_resolve_turn(request: web.Request) -> web.Response:
     session_id = request.match_info["session_id"]
     resolution = await _service(request).resolve_turn(session_id)
-    return web.json_response(resolution.model_dump())
+    view = _service(request).build_keeper_turn_view(resolution=resolution)
+    return web.json_response(view.model_dump())
 
 
 def create_app(service: ScenarioService) -> web.Application:
@@ -147,6 +163,11 @@ def create_app(service: ScenarioService) -> web.Application:
             web.get("/sessions", handle_list_sessions),
             web.post("/sessions", handle_create_session),
             web.get("/sessions/{session_id}", handle_get_session),
+            web.get(
+                "/sessions/{session_id}/players/{player_id}/view",
+                handle_get_player_view,
+            ),
+            web.get("/sessions/{session_id}/keeper-view", handle_get_keeper_view),
             web.post("/sessions/{session_id}/players", handle_join_session),
             web.post("/sessions/{session_id}/intents", handle_submit_intent),
             web.post("/sessions/{session_id}/resolve", handle_resolve_turn),

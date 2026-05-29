@@ -16,6 +16,8 @@ from .io import MODULE_ROOT, load_module_by_id
 from .module.models import ModuleDefinition
 from .runtime import SceneIntent, SceneRuntime, TurnResolution
 from .session import SessionMapState
+from .view import KeeperSessionView, KeeperTurnView, PlayerSessionView, PlayerTurnView
+from .view import ScenarioViewBuilder, TurnViewBuilder
 
 
 class ModuleSummary(BaseModel):
@@ -74,6 +76,8 @@ class ScenarioService:
         self._owner_by_session_id: dict[str, str] = {}
         self._lock = RLock()
         self._skill_templates = load_skill_template_mapping()
+        self._scenario_view_builder = ScenarioViewBuilder()
+        self._turn_view_builder = TurnViewBuilder()
 
     def list_modules(self) -> list[ModuleSummary]:
         """扫描模组目录并返回可创建会话的模组摘要。"""
@@ -181,11 +185,59 @@ class ScenarioService:
         with self._lock:
             return await self._runtime.resolve_turn(session_id)
 
+    def build_player_turn_view(
+        self,
+        *,
+        resolution: TurnResolution,
+        player_id: str,
+    ) -> PlayerTurnView:
+        """把内部 TurnResolution 投影为单个玩家可见的回合视图。"""
+        with self._lock:
+            session = self._runtime.get_session(resolution.session_id)
+            return self._turn_view_builder.build_player_turn_view(
+                resolution=resolution,
+                session=session,
+                player_id=player_id,
+            )
+
+    def build_keeper_turn_view(
+        self,
+        *,
+        resolution: TurnResolution,
+    ) -> KeeperTurnView:
+        """把内部 TurnResolution 投影为守密人视图。"""
+        with self._lock:
+            session = self._runtime.get_session(resolution.session_id)
+            return self._turn_view_builder.build_keeper_turn_view(
+                resolution=resolution,
+                session=session,
+            )
+
     def get_party(self, session_id: str) -> PartySummary:
         """查询单个会话摘要。"""
         with self._lock:
             session = self._runtime.get_session(session_id)
             return self._build_party_summary(session)
+
+    def get_player_view(self, session_id: str, player_id: str) -> PlayerSessionView:
+        """查询单个玩家当前可见会话视图。"""
+        with self._lock:
+            session = self._runtime.get_session(session_id)
+            module = load_module_by_id(session.module_id, module_root=self._module_root)
+            return self._scenario_view_builder.build_player_session_view(
+                runtime=self._runtime,
+                session=session,
+                module=module,
+                player_id=player_id,
+            )
+
+    def get_keeper_view(self, session_id: str) -> KeeperSessionView:
+        """查询守密人当前会话视图。"""
+        with self._lock:
+            session = self._runtime.get_session(session_id)
+            return self._scenario_view_builder.build_keeper_session_view(
+                session=session
+            )
 
     def list_parties(self) -> list[PartySummary]:
         """列出当前服务进程内管理的会话摘要。"""

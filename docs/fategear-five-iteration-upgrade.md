@@ -38,7 +38,7 @@
 - `tests/scene/test_prompt_builder.py`
 - `tests/scene/test_runtime_smoke.py`
 
-残余风险：Narrator 已能看到最终迁移和结局，但仍缺少玩家/守密人视图隔离。
+残余风险：Narrator 已能看到最终迁移和结局；玩家/守密人视图隔离已开始落地，但尚缺正式鉴权和持久化投递。
 
 ### 第 2 轮：校验与作者诊断
 
@@ -68,10 +68,11 @@
 
 已部分落地：
 - Render 调用后移到权威提交之后，`CommitResult` 能携带 `applied_transition_id`、`new_stage_id` 和 `resolved_ending`。
+- 新增 `PlayerTurnView` / `KeeperTurnView`，玩家视图会过滤他人私有线索、keeper-only NPC 台词和 `keeper_hint`。
 
 应继续完成：
 - `SessionNPCState`、`SessionClueState`、`ClueGraph`。
-- 私有线索投递与可见性隔离。
+- 私有线索持久化投递与鉴权。
 - NPC 知识边界与已揭示秘密的权威校验。
 - SAN、Luck、奖励/惩罚骰、对抗检定等 COC 规则审计结构。
 
@@ -80,7 +81,7 @@
 目标：让守密人能运营、回放、审计一局游戏。
 
 应继续完成：
-- KeeperView / PlayerView。
+- KeeperView / PlayerView 的鉴权、持久化与前端消费。
 - turn replay、event log、dice log、Agent log。
 - 幂等 resolve 和持久化 StateStore。
 - 完整 tokoyami 分支回归与 Agent 失败降级回归。

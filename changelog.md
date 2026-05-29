@@ -7,11 +7,14 @@
 - 新增确定性 `NarrativeContextSelector`，按场景、阶段、动作、关键词、NPC、优先级和预算选择本轮叙事上下文。
 - Plan/Render Agent 输入增加 `narrative` 层，并在 prompt 中注入上下文；不改变 `KeeperAgentPlan` / `KeeperNarration` 输出 schema。
 - 模组 loader 接入人物卡技能模板注册表，加载期拒绝未知技能模板、缺失分支后缀和非法分支技能。
+- 新增玩家/守密人视图投影：`PlayerTurnView`、`KeeperTurnView`、`PlayerSessionView`、`KeeperSessionView`。
+- HTTP 新增 `GET /sessions/{session_id}/players/{player_id}/view` 与 `GET /sessions/{session_id}/keeper-view`。
 - `tokoyami_subset` 示例模组展示常暗列车的 NPC、世界书、氛围和安全边界写法。
 - 新增五轮升级审计文档：`docs/fategear-five-iteration-upgrade.md`。
 
 ### Changed
 - Render Agent 调用后移到权威状态提交之后，叙事输入现在能看到本回合最终剧情迁移、新阶段和结局。
+- HTTP `POST /sessions/{session_id}/resolve` 改为返回守密人视图，避免裸返内部 `TurnResolution`。
 
 ### Tests
 - loader 测试覆盖 NarrativeContext 成功加载、重复 NPC、坏世界书引用和缺失触发条件。
@@ -20,6 +23,8 @@
 - PromptBuilder 测试覆盖世界书、氛围、KP 文风和 keeper-only 条目的公开渲染隔离。
 - Runtime smoke 测试覆盖 Planner 与 Narrator 都能收到选中的叙事上下文。
 - Runtime smoke 测试覆盖 Narrator 能看到最终 `applied_transition_id`、`new_stage_id` 和 `resolved_ending`。
+- 视图测试覆盖玩家 payload 不泄漏他人私有线索、keeper-only NPC 台词和 `keeper_hint`。
+- API/HTTP 测试覆盖当前玩家视图和守密人视图。
 
 ## 2026-03-30
 
