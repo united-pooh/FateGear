@@ -86,11 +86,13 @@
 - `SceneRuntime.resolve_turn(expected_turn=...)` 增加 per-session `asyncio.Lock` 和回合历史；重复结算同一 expected turn 会返回历史结果，不会双提交。
 - `ScenarioService.resolve_turn` 不再在 `RLock` 内跨 `await`。
 - HTTP `POST /sessions/{session_id}/resolve` 支持可选 `expected_turn`，可用于客户端幂等重试。
+- 新增 `JsonScenarioStateStore`，可将会话快照与已结算回合保存为 JSON，并在新运行时实例启动时恢复。
+- 玩家/守密人回合视图支持读取 JSON 往返后的叙事 dict，避免持久化后私密线索过滤失效。
 
 应继续完成：
 - KeeperView / PlayerView 的鉴权、持久化与前端消费。
-- 持久化 StateStore、dice log、Agent log。
-- 跨进程 turn replay。
+- 数据库级 StateStore、dice log、Agent log。
+- 跨进程互斥锁与事务提交。
 - 完整 tokoyami 分支回归与 Agent 失败降级回归。
 
 ## 本轮边界

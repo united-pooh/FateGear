@@ -7,6 +7,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from cards.domain.card import InvestigatorCard
@@ -33,6 +34,9 @@ from .contracts import (
 )
 from .rule_engine import RollProvider, RuleEngine
 
+if TYPE_CHECKING:
+    from ..store import ScenarioStateStore
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,6 +55,7 @@ class SceneRuntime:
         plan_agent: KeeperPlanAgent | None = None,
         render_agent: KeeperRenderAgent | None = None,
         prompt_builder: PromptBuilder | None = None,
+        state_store: "ScenarioStateStore | None" = None,
     ) -> None:
         """
         Args:
@@ -60,6 +65,7 @@ class SceneRuntime:
             plan_agent: Plan 阶段 Agent；为 None 时跳过 Planner，规则引擎按 YAML 默认逻辑处理。
             render_agent: Render 阶段 Agent；为 None 时 SceneBatchResolution.narration 为 None。
             prompt_builder: PromptBuilder；为 None 时若 plan_agent 不为 None 则自动创建默认实例。
+            state_store: 可选持久化存储；传入后会自动恢复会话并在状态变化后落盘。
         """
         self._module_root = (
             Path(module_root) if module_root is not None else MODULE_ROOT
@@ -67,6 +73,7 @@ class SceneRuntime:
         self._sessions: dict[str, SessionMapState] = {}
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._turn_history: dict[str, dict[int, TurnResolution]] = defaultdict(dict)
+        self._state_store = state_store
         self._module_cache: dict[str, ModuleDefinition] = {}
         self._transition_validator = TransitionValidator()
         self._story_state_service = StoryStateService()
@@ -79,6 +86,7 @@ class SceneRuntime:
             if plan_agent is not None or render_agent is not None
             else None
         )
+        self._restore_persisted_state()
 
     def create_session(
         self,
@@ -131,15 +139,22 @@ class SceneRuntime:
         )
         self._sessions[session_id] = session
         self._session_locks[session_id] = asyncio.Lock()
+        self._persist_session(session)
         return session
 
     def destroy_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
         self._session_locks.pop(session_id, None)
         self._turn_history.pop(session_id, None)
+        if self._state_store is not None:
+            self._state_store.delete_session(session_id)
 
     def get_session(self, session_id: str) -> SessionMapState:
         return self._get_session(session_id)
+
+    def list_session_ids(self) -> list[str]:
+        """列出当前运行时已加载的会话 ID。"""
+        return sorted(self._sessions)
 
     def add_player(
         self,
@@ -174,6 +189,7 @@ class SceneRuntime:
             investigator=self._rule_engine.clone_card(investigator),
         )
         session.player_states[player_id] = player_state
+        self._persist_session(session)
         return player_state
 
     def submit_intent(
@@ -209,6 +225,7 @@ class SceneRuntime:
                 )
 
         session.pending_intents[player_id] = validated.model_dump()
+        self._persist_session(session)
 
     async def resolve_turn(
         self,
@@ -869,6 +886,8 @@ class SceneRuntime:
         self._turn_history[session_id][resolution.turn_no] = resolution.model_copy(
             deep=True
         )
+        self._persist_turn_resolution(resolution)
+        self._persist_session(session)
         return resolution
 
     async def _render_scene_batches(
@@ -1028,6 +1047,35 @@ class SceneRuntime:
             lock = asyncio.Lock()
             self._session_locks[session_id] = lock
         return lock
+
+    def _restore_persisted_state(self) -> None:
+        """从持久化存储恢复会话和已结算回合。"""
+        if self._state_store is None:
+            return
+        self._sessions = {
+            session_id: session.model_copy(deep=True)
+            for session_id, session in self._state_store.load_sessions().items()
+        }
+        self._session_locks = {
+            session_id: asyncio.Lock() for session_id in self._sessions
+        }
+        self._turn_history = defaultdict(dict)
+        for session_id in self._sessions:
+            self._turn_history[session_id].update(
+                self._state_store.load_turns(session_id)
+            )
+
+    def _persist_session(self, session: SessionMapState) -> None:
+        """保存最新权威会话快照。"""
+        if self._state_store is None:
+            return
+        self._state_store.save_session(session)
+
+    def _persist_turn_resolution(self, resolution: TurnResolution) -> None:
+        """保存已结算回合，供客户端幂等重放。"""
+        if self._state_store is None:
+            return
+        self._state_store.save_turn(resolution)
 
     def _movement_rules(
         self,

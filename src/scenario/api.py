@@ -5,7 +5,7 @@ from __future__ import annotations
 from hashlib import sha1
 from pathlib import Path
 from threading import RLock
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from cards import build_investigator_card, load_skill_template_mapping
 from cards.domain.card import InvestigatorCard
@@ -19,6 +19,9 @@ from .runtime import SceneIntent, SceneRuntime, TurnResolution
 from .session import SessionMapState
 from .view import KeeperSessionView, KeeperTurnView, PlayerSessionView, PlayerTurnView
 from .view import ScenarioViewBuilder, TurnViewBuilder
+
+if TYPE_CHECKING:
+    from .store import ScenarioStateStore
 
 
 class ModuleSummary(BaseModel):
@@ -74,13 +77,17 @@ class ScenarioService:
         *,
         runtime: SceneRuntime | None = None,
         module_root: str | Path | None = None,
+        state_store: "ScenarioStateStore | None" = None,
     ) -> None:
         resolved_module_root = (
             Path(module_root) if module_root is not None else MODULE_ROOT
         )
         self._module_root = resolved_module_root
-        self._runtime = runtime or SceneRuntime(module_root=resolved_module_root)
-        self._owner_by_session_id: dict[str, str] = {}
+        self._runtime = runtime or SceneRuntime(
+            module_root=resolved_module_root,
+            state_store=state_store,
+        )
+        self._owner_by_session_id = self._restore_session_owners()
         self._lock = RLock()
         self._skill_templates = load_skill_template_mapping()
         self._scenario_view_builder = ScenarioViewBuilder()
@@ -387,6 +394,16 @@ class ScenarioService:
         digest = sha1(player_id.encode("utf-8")).hexdigest()[:8]
         head_length = max_suffix_length - len(digest) - 1
         return f"{prefix}{player_id[:head_length]}-{digest}"
+
+    def _restore_session_owners(self) -> dict[str, str]:
+        """为持久化恢复的会话补一个稳定 owner 映射。"""
+        owners: dict[str, str] = {}
+        for session_id in self._runtime.list_session_ids():
+            session = self._runtime.get_session(session_id)
+            if not session.player_states:
+                continue
+            owners[session_id] = next(iter(sorted(session.player_states)))
+        return owners
 
     def _build_default_skill_inputs(
         self,

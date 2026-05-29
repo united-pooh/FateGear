@@ -50,13 +50,19 @@ class TurnViewBuilder:
                         for outcome in batch.outcomes
                         if outcome.player_id == player_id
                     ],
-                    public_narration=getattr(narration, "public_narration", ""),
+                    public_narration=self._value(
+                        narration,
+                        "public_narration",
+                        "",
+                    ),
                     npc_dialogues=self._public_dialogues(narration),
                     private_clues=self._private_clues_for_player(
                         narration,
                         player_id=player_id,
                     ),
-                    is_fallback=bool(getattr(narration, "is_fallback", False)),
+                    is_fallback=bool(
+                        self._value(narration, "is_fallback", False)
+                    ),
                 )
             )
         return PlayerTurnView(
@@ -85,11 +91,17 @@ class TurnViewBuilder:
                     scene_id=batch.scene_id,
                     player_ids=batch.player_ids,
                     outcomes=batch.outcomes,
-                    public_narration=getattr(narration, "public_narration", ""),
+                    public_narration=self._value(
+                        narration,
+                        "public_narration",
+                        "",
+                    ),
                     npc_dialogues=self._all_dialogues(narration),
                     private_clues=self._all_private_clues(narration),
-                    keeper_hint=getattr(narration, "keeper_hint", ""),
-                    is_fallback=bool(getattr(narration, "is_fallback", False)),
+                    keeper_hint=self._value(narration, "keeper_hint", ""),
+                    is_fallback=bool(
+                        self._value(narration, "is_fallback", False)
+                    ),
                 )
             )
         return KeeperTurnView(
@@ -105,8 +117,12 @@ class TurnViewBuilder:
 
     def _public_dialogues(self, narration: object) -> list[PublicDialogueView]:
         result: list[PublicDialogueView] = []
-        for dialogue in getattr(narration, "npc_dialogues", []) or []:
-            visible_scope = getattr(dialogue, "visible_scope", VisibleScope.PUBLIC)
+        for dialogue in self._value(narration, "npc_dialogues", []) or []:
+            visible_scope = self._value(
+                dialogue,
+                "visible_scope",
+                VisibleScope.PUBLIC,
+            )
             if visible_scope != VisibleScope.PUBLIC:
                 continue
             result.append(self._dialogue_view(dialogue))
@@ -115,14 +131,14 @@ class TurnViewBuilder:
     def _all_dialogues(self, narration: object) -> list[PublicDialogueView]:
         return [
             self._dialogue_view(dialogue)
-            for dialogue in getattr(narration, "npc_dialogues", []) or []
+            for dialogue in self._value(narration, "npc_dialogues", []) or []
         ]
 
     def _dialogue_view(self, dialogue: object) -> PublicDialogueView:
         return PublicDialogueView(
-            npc_id=str(getattr(dialogue, "npc_id", "")),
-            npc_name=str(getattr(dialogue, "npc_name", "")),
-            dialogue=str(getattr(dialogue, "dialogue", "")),
+            npc_id=str(self._value(dialogue, "npc_id", "")),
+            npc_name=str(self._value(dialogue, "npc_name", "")),
+            dialogue=str(self._value(dialogue, "dialogue", "")),
         )
 
     def _private_clues_for_player(
@@ -133,22 +149,27 @@ class TurnViewBuilder:
     ) -> list[PrivateClueView]:
         return [
             self._private_clue_view(clue)
-            for clue in getattr(narration, "private_clues", []) or []
-            if getattr(clue, "player_id", "") == player_id
+            for clue in self._value(narration, "private_clues", []) or []
+            if self._value(clue, "player_id", "") == player_id
         ]
 
     def _all_private_clues(self, narration: object) -> list[PrivateClueView]:
         return [
             self._private_clue_view(clue)
-            for clue in getattr(narration, "private_clues", []) or []
+            for clue in self._value(narration, "private_clues", []) or []
         ]
 
     def _private_clue_view(self, clue: object) -> PrivateClueView:
         return PrivateClueView(
-            player_id=str(getattr(clue, "player_id", "")),
-            clue_text=str(getattr(clue, "clue_text", "")),
-            related_action_id=str(getattr(clue, "related_action_id", "")),
+            player_id=str(self._value(clue, "player_id", "")),
+            clue_text=str(self._value(clue, "clue_text", "")),
+            related_action_id=str(self._value(clue, "related_action_id", "")),
         )
+
+    def _value(self, item: object, key: str, default: object) -> object:
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
 
 
 class ScenarioViewBuilder:

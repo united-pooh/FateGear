@@ -14,11 +14,14 @@
 - HTTP 新增 `POST /sessions/{session_id}/text-intents`，用于提交自然语言玩家意图。
 - `tokoyami_subset` 示例模组展示常暗列车的 NPC、世界书、氛围和安全边界写法。
 - 新增五轮升级审计文档：`docs/fategear-five-iteration-upgrade.md`。
+- 新增 `JsonScenarioStateStore`，支持把会话快照和回合结算历史持久化到本地 JSON 并在运行时启动时恢复。
 
 ### Changed
 - Render Agent 调用后移到权威状态提交之后，叙事输入现在能看到本回合最终剧情迁移、新阶段和结局。
 - HTTP `POST /sessions/{session_id}/resolve` 改为返回守密人视图，避免裸返内部 `TurnResolution`。
 - `SceneRuntime.resolve_turn` 增加 per-session `asyncio.Lock`、回合历史和 `expected_turn` 幂等重放；`ScenarioService.resolve_turn` 不再持有 `RLock` 跨 `await`。
+- `ScenarioService` 可接收 `state_store` 创建可恢复运行时，并会为恢复会话重建稳定 owner 映射。
+- 玩家/守密人回合视图兼容 JSON 往返后的叙事 dict，继续保持私密线索与 keeper-only 内容隔离。
 
 ### Tests
 - loader 测试覆盖 NarrativeContext 成功加载、重复 NPC、坏世界书引用和缺失触发条件。
@@ -32,6 +35,7 @@
 - IntentNormalizer 测试覆盖自然语言移动、动作别名匹配和澄清路径。
 - API/HTTP 测试覆盖自然语言意图提交。
 - Runtime/API/HTTP 测试覆盖 expected-turn 回放和并发同回合防双提交。
+- StateStore 测试覆盖会话恢复、回合历史恢复、删除清理，以及 JSON 叙事往返后的玩家视图过滤。
 
 ## 2026-03-30
 
