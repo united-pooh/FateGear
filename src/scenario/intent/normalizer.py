@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from ..module.models import ModuleAction, ModuleDefinition, ModuleScene
@@ -20,12 +20,19 @@ class _Match:
     item_id: str
     label: str
     confidence: float
+    metadata: dict[str, str] = field(default_factory=dict)
 
 
 class IntentNormalizer:
     """把短自然语言输入归一化为当前 runtime 支持的结构化意图。"""
 
     _MOVE_HINTS = ("去", "到", "进入", "前往", "移动", "走向", "返回", "回到")
+    _OFF_MAP_TARGET_PATTERN = re.compile(
+        r"(?:第?[一二三四五六七八九十\d]+号车厢|"
+        r"[一二三四五六七八九十\d]+号车|"
+        r"车尾|尾车|后方车厢|更后面|后面的车厢|"
+        r"地图外|剧本外|未知区域|不存在的区域)"
+    )
     _OBSERVE_TERMS = (
         "观察",
         "查看",
@@ -199,6 +206,7 @@ class IntentNormalizer:
         )
         observe_score = self._observe_match_score(normalized_text)
         freeform_score = self._freeform_match_score(normalized_text)
+        off_map_move_match = self._off_map_move_match(normalized_text)
         if len(matches) == 1:
             match = matches[0]
             return self._accepted(
@@ -263,6 +271,13 @@ class IntentNormalizer:
                     observe_score=observe_score,
                     observe_deferred=True,
                 ),
+            )
+        if off_map_move_match is not None and not matches:
+            return self._accepted(
+                player_id=player_id,
+                raw_text=raw_text,
+                match=off_map_move_match,
+                match_basis=self._match_basis(off_map_move_match),
             )
         if not matches and (observe_score > 0 or freeform_score > 0):
             if freeform_score > observe_score:
@@ -409,6 +424,31 @@ class IntentNormalizer:
             score = min(1.0, score + 0.2)
         return score
 
+    def _off_map_move_match(self, normalized_text: str) -> _Match | None:
+        if not any(hint in normalized_text for hint in self._MOVE_HINTS):
+            return None
+        target_match = self._OFF_MAP_TARGET_PATTERN.search(normalized_text)
+        if target_match is None:
+            return None
+        intended_target = target_match.group(0)
+        return _Match(
+            kind="freeform",
+            item_id="off_map_move",
+            label=f"尝试前往未知区域「{intended_target}」",
+            confidence=0.76,
+            metadata={
+                "freeform_kind": "off_map_move",
+                "intended_target": intended_target,
+                "risk_hint": (
+                    "玩家正在尝试前往模组场景图未定义或当前不可达的区域。"
+                    "这不是澄清失败，应按地图边界自由裁定：依据当前场景、"
+                    "模组氛围、威胁时钟和已知线索决定是危险边界、死亡警告区、"
+                    "暗骰检定、幸运/侦查/潜行检定、奖励、阻力或代价；"
+                    "不要把它改写成已定义移动。"
+                ),
+            },
+        )
+
     def _best_term_score(
         self,
         terms: list[str],
@@ -484,6 +524,9 @@ class IntentNormalizer:
             payload = {"type": "action", "action_id": match.item_id}
         elif match.kind == "freeform":
             payload = {"type": "freeform", "text": raw_text}
+            for key in ("freeform_kind", "intended_target", "risk_hint"):
+                if key in match.metadata:
+                    payload[key] = match.metadata[key]
         else:
             payload = {"type": "freeform", "text": raw_text}
         return NormalizedIntentResult(

@@ -137,6 +137,9 @@ class PlayerIntentSummary(BaseModel):
     observation_text: str = Field(default="")
     # 自由行动：不绑定模组菜单，但可由守密人裁定风险、检定和后果
     freeform_text: str = Field(default="")
+    freeform_kind: str = Field(default="")
+    intended_target: str = Field(default="")
+    risk_hint: str = Field(default="")
 
 
 class AgentPlanPrompt(BaseModel):

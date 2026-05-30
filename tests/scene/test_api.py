@@ -187,6 +187,37 @@ def test_scenario_service_submit_text_intent_accepts_freeform_non_progression() 
     assert latest.players[0].current_scene_id == "foyer"
 
 
+def test_scenario_service_submit_text_intent_accepts_off_map_move_as_freeform() -> None:
+    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    created = service.create_party(
+        {"module_id": "tokoyami_subset", "creator_id": "keeper"}
+    )
+    service.submit_intent(
+        created.session_id,
+        {"player_id": "keeper", "intent": {"type": "move", "target_scene_id": "car_4"}},
+    )
+    asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
+
+    response = service.submit_text_intent(
+        created.session_id,
+        {"player_id": "keeper", "text": "我想尝试前往七号车厢"},
+    )
+    resolution = asyncio.run(service.resolve_turn(created.session_id, expected_turn=2))
+    latest = service.get_party(created.session_id)
+
+    assert response.accepted is True
+    assert response.normalization.matched_id == "off_map_move"
+    assert response.normalization.intent_payload is not None
+    assert response.normalization.intent_payload["type"] == "freeform"
+    assert response.normalization.intent_payload["freeform_kind"] == "off_map_move"
+    assert response.normalization.intent_payload["intended_target"] == "七号车厢"
+    outcome = resolution.scene_batches[0].outcomes[0]
+    assert outcome.intent_type == "freeform"
+    assert outcome.freeform_kind == "off_map_move"
+    assert outcome.intended_target == "七号车厢"
+    assert latest.players[0].current_scene_id == "car_4"
+
+
 def test_scenario_service_submit_text_intent_preserves_deferred_observe() -> None:
     service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
     created = service.create_party(

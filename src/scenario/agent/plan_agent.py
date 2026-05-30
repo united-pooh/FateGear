@@ -188,10 +188,17 @@ def _build_user_message(prompt: AgentPlanPrompt) -> str:
                     action_line += f"：{intent.action_description}"
                 lines.append(action_line)
             elif intent.intent_type == "freeform":
-                lines.append(
+                freeform_line = (
                     f"  - {intent.player_id} 尝试自由行动（不绑定模组菜单）："
                     f"{intent.freeform_text}"
                 )
+                if intent.freeform_kind:
+                    freeform_line += f"；自由行动类型={intent.freeform_kind}"
+                if intent.intended_target:
+                    freeform_line += f"；意图目标={intent.intended_target}"
+                if intent.risk_hint:
+                    freeform_line += f"；边界裁定提示={intent.risk_hint}"
+                lines.append(freeform_line)
     else:
         lines.append(f"\n【第 {prompt.turn_no} 回合：本场景无待结算意图。】")
 
@@ -228,6 +235,10 @@ example json:
 如果技能列表为空，或当前动作已经由模组静态规则处理，请让 proposed_checks 保持 []。
 如果玩家提交的是 freeform 自由行动（包括观察、确认环境、等待、试探或出格动作），且行动有明显风险、阻力或不确定性，可以提议检定；
 这类检定的 action_id 必须写成 "freeform"，不要把玩家行动改写成可用动作列表里的菜单动作。
+如果 freeform_kind 是 "off_map_move"，表示玩家正在尝试前往未定义或当前不可达的场景边界：
+必须把它当作真实角色尝试处理，而不是要求澄清；请依据模组风格、当前场景、可达场景、威胁时钟和线索判断它是危险边界、死亡警告区、暗骰风险还是可能的奖励机会。
+可以提议玩家已有技能中的幸运/侦查/聆听/潜行等相关检定；若模组有追击或危险时钟，也可以在 proposed_effects 中提议 advance_clock。
+大成功/极难成功可以不给惩罚甚至给短暂优势；失败或大失败可以让角色受阻、暴露、推进威胁、受伤或接近死亡，但不要把其改写成普通已定义移动。
 proposed_effects 只能表达 set_flag/remove_flag/advance_clock 且必须包含 target_id；
 氛围描写、NPC 反应、移动说明不要放入 proposed_effects，请写入 keeper_notes。
 如果玩家只是低风险观察/确认环境，通常不要提议检定、效果或剧情迁移；让 Render 阶段给出环境反馈。

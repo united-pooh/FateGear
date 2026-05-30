@@ -59,6 +59,7 @@ _SYSTEM_PROMPT = """\
 7. 不得编造钥匙、密码、出口、真相、NPC动机等关键事实；这些内容必须来自本轮授权线索、已提交状态或明确事件。
 8. private_clues 只能使用【本轮授权私有线索】中的内容；没有授权线索时必须返回空数组。
 9. 除非本轮裁定结果里有成功的 move，否则不要叙述玩家已经进入、抵达或穿过其他场景；freeform 只能写成在当前场景内试探、靠近边界、感知后果或受阻。
+10. 如果 freeform_kind 是 "off_map_move"，这是玩家主动试探地图外/未定义区域；要根据裁定结果和检定结果写出危险边界、警告、阻力、奖励或代价，但仍不能把角色移动到不存在的场景节点。
 """
 
 
@@ -332,6 +333,9 @@ def _build_render_user_message(commit: CommitResult) -> str:
                     _value(outcome, "freeform_text", "")
                     or _value(outcome, "observation_text", "")
                 )
+                freeform_kind = _value(outcome, "freeform_kind", "")
+                intended_target = _value(outcome, "intended_target", "")
+                risk_hint = _value(outcome, "risk_hint", "")
                 lines.append(
                     f"  - {player} 自由行动："
                     f"{text}；"
@@ -339,6 +343,13 @@ def _build_render_user_message(commit: CommitResult) -> str:
                     "不等同于模组关键动作，除已提交效果外不得推进剧情节点；"
                     "除非另有成功 move，不得叙述成已经移动到其他场景。"
                 )
+                if freeform_kind or intended_target or risk_hint:
+                    lines.append(
+                        "    边界信息："
+                        f"类型={freeform_kind or '普通自由行动'}；"
+                        f"目标={intended_target or '未指定'}；"
+                        f"提示={risk_hint or '无'}"
+                    )
             elif intent_type == "action":
                 lines.append(
                     f"  - {player} 执行动作 {_value(outcome, 'action_id', '')}："

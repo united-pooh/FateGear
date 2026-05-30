@@ -30,6 +30,9 @@ class ObserveIntent(BaseModel):
 class FreeformIntent(BaseModel):
     type: Literal["freeform"]
     text: str = Field(..., min_length=1, max_length=300)
+    freeform_kind: str = Field(default="", max_length=40)
+    intended_target: str = Field(default="", max_length=80)
+    risk_hint: str = Field(default="", max_length=800)
 
 
 SceneIntent = MoveIntent | ActionIntent | ObserveIntent | FreeformIntent
@@ -46,6 +49,9 @@ class IntentResolution(BaseModel):
     action_id: str = Field(default="")
     observation_text: str = Field(default="")
     freeform_text: str = Field(default="")
+    freeform_kind: str = Field(default="")
+    intended_target: str = Field(default="")
+    risk_hint: str = Field(default="")
     effects_applied: list[str] = Field(default_factory=list)
 
 
@@ -78,6 +84,7 @@ class RuntimeEvent(BaseModel):
         "turn_completed",
         "plan_agent_called",
         "plan_agent_skipped",
+        "agent_effects_queued",
         "render_agent_called",
         "render_agent_skipped",
     ]

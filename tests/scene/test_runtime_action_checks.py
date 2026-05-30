@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from cards import build_investigator_from_mapping, load_skill_template_mapping
-from scenario.agent.models import KeeperAgentPlan, ProposedCheck
+from scenario.agent.models import KeeperAgentPlan, ProposedCheck, ProposedEffect
 from scenario.runtime import SceneRuntime, TurnResolution
 
 from tests.scene.card_fixtures import build_player_cards
@@ -52,6 +52,38 @@ class _FreeformCheckPlanner:
                 intent_summary="自由行动动态检定测试",
                 proposed_checks=checks,
                 keeper_notes="不要把自由行动改写成菜单动作。",
+            ),
+        )
+        self.records.append(record)
+        return record
+
+
+class _OffMapBoundaryPlanner:
+    def __init__(self) -> None:
+        self.records: list[_Record] = []
+
+    async def call(self, prompt: Any) -> _Record:
+        record = _Record(
+            prompt=prompt,
+            output=KeeperAgentPlan(
+                intent_summary="玩家尝试前往地图外危险边界。",
+                proposed_checks=[
+                    ProposedCheck(
+                        player_id="p1",
+                        action_id="freeform",
+                        skill_key="spot_hidden",
+                        proposed_difficulty="hard",
+                        rationale="七号车厢不在场景图中，接近后方威胁边界。",
+                    )
+                ],
+                proposed_effects=[
+                    ProposedEffect(
+                        effect_type="advance_clock",
+                        target_id="rear_threat",
+                        value=2,
+                        rationale="向七号车厢方向试探会显著吸引后方威胁。",
+                    )
+                ],
             ),
         )
         self.records.append(record)
@@ -162,6 +194,54 @@ def test_freeform_intent_can_receive_dynamic_check_without_advancing_story() -> 
     assert roll.skill_key == "spot_hidden"
     assert roll.roll_value == 1
     assert roll.success is True
+
+
+def test_off_map_freeform_can_apply_agent_boundary_consequence() -> None:
+    planner = _OffMapBoundaryPlanner()
+    runtime = SceneRuntime(roll_provider=lambda: 99, plan_agent=planner)
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    session.player_states["p1"].current_scene_id = "car_4"
+    session.story_state.current_stage_id = "informed"
+    session.global_flags.add("note_read")
+
+    resolution = _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={
+            "p1": {
+                "type": "freeform",
+                "text": "我想尝试前往七号车厢",
+                "freeform_kind": "off_map_move",
+                "intended_target": "七号车厢",
+                "risk_hint": "玩家正在尝试前往模组场景图未定义或当前不可达的危险边界。",
+            }
+        },
+    )
+    outcome = resolution.scene_batches[0].outcomes[0]
+
+    assert planner.records[0].prompt.pending_intents[0].freeform_kind == (
+        "off_map_move"
+    )
+    assert outcome.intent_type == "freeform"
+    assert outcome.success is False
+    assert outcome.freeform_kind == "off_map_move"
+    assert outcome.intended_target == "七号车厢"
+    assert session.player_states["p1"].current_scene_id == "car_4"
+    assert session.story_state.current_stage_id == "informed"
+    assert resolution.applied_clock_deltas["rear_threat"] == 3
+    assert session.clock_values["rear_threat"] == 3
+    assert resolution.dice_rolls[0].action_id == "freeform"
+    assert resolution.dice_rolls[0].roll_value == 99
+    assert resolution.scene_batches[0].outcomes[0].effects_applied == []
+    assert any(
+        event.type == "agent_effects_queued"
+        and event.effects_applied == ["Agent推进时钟:rear_threat+2"]
+        for event in resolution.event_log
+    )
 
 
 def test_create_session_requires_player_cards_for_all_players() -> None:

@@ -495,6 +495,22 @@ class SceneRuntime:
             # ------------------------------------------------------------------
             # 规则判定阶段：逐意图处理（移动 / 动作 / 动态检定覆盖）
             # ------------------------------------------------------------------
+            agent_effects_applied: list[str] = []
+            if plan is not None and any(
+                "freeform" in action_ids
+                for action_ids in pending_action_ids_by_player.values()
+            ):
+                agent_effects_applied = self._queue_agent_proposed_effects(
+                    plan=plan,
+                    module=module,
+                    turn_no=snapshot.current_turn,
+                    scene_id=scene.id,
+                    scene_name=scene.name,
+                    flag_sets=flag_sets,
+                    flag_clears=flag_clears,
+                    clock_deltas=clock_deltas,
+                    event_log=event_log,
+                )
             outcomes: list[IntentResolution] = []
             # 本批次已完成的动态检定结果，最终传入 CommitResult
             batch_resolved_checks: list[dict] = list(dynamic_check_results.values())
@@ -571,7 +587,11 @@ class SceneRuntime:
                     reason = (
                         check_note
                         if check_note
-                        else "自由行动已由守密人裁定；不触发模组关键动作。"
+                        else (
+                            intent.risk_hint
+                            if intent.risk_hint
+                            else "自由行动已由守密人裁定；不触发模组关键动作。"
+                        )
                     )
                     event_log.append(
                         RuntimeEvent(
@@ -586,7 +606,12 @@ class SceneRuntime:
                                 f"玩家 {player_id} 在"
                                 f"{current_scene_name}（{player_state.current_scene_id}）"
                                 f"尝试自由行动：{intent.text}，"
-                                f"{'成功' if check_passed else '受阻'}"
+                                + (
+                                    f"类型={intent.freeform_kind}，"
+                                    if intent.freeform_kind
+                                    else ""
+                                )
+                                + f"{'成功' if check_passed else '受阻'}"
                                 + (f"，原因：{reason}" if reason else "")
                             ),
                         )
@@ -599,6 +624,9 @@ class SceneRuntime:
                             success=check_passed,
                             reason=reason,
                             freeform_text=intent.text,
+                            freeform_kind=intent.freeform_kind,
+                            intended_target=intent.intended_target,
+                            risk_hint=intent.risk_hint,
                         )
                     )
                     continue
@@ -770,7 +798,7 @@ class SceneRuntime:
                     )
                 )
 
-            batch_effects: list[str] = []
+            batch_effects: list[str] = list(agent_effects_applied)
             for outcome in outcomes:
                 batch_effects.extend(outcome.effects_applied)
             render_payloads[scene.id] = (
@@ -1091,6 +1119,21 @@ class SceneRuntime:
                         if outcome.freeform_text
                         else {}
                     ),
+                    **(
+                        {"freeform_kind": outcome.freeform_kind}
+                        if outcome.freeform_kind
+                        else {}
+                    ),
+                    **(
+                        {"intended_target": outcome.intended_target}
+                        if outcome.intended_target
+                        else {}
+                    ),
+                    **(
+                        {"risk_hint": outcome.risk_hint}
+                        if outcome.risk_hint
+                        else {}
+                    ),
                 }
                 for outcome in batch.outcomes
             }
@@ -1286,6 +1329,68 @@ class SceneRuntime:
         if self._state_store is None:
             return
         self._state_store.save_turn(resolution)
+
+    def _queue_agent_proposed_effects(
+        self,
+        *,
+        plan: KeeperAgentPlan,
+        module: ModuleDefinition,
+        turn_no: int,
+        scene_id: str,
+        scene_name: str,
+        flag_sets: set[str],
+        flag_clears: set[str],
+        clock_deltas: dict[str, int],
+        event_log: list[RuntimeEvent],
+    ) -> list[str]:
+        """校验并排队 Agent 对自由行动提出的安全状态效果。"""
+        known_flags = set(module.flags)
+        known_clocks = set(module.clock_map())
+        effects_applied: list[str] = []
+        for proposed in plan.proposed_effects:
+            effect_type = str(proposed.effect_type)
+            target_id = str(proposed.target_id).strip()
+            if not target_id:
+                continue
+            if effect_type == "set_flag":
+                if target_id not in known_flags:
+                    logger.info("跳过未知 flag 的 Agent 效果：%s", target_id)
+                    continue
+                flag_sets.add(target_id)
+                effects_applied.append(f"Agent设置标记:{target_id}")
+            elif effect_type == "remove_flag":
+                if target_id not in known_flags:
+                    logger.info("跳过未知 flag 的 Agent 效果：%s", target_id)
+                    continue
+                flag_clears.add(target_id)
+                effects_applied.append(f"Agent移除标记:{target_id}")
+            elif effect_type == "advance_clock":
+                if target_id not in known_clocks:
+                    logger.info("跳过未知 clock 的 Agent 效果：%s", target_id)
+                    continue
+                value = max(1, int(proposed.value or 1))
+                clock_deltas[target_id] = clock_deltas.get(target_id, 0) + value
+                effects_applied.append(f"Agent推进时钟:{target_id}+{value}")
+            else:
+                logger.info("跳过不支持的 Agent 效果类型：%s", effect_type)
+                continue
+
+            event_log.append(
+                RuntimeEvent(
+                    type="agent_effects_queued",
+                    turn_no=turn_no,
+                    scene_id=scene_id,
+                    scene_name=scene_name,
+                    reason=proposed.rationale,
+                    effects_applied=[effects_applied[-1]],
+                    message=(
+                        "Agent 自由行动效果排队："
+                        f"{effects_applied[-1]}"
+                        + (f"，理由：{proposed.rationale}" if proposed.rationale else "")
+                    ),
+                )
+            )
+        return effects_applied
 
     def _build_dice_roll_audit(
         self,

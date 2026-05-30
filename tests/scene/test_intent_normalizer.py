@@ -277,6 +277,39 @@ def test_intent_normalizer_accepts_physical_sensory_action_as_freeform() -> None
     assert result.matched_id == "freeform"
 
 
+def test_intent_normalizer_accepts_off_map_car_as_freeform_boundary() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    session.player_states["p1"].current_scene_id = "car_4"
+    session.story_state.current_stage_id = "informed"
+    session.global_flags.add("note_read")
+    module = load_module_by_id("tokoyami_subset")
+
+    result = IntentNormalizer().normalize(
+        runtime=runtime,
+        session=session,
+        module=module,
+        player_id="p1",
+        raw_text="我想尝试前往七号车厢",
+    )
+
+    assert result.accepted is True
+    assert result.intent_payload is not None
+    assert result.intent_payload["type"] == "freeform"
+    assert result.intent_payload["text"] == "我想尝试前往七号车厢"
+    assert result.intent_payload["freeform_kind"] == "off_map_move"
+    assert result.intent_payload["intended_target"] == "七号车厢"
+    assert "危险边界" in str(result.intent_payload["risk_hint"])
+    assert result.matched_kind == "freeform"
+    assert result.matched_id == "off_map_move"
+    assert result.candidates == ["尝试前往未知区域「七号车厢」"]
+    assert result.match_basis == ["freeform:off_map_move:0.76"]
+
+
 def test_intent_normalizer_accepts_location_question_as_freeform_for_api() -> None:
     runtime = SceneRuntime()
     session = runtime.create_session(

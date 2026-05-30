@@ -135,3 +135,37 @@ def test_render_prompt_keeps_freeform_from_becoming_scene_movement() -> None:
 
     assert "除非本轮裁定结果里有成功的 move" in render_system
     assert "不得叙述成已经移动到其他场景" in render_user
+
+
+def test_plan_prompt_marks_off_map_freeform_as_boundary_attempt() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    session.player_states["p1"].current_scene_id = "car_4"
+    module = load_module_by_id("tokoyami_subset")
+    builder = PromptBuilder()
+
+    prompt = builder.build(
+        session=session,
+        module=module,
+        scene_id="car_4",
+        pending_intents={
+            "p1": {
+                "type": "freeform",
+                "text": "我想尝试前往七号车厢",
+                "freeform_kind": "off_map_move",
+                "intended_target": "七号车厢",
+                "risk_hint": "玩家正在尝试前往模组场景图未定义或当前不可达的危险边界。",
+            }
+        },
+    )
+    user_message = _build_user_message(prompt)
+
+    assert prompt.pending_intents[0].freeform_kind == "off_map_move"
+    assert prompt.pending_intents[0].intended_target == "七号车厢"
+    assert "自由行动类型=off_map_move" in user_message
+    assert "意图目标=七号车厢" in user_message
+    assert "危险边界" in user_message

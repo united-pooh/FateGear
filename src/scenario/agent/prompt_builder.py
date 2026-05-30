@@ -318,6 +318,9 @@ class PromptBuilder:
                         intent_type="freeform",
                         freeform_text=text,
                         observation_text=text if intent_type == "observe" else "",
+                        freeform_kind=str(raw_intent.get("freeform_kind", "")),
+                        intended_target=str(raw_intent.get("intended_target", "")),
+                        risk_hint=str(raw_intent.get("risk_hint", "")),
                     )
                 )
             else:
