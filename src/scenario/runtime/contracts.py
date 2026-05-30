@@ -27,7 +27,12 @@ class ObserveIntent(BaseModel):
     text: str = Field(..., min_length=1, max_length=300)
 
 
-SceneIntent = MoveIntent | ActionIntent | ObserveIntent
+class FreeformIntent(BaseModel):
+    type: Literal["freeform"]
+    text: str = Field(..., min_length=1, max_length=300)
+
+
+SceneIntent = MoveIntent | ActionIntent | ObserveIntent | FreeformIntent
 SCENE_INTENT_ADAPTER: TypeAdapter[SceneIntent] = TypeAdapter(SceneIntent)
 
 
@@ -40,6 +45,7 @@ class IntentResolution(BaseModel):
     target_scene_id: str = Field(default="")
     action_id: str = Field(default="")
     observation_text: str = Field(default="")
+    freeform_text: str = Field(default="")
     effects_applied: list[str] = Field(default_factory=list)
 
 
@@ -61,6 +67,7 @@ class RuntimeEvent(BaseModel):
         "scene_batch_started",
         "movement_attempted",
         "observation_requested",
+        "freeform_action_resolved",
         "action_resolved",
         "movement_committed",
         "flags_changed",

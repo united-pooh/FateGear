@@ -58,6 +58,7 @@ _SYSTEM_PROMPT = """\
 6. 不要破坏游戏内的第四堵墙（不提及规则数值）。
 7. 不得编造钥匙、密码、出口、真相、NPC动机等关键事实；这些内容必须来自本轮授权线索、已提交状态或明确事件。
 8. private_clues 只能使用【本轮授权私有线索】中的内容；没有授权线索时必须返回空数组。
+9. 除非本轮裁定结果里有成功的 move，否则不要叙述玩家已经进入、抵达或穿过其他场景；freeform 只能写成在当前场景内试探、靠近边界、感知后果或受阻。
 """
 
 
@@ -262,9 +263,15 @@ def _safe_public_narration(prompt: CommitResult) -> str:
         parts.append(scene_description)
     for outcome in _list_value(prompt, "outcomes"):
         intent_type = str(_value(outcome, "intent_type", ""))
-        if intent_type == "observe":
-            text = str(_value(outcome, "observation_text", "") or "观察环境")
-            parts.append(f"你选择先确认环境：{text}。没有新的完整线索被自动揭示。")
+        if intent_type in {"observe", "freeform"}:
+            text = str(
+                _value(outcome, "freeform_text", "")
+                or _value(outcome, "observation_text", "")
+                or "自由行动"
+            )
+            parts.append(
+                f"你尝试了自由行动：{text}。结果只以本轮裁定和可感知后果为准。"
+            )
         elif intent_type == "action" and _value(outcome, "success", False):
             action_id = str(_value(outcome, "action_id", ""))
             parts.append(f"动作 {action_id} 已完成；可见结果以本轮授权线索为准。")
@@ -320,11 +327,17 @@ def _build_render_user_message(commit: CommitResult) -> str:
             player = _value(outcome, "player_id", "?")
             intent_type = _value(outcome, "intent_type", "?")
             success = bool(_value(outcome, "success", False))
-            if intent_type == "observe":
+            if intent_type in {"observe", "freeform"}:
+                text = (
+                    _value(outcome, "freeform_text", "")
+                    or _value(outcome, "observation_text", "")
+                )
                 lines.append(
-                    f"  - {player} 观察/确认环境："
-                    f"{_value(outcome, 'observation_text', '')}；"
-                    "不触发模组动作，不授权完整线索正文。"
+                    f"  - {player} 自由行动："
+                    f"{text}；"
+                    f"{'成功' if success else '受阻'}；"
+                    "不等同于模组关键动作，除已提交效果外不得推进剧情节点；"
+                    "除非另有成功 move，不得叙述成已经移动到其他场景。"
                 )
             elif intent_type == "action":
                 lines.append(

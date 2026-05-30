@@ -187,10 +187,10 @@ def _build_user_message(prompt: AgentPlanPrompt) -> str:
                 if intent.action_description:
                     action_line += f"：{intent.action_description}"
                 lines.append(action_line)
-            elif intent.intent_type == "observe":
+            elif intent.intent_type == "freeform":
                 lines.append(
-                    f"  - {intent.player_id} 暂不推动明确动作，只想观察/确认环境："
-                    f"{intent.observation_text}"
+                    f"  - {intent.player_id} 尝试自由行动（不绑定模组菜单）："
+                    f"{intent.freeform_text}"
                 )
     else:
         lines.append(f"\n【第 {prompt.turn_no} 回合：本场景无待结算意图。】")
@@ -226,9 +226,11 @@ example json:
 如果没有提议检定或提议效果，请返回空数组；如果没有剧情迁移，请返回 null。
 只有当玩家技能列表中明确存在对应 skill_key 时，才可以写入 proposed_checks；
 如果技能列表为空，或当前动作已经由模组静态规则处理，请让 proposed_checks 保持 []。
+如果玩家提交的是 freeform 自由行动（包括观察、确认环境、等待、试探或出格动作），且行动有明显风险、阻力或不确定性，可以提议检定；
+这类检定的 action_id 必须写成 "freeform"，不要把玩家行动改写成可用动作列表里的菜单动作。
 proposed_effects 只能表达 set_flag/remove_flag/advance_clock 且必须包含 target_id；
 氛围描写、NPC 反应、移动说明不要放入 proposed_effects，请写入 keeper_notes。
-如果玩家只是观察/确认环境，不要为其提议检定、效果或剧情迁移；让 Render 阶段给出环境反馈。
+如果玩家只是低风险观察/确认环境，通常不要提议检定、效果或剧情迁移；让 Render 阶段给出环境反馈。
 如果有剧情迁移，`proposed_transition` 必须是 object：
 {
   "transition_id": "unlock_access",

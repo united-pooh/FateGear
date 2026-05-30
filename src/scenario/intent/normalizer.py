@@ -32,6 +32,15 @@ class IntentNormalizer:
         "看看",
         "仔细查看",
         "研究",
+        "往外看",
+        "向外看",
+        "窗外",
+        "车窗",
+        "车窗外",
+        "看窗外",
+        "看车窗",
+        "往车窗外看",
+        "从车窗往外看",
         "查看周围",
         "看看周围",
         "看周围",
@@ -43,12 +52,18 @@ class IntentNormalizer:
         "确认情况",
         "什么情况",
         "现在情况",
+        "我在哪里",
+        "在哪里",
+        "这是哪里",
+        "现在在哪",
+        "当前位置",
         "打量",
         "感知",
+        "闻",
         "听听",
         "闻闻",
     )
-    _NON_PROGRESSIVE_TERMS = (
+    _FREEFORM_TERMS = (
         "等",
         "等待",
         "等一下",
@@ -70,6 +85,70 @@ class IntentNormalizer:
         "说话",
         "唱歌",
         "跳舞",
+        "趴",
+        "蹲",
+        "躺",
+        "地板",
+        "铁轨",
+        "味道",
+        "气味",
+        "嗅",
+        "闻",
+        "触摸",
+        "抚摸",
+        "拍",
+        "往外看",
+        "向外看",
+        "窗外",
+        "车窗",
+        "车窗外",
+        "看窗外",
+        "看车窗",
+        "往车窗外看",
+        "从车窗往外看",
+        "声音",
+        "声源",
+        "来源",
+        "声音来源",
+        "后方",
+        "车尾",
+        "回头",
+        "靠近",
+        "接近",
+        "走向",
+        "调查",
+        "追",
+        "大喊",
+        "喊叫",
+        "尖叫",
+        "撞",
+        "砸",
+        "翻",
+    )
+    _RISKY_FREEFORM_TERMS = (
+        "声音",
+        "声源",
+        "来源",
+        "声音来源",
+        "后方",
+        "车尾",
+        "回头",
+        "靠近",
+        "接近",
+        "追",
+        "大喊",
+        "喊叫",
+        "尖叫",
+        "趴",
+        "地板",
+        "铁轨",
+        "味道",
+        "气味",
+        "触摸",
+        "抚摸",
+        "撞",
+        "砸",
+        "翻",
     )
     _END_OF_CAR_TERMS = (
         "车厢尽头",
@@ -119,6 +198,7 @@ class IntentNormalizer:
             key=lambda item: (-item.confidence, item.kind, item.item_id),
         )
         observe_score = self._observe_match_score(normalized_text)
+        freeform_score = self._freeform_match_score(normalized_text)
         if len(matches) == 1:
             match = matches[0]
             return self._accepted(
@@ -184,11 +264,24 @@ class IntentNormalizer:
                     observe_deferred=True,
                 ),
             )
-        if observe_score > 0 and not matches:
+        if not matches and (observe_score > 0 or freeform_score > 0):
+            if freeform_score > observe_score:
+                freeform_match = _Match(
+                    kind="freeform",
+                    item_id="freeform",
+                    label="尝试自由行动",
+                    confidence=freeform_score,
+                )
+                return self._accepted(
+                    player_id=player_id,
+                    raw_text=raw_text,
+                    match=freeform_match,
+                    match_basis=self._match_basis(freeform_match),
+                )
             observe_match = _Match(
-                kind="observe",
+                kind="freeform",
                 item_id="observe",
-                label="观察当前环境",
+                label="自由观察/感知",
                 confidence=observe_score,
             )
             return self._accepted(
@@ -196,20 +289,6 @@ class IntentNormalizer:
                 raw_text=raw_text,
                 match=observe_match,
                 match_basis=self._match_basis(observe_match),
-            )
-        non_progressive_score = self._non_progressive_match_score(normalized_text)
-        if non_progressive_score > 0 and not matches:
-            freeform_match = _Match(
-                kind="observe",
-                item_id="freeform",
-                label="执行非推进自由行动",
-                confidence=non_progressive_score,
-            )
-            return self._accepted(
-                player_id=player_id,
-                raw_text=raw_text,
-                match=freeform_match,
-                match_basis=self._match_basis(freeform_match),
             )
         return self._clarify(
             player_id=player_id,
@@ -318,12 +397,17 @@ class IntentNormalizer:
             exact_score=0.82,
         )
 
-    def _non_progressive_match_score(self, normalized_text: str) -> float:
-        return self._best_term_score(
-            list(self._NON_PROGRESSIVE_TERMS),
+    def _freeform_match_score(self, normalized_text: str) -> float:
+        score = self._best_term_score(
+            list(self._FREEFORM_TERMS),
             normalized_text,
             exact_score=0.72,
         )
+        if score > 0 and any(
+            term in normalized_text for term in self._RISKY_FREEFORM_TERMS
+        ):
+            score = min(1.0, score + 0.2)
+        return score
 
     def _best_term_score(
         self,
@@ -352,7 +436,7 @@ class IntentNormalizer:
     ) -> list[str]:
         basis = [f"{match.kind}:{match.item_id}:{match.confidence:.2f}"]
         if observe_deferred:
-            basis.append(f"observe:deferred:{observe_score:.2f}")
+            basis.append(f"freeform:deferred_observe:{observe_score:.2f}")
         return basis
 
     def _deferred_observe_intents(
@@ -367,10 +451,11 @@ class IntentNormalizer:
             return []
         return [
             {
-                "type": "observe",
+                "type": "freeform",
                 "text": raw_text,
                 "after": "move",
-                "reason": "移动后继续观察目标场景；本回合不会因此自动揭示未触发线索。",
+                "subtype": "observe",
+                "reason": "移动后继续进行自由观察；本回合不会因此自动揭示未触发线索。",
                 "confidence": round(observe_score, 2),
             }
         ]
@@ -379,7 +464,7 @@ class IntentNormalizer:
         if matches:
             labels = "、".join(match.label for match in matches[:3])
             return f"我找到了多个同样可信的候选：{labels}。请选一个，或改说你只想观察环境。"
-        return "这个意图有些含糊，请明确你要移动到哪个场景、执行哪个动作，或说你想观察环境。"
+        return "这个意图有些含糊，请明确你要移动到哪个场景、执行哪个模组动作，或直接描述你的自由行动。"
 
     def _accepted(
         self,
@@ -397,8 +482,10 @@ class IntentNormalizer:
             }
         elif match.kind == "action":
             payload = {"type": "action", "action_id": match.item_id}
+        elif match.kind == "freeform":
+            payload = {"type": "freeform", "text": raw_text}
         else:
-            payload = {"type": "observe", "text": raw_text}
+            payload = {"type": "freeform", "text": raw_text}
         return NormalizedIntentResult(
             player_id=player_id,
             raw_text=raw_text,
@@ -445,7 +532,7 @@ class IntentNormalizer:
             f"执行「{action.name}」"
             for action in runtime.list_available_actions(session, player_id)
         ]
-        return [*move_labels, *action_labels, "观察当前环境"]
+        return [*move_labels, *action_labels, "自由观察/行动"]
 
     def _normalize_text(self, text: str) -> str:
         return re.sub(r"\s+", "", text).lower()

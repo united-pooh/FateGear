@@ -149,11 +149,16 @@ def test_scenario_service_submit_text_intent_accepts_observe() -> None:
 
     assert response.accepted is True
     assert response.normalization.intent_payload == {
-        "type": "observe",
+        "type": "freeform",
         "text": "我只是想确认一下什么情况",
     }
-    assert response.normalization.matched_kind == "observe"
-    assert resolution.scene_batches[0].outcomes[0].intent_type == "observe"
+    assert response.normalization.matched_kind == "freeform"
+    assert response.normalization.matched_id == "observe"
+    assert resolution.scene_batches[0].outcomes[0].intent_type == "freeform"
+    assert (
+        resolution.scene_batches[0].outcomes[0].freeform_text
+        == "我只是想确认一下什么情况"
+    )
     assert resolution.scene_batches[0].outcomes[0].effects_applied == []
     assert latest.current_stage_id == "awake"
     assert latest.players[0].current_scene_id == "car_6"
@@ -172,11 +177,12 @@ def test_scenario_service_submit_text_intent_accepts_freeform_non_progression() 
 
     assert response.accepted is True
     assert response.normalization.intent_payload == {
-        "type": "observe",
+        "type": "freeform",
         "text": "我开始跳舞",
     }
     assert response.normalization.matched_id == "freeform"
-    assert resolution.scene_batches[0].outcomes[0].intent_type == "observe"
+    assert resolution.scene_batches[0].outcomes[0].intent_type == "freeform"
+    assert resolution.scene_batches[0].outcomes[0].freeform_text == "我开始跳舞"
     assert resolution.scene_batches[0].outcomes[0].effects_applied == []
     assert latest.players[0].current_scene_id == "foyer"
 
@@ -201,14 +207,15 @@ def test_scenario_service_submit_text_intent_preserves_deferred_observe() -> Non
     }
     assert response.normalization.deferred_intents == [
         {
-            "type": "observe",
+            "type": "freeform",
             "text": "去车厢尽头廊道仔细查看一下",
             "after": "move",
-            "reason": "移动后继续观察目标场景；本回合不会因此自动揭示未触发线索。",
+            "subtype": "observe",
+            "reason": "移动后继续进行自由观察；本回合不会因此自动揭示未触发线索。",
             "confidence": 0.67,
         }
     ]
-    assert "observe:deferred:0.67" in response.normalization.match_basis
+    assert "freeform:deferred_observe:0.67" in response.normalization.match_basis
     assert resolution.scene_batches[0].outcomes[0].intent_type == "move"
     assert latest.players[0].current_scene_id == "car_4"
 

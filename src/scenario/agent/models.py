@@ -126,15 +126,17 @@ class PlayerIntentSummary(BaseModel):
     """单条玩家意图的语义化摘要，用于填充 prompt。"""
 
     player_id: str
-    intent_type: str = Field(description="`move` 或 `action`。")
+    intent_type: str = Field(description="`move`、`action` 或 `freeform`。")
     # 移动意图
     target_scene_id: str = Field(default="")
     # 动作意图
     action_id: str = Field(default="")
     action_name: str = Field(default="")
     action_description: str = Field(default="")
-    # 观察/确认环境等不直接触发模组动作的自由意图
+    # 旧 observe 字段仅用于兼容历史记录；新观察/确认环境均进入 freeform_text。
     observation_text: str = Field(default="")
+    # 自由行动：不绑定模组菜单，但可由守密人裁定风险、检定和后果
+    freeform_text: str = Field(default="")
 
 
 class AgentPlanPrompt(BaseModel):

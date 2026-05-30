@@ -123,10 +123,10 @@ def test_kp_jsonl_records_freeform_non_progression_without_fake_effects(
 
     assert submitted["normalization"]["matched_id"] == "freeform"
     assert submitted["normalization"]["intent_payload"] == {
-        "type": "observe",
+        "type": "freeform",
         "text": "我开始跳舞",
     }
-    assert outcome["intent_type"] == "observe"
-    assert outcome["observation_text"] == "我开始跳舞"
+    assert outcome["intent_type"] == "freeform"
+    assert outcome["freeform_text"] == "我开始跳舞"
     assert outcome["effects_applied"] == []
     assert resolved["party"]["players"][0]["current_scene_id"] == "foyer"

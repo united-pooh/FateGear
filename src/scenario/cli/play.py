@@ -15,6 +15,32 @@ from scenario.runtime import SceneRuntime
 
 ROOT = Path(__file__).resolve().parents[3]
 
+_LOCATION_QUERIES = (
+    "我在哪里",
+    "我在哪",
+    "我在哪儿",
+    "这是哪里",
+    "这里是哪",
+    "这里是哪里",
+    "现在在哪",
+    "现在在哪里",
+    "当前位置",
+)
+_HELP_QUERIES = (
+    "?",
+    "？",
+    "??",
+    "？？",
+    "何意味",
+    "什么意思",
+    "啥意思",
+    "什么含义",
+    "看不懂",
+    "我不懂",
+    "help",
+    "帮助",
+)
+
 
 def _build_service(
     *,
@@ -71,6 +97,41 @@ def _print_player_view(service: ScenarioService, session_id: str, player_id: str
     print(f"[stage] {view.current_stage_id} turn={view.current_turn}")
     if view.resolved_ending:
         print(f"[ending] {view.resolved_ending}")
+
+
+def _normalize_table_talk(raw: str) -> str:
+    return "".join(raw.strip().split()).lower()
+
+
+def _is_location_query(raw: str) -> bool:
+    normalized = _normalize_table_talk(raw)
+    return any(term in normalized for term in _LOCATION_QUERIES)
+
+
+def _is_help_query(raw: str) -> bool:
+    normalized = _normalize_table_talk(raw)
+    return normalized in _HELP_QUERIES or normalized.endswith("什么意思")
+
+
+def _handle_table_talk(
+    *,
+    service: ScenarioService,
+    session_id: str,
+    player_id: str,
+    raw: str,
+) -> bool:
+    if _is_location_query(raw):
+        print("[table] 当前位置查询，不消耗回合。")
+        _print_player_view(service, session_id, player_id)
+        return True
+    if _is_help_query(raw):
+        print(
+            "[table] 这是桌上提问，不消耗回合。你可以输入角色行动；"
+            "如果只是确认状况，可以说“观察周围”或“我在哪里”。"
+        )
+        print(":view 查看当前位置；:keeper 切换 KP 提示显示；:quit 退出")
+        return True
+    return False
 
 
 def _print_turn_view(
@@ -186,6 +247,13 @@ async def _run() -> None:
         if raw == ":keeper":
             show_kp = not show_kp
             print(f"[keeper view] {'on' if show_kp else 'off'}")
+            continue
+        if _handle_table_talk(
+            service=service,
+            session_id=session_id,
+            player_id=args.player,
+            raw=raw,
+        ):
             continue
 
         response = service.submit_text_intent(

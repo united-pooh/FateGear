@@ -58,7 +58,7 @@ def _resolve(runtime: SceneRuntime, session_id: str, intent: dict[str, object]):
     return asyncio.run(runtime.resolve_turn(session_id))
 
 
-def test_tokoyami_observe_does_not_select_or_authorize_note_warning() -> None:
+def test_tokoyami_freeform_observe_does_not_select_or_authorize_note_warning() -> None:
     narrator = _LeakyNarrator()
     runtime = SceneRuntime(render_agent=narrator)
     session = runtime.create_session(
@@ -74,7 +74,8 @@ def test_tokoyami_observe_does_not_select_or_authorize_note_warning() -> None:
     )
 
     outcome = resolution.scene_batches[0].outcomes[0]
-    assert outcome.intent_type == "observe"
+    assert outcome.intent_type == "freeform"
+    assert outcome.freeform_text == "环绕四周环境"
     assert outcome.effects_applied == []
     prompt = narrator.records[0].prompt
     assert "lore:note_warning" not in prompt.narrative.selected_ids

@@ -111,3 +111,27 @@ def test_prompt_builder_keeps_keeper_only_lore_out_of_public_render_context() ->
     assert "后方的大嘴" not in render_system
     assert "后方的大嘴" not in render_user
     assert "禁止提前揭示" in render_system
+
+
+def test_render_prompt_keeps_freeform_from_becoming_scene_movement() -> None:
+    commit = CommitResult(
+        session_id="s1",
+        turn_no=1,
+        scene_id="car_6",
+        scene_name="6号车厢",
+        scene_description="末班车的起始车厢，门上贴着便签。",
+        outcomes=[
+            {
+                "player_id": "p1",
+                "intent_type": "freeform",
+                "success": True,
+                "freeform_text": "我偏要往后方声音来源走过去看看",
+            }
+        ],
+    )
+
+    render_system = _build_render_system_prompt(commit)
+    render_user = _build_render_user_message(commit)
+
+    assert "除非本轮裁定结果里有成功的 move" in render_system
+    assert "不得叙述成已经移动到其他场景" in render_user

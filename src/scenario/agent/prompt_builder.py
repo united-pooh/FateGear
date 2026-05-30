@@ -310,12 +310,14 @@ class PromptBuilder:
                         action_description=action.description if action else "",
                     )
                 )
-            elif intent_type == "observe":
+            elif intent_type in {"observe", "freeform"}:
+                text = str(raw_intent.get("text", ""))
                 result.append(
                     PlayerIntentSummary(
                         player_id=player_id,
-                        intent_type="observe",
-                        observation_text=str(raw_intent.get("text", "")),
+                        intent_type="freeform",
+                        freeform_text=text,
+                        observation_text=text if intent_type == "observe" else "",
                     )
                 )
             else:

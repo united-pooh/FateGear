@@ -71,7 +71,7 @@ def test_intent_normalizer_returns_clarification_for_unknown_text() -> None:
     assert result.accepted is False
     assert "请明确" in result.clarification_question
     assert "移动到「储藏室」" in result.candidates
-    assert "观察当前环境" in result.candidates
+    assert "自由观察/行动" in result.candidates
 
 
 def test_intent_normalizer_clarifies_equal_action_candidates_by_naming_them() -> None:
@@ -118,15 +118,15 @@ def test_intent_normalizer_accepts_wait_without_forcing_progression() -> None:
 
     assert result.accepted is True
     assert result.intent_payload == {
-        "type": "observe",
+        "type": "freeform",
         "text": "我先原地等一下，保持警惕",
     }
-    assert result.matched_kind == "observe"
+    assert result.matched_kind == "freeform"
     assert result.matched_id == "freeform"
-    assert result.match_basis == ["observe:freeform:0.57"]
+    assert result.match_basis == ["freeform:freeform:0.57"]
 
 
-def test_intent_normalizer_accepts_unexpected_low_risk_action_as_observe() -> None:
+def test_intent_normalizer_accepts_unexpected_low_risk_action_as_freeform() -> None:
     runtime = SceneRuntime()
     session = runtime.create_session(
         "generic_mvp",
@@ -144,13 +144,13 @@ def test_intent_normalizer_accepts_unexpected_low_risk_action_as_observe() -> No
     )
 
     assert result.accepted is True
-    assert result.intent_payload == {"type": "observe", "text": "我开始跳舞"}
-    assert result.matched_kind == "observe"
+    assert result.intent_payload == {"type": "freeform", "text": "我开始跳舞"}
+    assert result.matched_kind == "freeform"
     assert result.matched_id == "freeform"
-    assert result.candidates == ["执行非推进自由行动"]
+    assert result.candidates == ["尝试自由行动"]
 
 
-def test_intent_normalizer_accepts_observe_without_forcing_progression() -> None:
+def test_intent_normalizer_accepts_observe_as_freeform_without_forcing_progression() -> None:
     runtime = SceneRuntime()
     session = runtime.create_session(
         "tokoyami_subset",
@@ -169,13 +169,14 @@ def test_intent_normalizer_accepts_observe_without_forcing_progression() -> None
 
     assert result.accepted is True
     assert result.intent_payload == {
-        "type": "observe",
+        "type": "freeform",
         "text": "环绕四周，查看周围环境",
     }
-    assert result.matched_kind == "observe"
+    assert result.matched_kind == "freeform"
+    assert result.matched_id == "observe"
 
 
-def test_intent_normalizer_accepts_checking_current_situation_as_observe() -> None:
+def test_intent_normalizer_accepts_checking_current_situation_as_freeform() -> None:
     runtime = SceneRuntime()
     session = runtime.create_session(
         "tokoyami_subset",
@@ -194,10 +195,109 @@ def test_intent_normalizer_accepts_checking_current_situation_as_observe() -> No
 
     assert result.accepted is True
     assert result.intent_payload == {
-        "type": "observe",
+        "type": "freeform",
         "text": "我只是想确认一下什么情况",
     }
-    assert result.matched_kind == "observe"
+    assert result.matched_kind == "freeform"
+    assert result.matched_id == "observe"
+
+
+def test_intent_normalizer_accepts_window_look_as_freeform() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    result = IntentNormalizer().normalize(
+        runtime=runtime,
+        session=session,
+        module=module,
+        player_id="p1",
+        raw_text="从车窗往外看",
+    )
+
+    assert result.accepted is True
+    assert result.intent_payload == {"type": "freeform", "text": "从车窗往外看"}
+    assert result.matched_kind == "freeform"
+    assert result.matched_id == "observe"
+
+
+def test_intent_normalizer_accepts_moving_toward_sound_as_freeform() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    result = IntentNormalizer().normalize(
+        runtime=runtime,
+        session=session,
+        module=module,
+        player_id="p1",
+        raw_text="我偏要往后方声音来源走过去看看",
+    )
+
+    assert result.accepted is True
+    assert result.intent_payload == {
+        "type": "freeform",
+        "text": "我偏要往后方声音来源走过去看看",
+    }
+    assert result.matched_kind == "freeform"
+    assert result.matched_id == "freeform"
+
+
+def test_intent_normalizer_accepts_physical_sensory_action_as_freeform() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    result = IntentNormalizer().normalize(
+        runtime=runtime,
+        session=session,
+        module=module,
+        player_id="p1",
+        raw_text="我趴到地板上闻铁轨下面的味道",
+    )
+
+    assert result.accepted is True
+    assert result.intent_payload == {
+        "type": "freeform",
+        "text": "我趴到地板上闻铁轨下面的味道",
+    }
+    assert result.matched_kind == "freeform"
+    assert result.matched_id == "freeform"
+
+
+def test_intent_normalizer_accepts_location_question_as_freeform_for_api() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    result = IntentNormalizer().normalize(
+        runtime=runtime,
+        session=session,
+        module=module,
+        player_id="p1",
+        raw_text="我在哪里",
+    )
+
+    assert result.accepted is True
+    assert result.intent_payload == {"type": "freeform", "text": "我在哪里"}
+    assert result.matched_kind == "freeform"
+    assert result.matched_id == "observe"
 
 
 def test_intent_normalizer_accepts_corridor_move_and_look_without_generic_ambiguity() -> None:
@@ -221,14 +321,15 @@ def test_intent_normalizer_accepts_corridor_move_and_look_without_generic_ambigu
     assert result.clarification_question == ""
     assert result.intent_payload == {"type": "move", "target_scene_id": "car_4"}
     assert result.matched_kind == "move"
-    assert "观察当前环境" not in result.candidates
-    assert result.match_basis == ["move:car_4:0.72", "observe:deferred:0.67"]
+    assert "自由观察/行动" not in result.candidates
+    assert result.match_basis == ["move:car_4:0.72", "freeform:deferred_observe:0.67"]
     assert result.deferred_intents == [
         {
-            "type": "observe",
+            "type": "freeform",
             "text": "去车厢尽头廊道仔细查看一下",
             "after": "move",
-            "reason": "移动后继续观察目标场景；本回合不会因此自动揭示未触发线索。",
+            "subtype": "observe",
+            "reason": "移动后继续进行自由观察；本回合不会因此自动揭示未触发线索。",
             "confidence": 0.67,
         }
     ]

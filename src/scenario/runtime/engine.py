@@ -26,6 +26,7 @@ from ..story.services import StoryStateService, TransitionValidator
 from .contracts import (
     AgentCallAudit,
     DiceRollAudit,
+    FreeformIntent,
     IntentResolution,
     MoveIntent,
     ObserveIntent,
@@ -216,12 +217,14 @@ class SceneRuntime:
             raise ValueError(f"玩家 {player_id} 在本回合已经提交过意图")
 
         validated = SCENE_INTENT_ADAPTER.validate_python(intent)
+        if isinstance(validated, ObserveIntent):
+            validated = FreeformIntent(type="freeform", text=validated.text)
         if isinstance(validated, MoveIntent):
             if validated.target_scene_id not in module.scene_map():
                 raise ValueError(
                     f"玩家 {player_id} 提交了不存在的目标场景: {validated.target_scene_id}"
                 )
-        elif not isinstance(validated, ObserveIntent):
+        elif not isinstance(validated, FreeformIntent):
             if validated.action_id not in module.action_map():
                 raise ValueError(
                     f"玩家 {player_id} 提交了不存在的动作: {validated.action_id}"
@@ -366,10 +369,13 @@ class SceneRuntime:
             dynamic_check_results: dict[tuple[str, str], dict] = {}
             pending_action_ids_by_player: dict[str, set[str]] = defaultdict(set)
             for pending_player_id, pending_payload in intents:
-                if str(pending_payload.get("type", "")) == "action":
+                pending_type = str(pending_payload.get("type", ""))
+                if pending_type == "action":
                     pending_action_ids_by_player[pending_player_id].add(
                         str(pending_payload.get("action_id", ""))
                     )
+                elif pending_type == "freeform":
+                    pending_action_ids_by_player[pending_player_id].add("freeform")
 
             if self._plan_agent is not None and self._prompt_builder is not None:
                 try:
@@ -496,6 +502,8 @@ class SceneRuntime:
 
             for player_id, intent_payload in intents:
                 intent = SCENE_INTENT_ADAPTER.validate_python(intent_payload)
+                if isinstance(intent, ObserveIntent):
+                    intent = FreeformIntent(type="freeform", text=intent.text)
                 player_state = snapshot.player_states[player_id]
                 if isinstance(intent, MoveIntent):
                     decision = movement_rules.evaluate_transition(
@@ -542,21 +550,44 @@ class SceneRuntime:
                     )
                     continue
 
-                if isinstance(intent, ObserveIntent):
+                if isinstance(intent, FreeformIntent):
                     current_scene_name = scene_by_id[player_state.current_scene_id].name
+                    dynamic_result = dynamic_check_results.get((player_id, "freeform"))
+                    check_passed = (
+                        bool(dynamic_result.get("success", False))
+                        if dynamic_result is not None
+                        else True
+                    )
+                    check_note = (
+                        str(
+                            dynamic_result.get("reason")
+                            or dynamic_result.get("note")
+                            or dynamic_result.get("rationale")
+                            or ""
+                        )
+                        if dynamic_result is not None
+                        else ""
+                    )
+                    reason = (
+                        check_note
+                        if check_note
+                        else "自由行动已由守密人裁定；不触发模组关键动作。"
+                    )
                     event_log.append(
                         RuntimeEvent(
-                            type="observation_requested",
+                            type="freeform_action_resolved",
                             turn_no=snapshot.current_turn,
                             player_id=player_id,
                             scene_id=player_state.current_scene_id,
                             scene_name=current_scene_name,
-                            success=True,
-                            reason=intent.text,
+                            success=check_passed,
+                            reason=reason,
                             message=(
                                 f"玩家 {player_id} 在"
                                 f"{current_scene_name}（{player_state.current_scene_id}）"
-                                f"观察环境：{intent.text}"
+                                f"尝试自由行动：{intent.text}，"
+                                f"{'成功' if check_passed else '受阻'}"
+                                + (f"，原因：{reason}" if reason else "")
                             ),
                         )
                     )
@@ -564,10 +595,10 @@ class SceneRuntime:
                         IntentResolution(
                             player_id=player_id,
                             scene_id=player_state.current_scene_id,
-                            intent_type="observe",
-                            success=True,
-                            reason="观察环境，不触发模组动作。",
-                            observation_text=intent.text,
+                            intent_type="freeform",
+                            success=check_passed,
+                            reason=reason,
+                            freeform_text=intent.text,
                         )
                     )
                     continue
@@ -1053,6 +1084,11 @@ class SceneRuntime:
                     **(
                         {"text": outcome.observation_text}
                         if outcome.observation_text
+                        else {}
+                    ),
+                    **(
+                        {"text": outcome.freeform_text}
+                        if outcome.freeform_text
                         else {}
                     ),
                 }
