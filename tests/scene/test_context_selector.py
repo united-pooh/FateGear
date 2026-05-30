@@ -106,3 +106,47 @@ def test_context_selector_records_budget_and_count_skip_reasons() -> None:
     ]
     assert context.skipped_ids["lore:budget_skipped"] == "context_budget_exceeded"
     assert context.skipped_ids["lore:count_skipped"] == "max_lore_entries_reached"
+
+
+def test_context_selector_does_not_select_action_scoped_lore_for_observe() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    context = NarrativeContextSelector().select(
+        module=module,
+        session=session,
+        scene_id="car_6",
+        pending_intents={"p1": {"type": "observe", "text": "环绕四周环境"}},
+        include_keeper=False,
+    )
+
+    assert "lore:note_warning" not in context.selected_ids
+    assert context.skipped_ids["lore:note_warning"] == "trigger_not_matched"
+
+
+def test_context_selector_selects_action_scoped_lore_for_matching_action() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    context = NarrativeContextSelector().select(
+        module=module,
+        session=session,
+        scene_id="car_6",
+        pending_intents={"p1": {"type": "action", "action_id": "inspect_note"}},
+        include_keeper=False,
+    )
+
+    assert [entry.entry_id for entry in context.selected_lorebook_entries] == [
+        "note_warning"
+    ]
+    assert context.selected_lorebook_entries[0].scope_action_ids == ["inspect_note"]

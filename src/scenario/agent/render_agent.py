@@ -20,14 +20,14 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..context import NarrativeContextLayer
-from .base import AgentOutputError, BaseAgent
+from .base import AgentCallRecord, AgentOutputError, BaseAgent
 from .config import (
     AgentSettings,
     build_openai_client,
     detect_provider_kind,
     load_agent_settings,
 )
-from .models import CommitResult, KeeperNarration
+from .models import CommitResult, KeeperNarration, PrivateClue
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,8 @@ _SYSTEM_PROMPT = """\
 4. keeper_hint：对守密人的内部提示，包含剧情走向建议，不对玩家展示。
 5. 保持克苏鲁恐怖风格，语气压抑、充满未知感。
 6. 不要破坏游戏内的第四堵墙（不提及规则数值）。
+7. 不得编造钥匙、密码、出口、真相、NPC动机等关键事实；这些内容必须来自本轮授权线索、已提交状态或明确事件。
+8. private_clues 只能使用【本轮授权私有线索】中的内容；没有授权线索时必须返回空数组。
 """
 
 
@@ -200,22 +202,152 @@ def _build_render_system_prompt(commit: CommitResult) -> str:
     return "\n".join(lines)
 
 
+def _value(source: object, name: str, default: object = "") -> object:
+    if isinstance(source, dict):
+        return source.get(name, default)
+    return getattr(source, name, default)
+
+
+def _list_value(source: object, name: str) -> list[object]:
+    value = _value(source, name, [])
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _canonical_private_clues(prompt: CommitResult) -> list[PrivateClue]:
+    """把本轮授权线索转成最终允许输出的私有线索。"""
+    clues: list[PrivateClue] = []
+    for clue in _list_value(prompt, "authorized_private_clues"):
+        clues.append(
+            PrivateClue(
+                player_id=str(_value(clue, "player_id", "")),
+                clue_text=str(_value(clue, "clue_text", "")),
+                related_action_id=str(_value(clue, "related_action_id", "")),
+            )
+        )
+    return clues
+
+
+def _contains_unauthorized_key_fact(text: str, prompt: CommitResult) -> bool:
+    """粗粒度拦截无来源的关键事实，避免叙事模型补造答案。"""
+    if not text:
+        return False
+    authorized_clues = _list_value(prompt, "authorized_private_clues")
+    allowed_text = "\n".join(
+        [
+            str(_value(prompt, "scene_description", "")),
+            "\n".join(str(item) for item in _list_value(prompt, "event_summary")),
+            "\n".join(str(item) for item in _list_value(prompt, "applied_effects")),
+            "\n".join(
+                str(_value(clue, "clue_text", "")) for clue in authorized_clues
+            ),
+        ]
+    )
+    critical_terms = ("钥匙", "密码", "出口", "真相", "凶手", "动机")
+    return any(term in text and term not in allowed_text for term in critical_terms)
+
+
+def _safe_public_narration(prompt: CommitResult) -> str:
+    """当模型输出越界关键事实时，退回到权威裁定摘要。"""
+    scene_id = str(_value(prompt, "scene_id", ""))
+    scene_label = str(_value(prompt, "scene_name", "") or scene_id)
+    parts = [f"{scene_label}里的状况仍以你能直接感知到的事物为准。"]
+    scene_description = str(_value(prompt, "scene_description", ""))
+    if scene_description:
+        parts.append(scene_description)
+    for outcome in _list_value(prompt, "outcomes"):
+        intent_type = str(_value(outcome, "intent_type", ""))
+        if intent_type == "observe":
+            text = str(_value(outcome, "observation_text", "") or "观察环境")
+            parts.append(f"你选择先确认环境：{text}。没有新的完整线索被自动揭示。")
+        elif intent_type == "action" and _value(outcome, "success", False):
+            action_id = str(_value(outcome, "action_id", ""))
+            parts.append(f"动作 {action_id} 已完成；可见结果以本轮授权线索为准。")
+    return " ".join(part for part in parts if part)
+
+
+def _apply_narration_guard(
+    output: KeeperNarration,
+    prompt: CommitResult,
+) -> KeeperNarration:
+    """最终输出守门：私有线索按授权列表覆盖，关键事实不得凭空生成。"""
+    guarded = output.model_copy(deep=True)
+    canonical_clues = _canonical_private_clues(prompt)
+    guarded.private_clues = canonical_clues
+
+    if _contains_unauthorized_key_fact(guarded.public_narration, prompt):
+        guarded.public_narration = _safe_public_narration(prompt)
+    if _contains_unauthorized_key_fact(guarded.keeper_hint, prompt):
+        guarded.keeper_hint = (
+            "本轮没有授权新的关键事实；请只依据模块、已提交状态和授权线索继续裁定。"
+        )
+    authorized_private_clues = _list_value(prompt, "authorized_private_clues")
+    if not authorized_private_clues and output.private_clues:
+        guarded.keeper_hint = (
+            "本轮未触发新的私有线索；已丢弃未授权 private_clues，避免提前泄露或补造关键事实。"
+        )
+    elif authorized_private_clues:
+        guarded.keeper_hint = (
+            "本轮 private_clues 已按授权线索覆盖；不要添加未声明的钥匙、密码、出口或谜题答案。"
+        )
+    return guarded
+
+
 def _build_render_user_message(commit: CommitResult) -> str:
     """从 CommitResult 构建 user message。"""
+    scene_id = str(_value(commit, "scene_id", ""))
+    scene_name = str(_value(commit, "scene_name", "") or scene_id)
+    scene_description = str(_value(commit, "scene_description", ""))
+    outcomes = _list_value(commit, "outcomes")
     lines: list[str] = [
-        f"【第 {commit.turn_no} 回合 - 场景：{commit.scene_id}】",
+        (
+            f"【第 {_value(commit, 'turn_no', '?')} 回合 - "
+            f"场景：{scene_name}（{scene_id}）】"
+        ),
         "",
     ]
+    if scene_description:
+        lines.append(f"【场景可感知描述】{scene_description}")
+
+    if outcomes:
+        lines.append("【本轮裁定结果】")
+        for outcome in outcomes:
+            player = _value(outcome, "player_id", "?")
+            intent_type = _value(outcome, "intent_type", "?")
+            success = bool(_value(outcome, "success", False))
+            if intent_type == "observe":
+                lines.append(
+                    f"  - {player} 观察/确认环境："
+                    f"{_value(outcome, 'observation_text', '')}；"
+                    "不触发模组动作，不授权完整线索正文。"
+                )
+            elif intent_type == "action":
+                lines.append(
+                    f"  - {player} 执行动作 {_value(outcome, 'action_id', '')}："
+                    f"{'成功' if success else '失败'}"
+                )
+            elif intent_type == "move":
+                lines.append(
+                    f"  - {player} 尝试移动到 "
+                    f"{_value(outcome, 'target_scene_id', '')}："
+                    f"{'成功' if success else '失败'}"
+                )
 
     # 检定结果
-    if commit.resolved_checks:
+    resolved_checks = _list_value(commit, "resolved_checks")
+    if resolved_checks:
         lines.append("【检定结果】")
-        for chk in commit.resolved_checks:
-            player = chk.get("player_id", "?")
-            skill = chk.get("skill_key", "?")
-            success = chk.get("success", False)
-            level = chk.get("success_level", "")
-            roll = chk.get("roll_value", "?")
+        for chk in resolved_checks:
+            player = _value(chk, "player_id", "?")
+            skill = _value(chk, "skill_key", "?")
+            success = _value(chk, "success", False)
+            level = _value(chk, "success_level", "")
+            roll = _value(chk, "roll_value", "?")
             lines.append(
                 f"  - {player} 检定「{skill}」: "
                 f"{'成功' if success else '失败'}"
@@ -224,26 +356,31 @@ def _build_render_user_message(commit: CommitResult) -> str:
             )
 
     # 生效效果
-    if commit.applied_effects:
+    applied_effects = _list_value(commit, "applied_effects")
+    if applied_effects:
         lines.append("【本轮生效效果】")
-        for effect in commit.applied_effects:
+        for effect in applied_effects:
             lines.append(f"  - {effect}")
 
     # 剧情迁移
-    if commit.applied_transition_id:
+    applied_transition_id = _value(commit, "applied_transition_id", None)
+    new_stage_id = _value(commit, "new_stage_id", None)
+    if applied_transition_id:
         lines.append(
-            f"【剧情迁移】{commit.applied_transition_id}"
-            + (f" → 进入阶段：{commit.new_stage_id}" if commit.new_stage_id else "")
+            f"【剧情迁移】{applied_transition_id}"
+            + (f" → 进入阶段：{new_stage_id}" if new_stage_id else "")
         )
 
     # 结局
-    if commit.resolved_ending:
-        lines.append(f"【会话结局】{commit.resolved_ending}")
+    resolved_ending = _value(commit, "resolved_ending", None)
+    if resolved_ending:
+        lines.append(f"【会话结局】{resolved_ending}")
 
     # 事件摘要
-    if commit.event_summary:
+    event_summary = _list_value(commit, "event_summary")
+    if event_summary:
         lines.append("【事件摘要】")
-        for evt in commit.event_summary:
+        for evt in event_summary:
             lines.append(f"  - {evt}")
 
     narrative = getattr(commit, "narrative", NarrativeContextLayer())
@@ -254,6 +391,19 @@ def _build_render_user_message(commit: CommitResult) -> str:
                 f"  - {entry.title}（{entry.entry_id}，{entry.selection_reason}）："
                 f"{entry.content}"
             )
+
+    lines.append("【本轮授权私有线索】")
+    authorized_private_clues = _list_value(commit, "authorized_private_clues")
+    if authorized_private_clues:
+        for clue in authorized_private_clues:
+            lines.append(
+                f"  - player={_value(clue, 'player_id', '')} "
+                f"action={_value(clue, 'related_action_id', '')} "
+                f"source={_value(clue, 'source_id', '')}: "
+                f"{_value(clue, 'clue_text', '')}"
+            )
+    else:
+        lines.append("  - 无。private_clues 必须返回 []；不要补造钥匙、密码、出口、真相或下一步答案。")
 
     lines.append("")
     lines.append("请按 JSON schema 输出 KeeperNarration。")
@@ -427,12 +577,15 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
         if prompt.resolved_ending:
             parts.append(f"故事走向了终局：{prompt.resolved_ending}。")
 
-        return KeeperNarration(
-            public_narration=" ".join(parts),
-            npc_dialogues=[],
-            private_clues=[],
-            keeper_hint="[降级模式] 请检查 LLM 配置。",
-            is_fallback=True,
+        return _apply_narration_guard(
+            KeeperNarration(
+                public_narration=" ".join(parts),
+                npc_dialogues=[],
+                private_clues=_canonical_private_clues(prompt),
+                keeper_hint="[降级模式] 请检查 LLM 配置。",
+                is_fallback=True,
+            ),
+            prompt,
         )
 
     def _validate_output(self, output: KeeperNarration, prompt: CommitResult) -> None:
@@ -444,3 +597,10 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
         # 若存在结局，叙事中必须有相关描述（宽松检查）
         if prompt.resolved_ending and not output.public_narration:
             raise AgentOutputError("会话已到达结局，但 public_narration 为空。")
+
+    async def _on_call_end(
+        self,
+        record: AgentCallRecord[CommitResult, KeeperNarration],
+    ) -> None:
+        """调用结束后按运行时授权线索覆盖越界叙事内容。"""
+        record.output = _apply_narration_guard(record.output, record.prompt)

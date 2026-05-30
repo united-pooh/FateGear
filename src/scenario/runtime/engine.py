@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from cards.domain.card import InvestigatorCard
 
-from ..agent.models import CommitResult, KeeperAgentPlan
+from ..agent.models import AuthorizedPrivateClue, CommitResult, KeeperAgentPlan
 from ..agent.plan_agent import KeeperPlanAgent
 from ..agent.prompt_builder import PromptBuilder
 from ..agent.render_agent import KeeperRenderAgent
@@ -324,7 +324,9 @@ class SceneRuntime:
         scene_action_history: dict[str, set[str]] = defaultdict(set)
         pending_moves: dict[str, str] = {}
         scene_batches: list[SceneBatchResolution] = []
-        render_payloads: dict[str, tuple[list[dict], list[str]]] = {}
+        render_payloads: dict[
+            str, tuple[list[dict], list[str], list[AuthorizedPrivateClue]]
+        ] = {}
 
         # 先按玩家当前位置分组，形成场景批次结算。
         grouped = self._group_pending_intents(snapshot)
@@ -490,6 +492,7 @@ class SceneRuntime:
             outcomes: list[IntentResolution] = []
             # 本批次已完成的动态检定结果，最终传入 CommitResult
             batch_resolved_checks: list[dict] = list(dynamic_check_results.values())
+            batch_authorized_clues: list[AuthorizedPrivateClue] = []
 
             for player_id, intent_payload in intents:
                 intent = SCENE_INTENT_ADAPTER.validate_python(intent_payload)
@@ -698,6 +701,13 @@ class SceneRuntime:
                     flag_clears=flag_clears,
                     clock_deltas=clock_deltas,
                 )
+                batch_authorized_clues.extend(
+                    self._authorized_clues_for_action(
+                        module=module,
+                        action=action,
+                        player_id=player_id,
+                    )
+                )
                 current_scene_name = scene_by_id[player_state.current_scene_id].name
                 event_log.append(
                     RuntimeEvent(
@@ -732,7 +742,11 @@ class SceneRuntime:
             batch_effects: list[str] = []
             for outcome in outcomes:
                 batch_effects.extend(outcome.effects_applied)
-            render_payloads[scene.id] = (batch_resolved_checks, batch_effects)
+            render_payloads[scene.id] = (
+                batch_resolved_checks,
+                batch_effects,
+                batch_authorized_clues,
+            )
 
             scene_batches.append(
                 SceneBatchResolution(
@@ -994,7 +1008,9 @@ class SceneRuntime:
         scene_by_id: dict[str, object],
         snapshot_turn: int,
         scene_batches: list[SceneBatchResolution],
-        render_payloads: dict[str, tuple[list[dict], list[str]]],
+        render_payloads: dict[
+            str, tuple[list[dict], list[str], list[AuthorizedPrivateClue]]
+        ],
         event_log: list[RuntimeEvent],
         agent_calls: list[AgentCallAudit],
         applied_story_transition_id: str | None,
@@ -1018,15 +1034,37 @@ class SceneRuntime:
                 )
                 continue
 
-            resolved_checks, batch_effects = render_payloads.get(
-                batch.scene_id, ([], [])
+            resolved_checks, batch_effects, authorized_private_clues = (
+                render_payloads.get(batch.scene_id, ([], [], []))
             )
+            pending_intents = {
+                outcome.player_id: {
+                    "type": outcome.intent_type,
+                    **(
+                        {"action_id": outcome.action_id}
+                        if outcome.action_id
+                        else {}
+                    ),
+                    **(
+                        {"target_scene_id": outcome.target_scene_id}
+                        if outcome.target_scene_id
+                        else {}
+                    ),
+                    **(
+                        {"text": outcome.observation_text}
+                        if outcome.observation_text
+                        else {}
+                    ),
+                }
+                for outcome in batch.outcomes
+            }
             render_narrative = (
                 self._prompt_builder.build_narrative_context(
                     session=session,
                     module=module,
                     scene_id=batch.scene_id,
                     recent_events=event_log,
+                    pending_intents=pending_intents,
                     include_keeper=False,
                 )
                 if self._prompt_builder is not None
@@ -1036,12 +1074,16 @@ class SceneRuntime:
                 session_id=session.session_id,
                 turn_no=snapshot_turn,
                 scene_id=batch.scene_id,
+                scene_name=scene.name,
+                scene_description=scene.description,
                 resolved_checks=resolved_checks,
                 applied_effects=batch_effects,
                 applied_transition_id=applied_story_transition_id,
                 new_stage_id=new_stage,
                 resolved_ending=resolved_ending,
                 event_summary=[e.message for e in event_log[-10:]],
+                outcomes=[outcome.model_dump() for outcome in batch.outcomes],
+                authorized_private_clues=authorized_private_clues,
                 **(
                     {"narrative": render_narrative}
                     if render_narrative is not None
@@ -1237,6 +1279,30 @@ class SceneRuntime:
             reason=str(result.get("reason", "")),
             note=str(result.get("note", "")),
         )
+
+    def _authorized_clues_for_action(
+        self,
+        *,
+        module: ModuleDefinition,
+        action: ModuleAction,
+        player_id: str,
+    ) -> list[AuthorizedPrivateClue]:
+        """返回本轮动作明确触发、允许 Render 写入 private_clues 的线索。"""
+        clues: list[AuthorizedPrivateClue] = []
+        for entry in module.narrative_context.lorebook_entries:
+            if action.id not in entry.scope_action_ids:
+                continue
+            if entry.visibility == "keeper":
+                continue
+            clues.append(
+                AuthorizedPrivateClue(
+                    player_id=player_id,
+                    clue_text=entry.content,
+                    related_action_id=action.id,
+                    source_id=f"lore:{entry.id}",
+                )
+            )
+        return clues
 
     def _build_agent_call_audit(
         self,

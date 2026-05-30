@@ -159,13 +159,67 @@ def test_scenario_service_submit_text_intent_accepts_observe() -> None:
     assert latest.players[0].current_scene_id == "car_6"
 
 
-def test_scenario_service_submit_text_intent_clarifies_unclear_input() -> None:
+def test_scenario_service_submit_text_intent_accepts_freeform_non_progression() -> None:
     service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
 
     response = service.submit_text_intent(
         created.session_id,
         {"player_id": "keeper", "text": "我开始跳舞"},
+    )
+    resolution = asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
+    latest = service.get_party(created.session_id)
+
+    assert response.accepted is True
+    assert response.normalization.intent_payload == {
+        "type": "observe",
+        "text": "我开始跳舞",
+    }
+    assert response.normalization.matched_id == "freeform"
+    assert resolution.scene_batches[0].outcomes[0].intent_type == "observe"
+    assert resolution.scene_batches[0].outcomes[0].effects_applied == []
+    assert latest.players[0].current_scene_id == "foyer"
+
+
+def test_scenario_service_submit_text_intent_preserves_deferred_observe() -> None:
+    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    created = service.create_party(
+        {"module_id": "tokoyami_subset", "creator_id": "keeper"}
+    )
+
+    response = service.submit_text_intent(
+        created.session_id,
+        {"player_id": "keeper", "text": "去车厢尽头廊道仔细查看一下"},
+    )
+    resolution = asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
+    latest = service.get_party(created.session_id)
+
+    assert response.accepted is True
+    assert response.normalization.intent_payload == {
+        "type": "move",
+        "target_scene_id": "car_4",
+    }
+    assert response.normalization.deferred_intents == [
+        {
+            "type": "observe",
+            "text": "去车厢尽头廊道仔细查看一下",
+            "after": "move",
+            "reason": "移动后继续观察目标场景；本回合不会因此自动揭示未触发线索。",
+            "confidence": 0.67,
+        }
+    ]
+    assert "observe:deferred:0.67" in response.normalization.match_basis
+    assert resolution.scene_batches[0].outcomes[0].intent_type == "move"
+    assert latest.players[0].current_scene_id == "car_4"
+
+
+def test_scenario_service_submit_text_intent_clarifies_unclear_input() -> None:
+    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
+
+    response = service.submit_text_intent(
+        created.session_id,
+        {"player_id": "keeper", "text": "随便来点什么"},
     )
     latest = service.get_party(created.session_id)
 

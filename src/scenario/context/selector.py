@@ -227,6 +227,7 @@ class NarrativeContextSelector:
                     priority=entry.priority,
                     insertion_order=entry.insertion_order,
                     selection_reason=reason,
+                    scope_action_ids=list(entry.scope_action_ids),
                 )
             )
         return selected
@@ -274,12 +275,14 @@ class NarrativeContextSelector:
     ) -> str | None:
         if entry.always_on:
             return "always_on"
+        if action_ids.intersection(entry.scope_action_ids):
+            return "action_scope"
+        if entry.scope_action_ids:
+            return None
         if scene_id in entry.scope_scene_ids:
             return "scene_scope"
         if stage_id in entry.scope_stage_ids:
             return "stage_scope"
-        if action_ids.intersection(entry.scope_action_ids):
-            return "action_scope"
         if selected_npc_ids.intersection(entry.npc_ids):
             return "npc_scope"
         lowered = scan_text.lower()

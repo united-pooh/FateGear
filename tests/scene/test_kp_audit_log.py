@@ -95,3 +95,38 @@ def test_scenario_service_writes_kp_jsonl_audit_log(tmp_path) -> None:
     assert scene["private_clues"][0]["clue_text"] == "你注意到钥匙孔边缘有新鲜划痕。"
     assert scene["keeper_hint"] == "KP提示：下一轮推进后方威胁。"
     assert resolved["turn_resolution"]["agent_calls"][0]["stage"] == "render"
+
+
+def test_kp_jsonl_records_freeform_non_progression_without_fake_effects(
+    tmp_path,
+) -> None:
+    log_path = tmp_path / "kp-flow.jsonl"
+    service = ScenarioService(
+        runtime=SceneRuntime(roll_provider=lambda: 1),
+        kp_audit_log_path=log_path,
+    )
+
+    created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
+    service.submit_text_intent(
+        created.session_id,
+        {"player_id": "keeper", "text": "我开始跳舞"},
+    )
+    asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
+
+    events = [
+        json.loads(line)
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+    ]
+    submitted = events[1]
+    resolved = events[2]
+    outcome = resolved["turn_resolution"]["scene_batches"][0]["outcomes"][0]
+
+    assert submitted["normalization"]["matched_id"] == "freeform"
+    assert submitted["normalization"]["intent_payload"] == {
+        "type": "observe",
+        "text": "我开始跳舞",
+    }
+    assert outcome["intent_type"] == "observe"
+    assert outcome["observation_text"] == "我开始跳舞"
+    assert outcome["effects_applied"] == []
+    assert resolved["party"]["players"][0]["current_scene_id"] == "foyer"

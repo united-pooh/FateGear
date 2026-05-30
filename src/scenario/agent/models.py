@@ -243,6 +243,15 @@ class KeeperAgentPlan(BaseModel):
     )
 
 
+class AuthorizedPrivateClue(BaseModel):
+    """Render 阶段可向目标玩家揭示的权威线索。"""
+
+    player_id: str
+    clue_text: str
+    related_action_id: str = Field(default="")
+    source_id: str = Field(default="")
+
+
 # ---------------------------------------------------------------------------
 # Render 阶段输入
 # ---------------------------------------------------------------------------
@@ -258,6 +267,8 @@ class CommitResult(BaseModel):
     session_id: str
     turn_no: int
     scene_id: str
+    scene_name: str = Field(default="")
+    scene_description: str = Field(default="")
 
     # 已执行的检定结果
     resolved_checks: list[dict] = Field(
@@ -280,6 +291,14 @@ class CommitResult(BaseModel):
 
     # 本轮运行时事件摘要（精简版）
     event_summary: list[str] = Field(default_factory=list)
+    outcomes: list[dict] = Field(
+        default_factory=list,
+        description="本场景本轮已裁定的玩家意图结果，用于 Render 理解动作边界。",
+    )
+    authorized_private_clues: list[AuthorizedPrivateClue] = Field(
+        default_factory=list,
+        description="本轮唯一允许写入 private_clues 的权威私有线索列表。",
+    )
 
     # 本轮叙事生成可参考的只读上下文
     narrative: NarrativeContextLayer = Field(default_factory=NarrativeContextLayer)

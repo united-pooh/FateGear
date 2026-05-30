@@ -20,3 +20,5 @@ class NormalizedIntentResult(BaseModel):
     matched_id: str = ""
     clarification_question: str = ""
     candidates: list[str] = Field(default_factory=list)
+    match_basis: list[str] = Field(default_factory=list)
+    deferred_intents: list[dict[str, object]] = Field(default_factory=list)

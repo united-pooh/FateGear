@@ -27,6 +27,7 @@ class SelectedLorebookEntry(BaseModel):
     priority: int = 100
     insertion_order: int = 100
     selection_reason: str = ""
+    scope_action_ids: list[str] = Field(default_factory=list)
 
 
 class SelectedSafetyBoundary(BaseModel):

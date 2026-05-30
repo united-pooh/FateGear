@@ -27,6 +27,7 @@ from .base import (
 )
 from .models import (
     AgentPlanPrompt,
+    AuthorizedPrivateClue,
     CommitResult,
     HistoryLayer,
     KeeperAgentPlan,
@@ -58,6 +59,7 @@ __all__ = [
     "AgentOutputError",
     # 契约模型
     "AgentPlanPrompt",
+    "AuthorizedPrivateClue",
     "SystemLayer",
     "ModuleLayer",
     "NarrativeContextLayer",
