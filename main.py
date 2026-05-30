@@ -224,18 +224,25 @@ def build_service(
     *,
     module_root: str | Path,
     enable_agents: bool = True,
+    kp_audit_log_path: str | Path | None = None,
 ) -> ScenarioService:
     """Create the scenario service and attach configured LLM agents when available."""
 
     if not enable_agents:
-        return ScenarioService(module_root=module_root)
+        return ScenarioService(
+            module_root=module_root,
+            kp_audit_log_path=kp_audit_log_path,
+        )
 
     settings = load_agent_settings()
     has_agent_key = bool(
         settings.planner_provider.api_key or settings.narrator_provider.api_key
     )
     if not has_agent_key:
-        return ScenarioService(module_root=module_root)
+        return ScenarioService(
+            module_root=module_root,
+            kp_audit_log_path=kp_audit_log_path,
+        )
 
     planner = KeeperPlanAgent(config=settings)
     narrator = KeeperRenderAgent(config=settings)
@@ -249,7 +256,11 @@ def build_service(
         "Agent provider enabled: "
         f"{provider_kind}; planner={planner.model_id}; narrator={narrator.model_id}"
     )
-    return ScenarioService(module_root=module_root, runtime=runtime)
+    return ScenarioService(
+        module_root=module_root,
+        runtime=runtime,
+        kp_audit_log_path=kp_audit_log_path,
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -266,6 +277,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="禁用 Plan/Render LLM Agent，强制使用离线规则模式",
     )
+    parser.add_argument(
+        "--kp-log-path",
+        default=str(ROOT / "log" / "kp-flow.jsonl"),
+        help="KP 视角 JSONL 审计日志路径",
+    )
+    parser.add_argument(
+        "--no-kp-log",
+        action="store_true",
+        help="禁用 KP 视角 JSONL 审计日志",
+    )
     return parser.parse_args()
 
 
@@ -274,6 +295,7 @@ def main() -> None:
     service = build_service(
         module_root=args.module_root,
         enable_agents=not args.no_agents,
+        kp_audit_log_path=None if args.no_kp_log else args.kp_log_path,
     )
     app = create_app(service)
 
@@ -283,6 +305,8 @@ def main() -> None:
     print("Submit turn:  POST /sessions/{session_id}/intents")
     print("Resolve turn: POST /sessions/{session_id}/resolve")
     print("List modules: GET /modules")
+    if not args.no_kp_log:
+        print(f"KP audit log: {args.kp_log_path}")
     web.run_app(app, host=args.host, port=args.port)
 
 

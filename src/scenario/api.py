@@ -12,6 +12,7 @@ from cards.domain.card import InvestigatorCard
 from cards.domain.skills import SkillTemplate
 from pydantic import BaseModel, Field
 
+from .audit import JsonlKPAuditLogger
 from .intent import IntentNormalizer, NormalizedIntentResult, RawPlayerIntent
 from .io import MODULE_ROOT, load_module_by_id
 from .module.models import ModuleDefinition
@@ -78,6 +79,7 @@ class ScenarioService:
         runtime: SceneRuntime | None = None,
         module_root: str | Path | None = None,
         state_store: "ScenarioStateStore | None" = None,
+        kp_audit_log_path: str | Path | None = None,
     ) -> None:
         resolved_module_root = (
             Path(module_root) if module_root is not None else MODULE_ROOT
@@ -93,6 +95,11 @@ class ScenarioService:
         self._scenario_view_builder = ScenarioViewBuilder()
         self._turn_view_builder = TurnViewBuilder()
         self._intent_normalizer = IntentNormalizer()
+        self._kp_audit_logger = (
+            JsonlKPAuditLogger(kp_audit_log_path)
+            if kp_audit_log_path is not None
+            else None
+        )
 
     def list_modules(self) -> list[ModuleSummary]:
         """扫描模组目录并返回可创建会话的模组摘要。"""
@@ -147,7 +154,17 @@ class ScenarioService:
                 },
             )
             self._owner_by_session_id[session.session_id] = payload.creator_id
-            return self._build_party_summary(session)
+            party = self._build_party_summary(session)
+            self._write_kp_audit(
+                "party_created",
+                session_id=session.session_id,
+                payload={
+                    "module_id": session.module_id,
+                    "owner_id": payload.creator_id,
+                    "party": party.model_dump(mode="json"),
+                },
+            )
+            return party
 
     def join_party(
         self,
@@ -173,7 +190,17 @@ class ScenarioService:
                 ),
             )
             session = self._runtime.get_session(session_id)
-            return self._build_party_summary(session)
+            party = self._build_party_summary(session)
+            self._write_kp_audit(
+                "player_joined",
+                session_id=session_id,
+                payload={
+                    "module_id": session.module_id,
+                    "player_id": payload.player_id,
+                    "party": party.model_dump(mode="json"),
+                },
+            )
+            return party
 
     def submit_intent(
         self,
@@ -193,7 +220,19 @@ class ScenarioService:
                 payload.intent,
             )
             session = self._runtime.get_session(session_id)
-            return self._build_party_summary(session)
+            party = self._build_party_summary(session)
+            self._write_kp_audit(
+                "structured_intent_submitted",
+                session_id=session_id,
+                payload={
+                    "module_id": session.module_id,
+                    "turn_no": session.current_turn,
+                    "player_id": payload.player_id,
+                    "intent": payload.intent.model_dump(mode="json"),
+                    "party": party.model_dump(mode="json"),
+                },
+            )
+            return party
 
     async def resolve_turn(
         self,
@@ -202,10 +241,38 @@ class ScenarioService:
         expected_turn: int | None = None,
     ) -> TurnResolution:
         """结算当前会话的一个完整回合。"""
-        return await self._runtime.resolve_turn(
+        session_before = self._runtime.get_session(session_id)
+        current_turn_before = session_before.current_turn
+        is_replay = expected_turn is not None and expected_turn < current_turn_before
+        resolution = await self._runtime.resolve_turn(
             session_id,
             expected_turn=expected_turn,
         )
+        with self._lock:
+            session = self._runtime.get_session(session_id)
+            keeper_view = self._turn_view_builder.build_keeper_turn_view(
+                resolution=resolution,
+                session=session,
+            )
+            party = self._build_party_summary(session)
+        self._write_kp_audit(
+            "turn_replayed" if is_replay else "turn_resolved",
+            session_id=session_id,
+            payload={
+                "module_id": session.module_id,
+                "owner_id": self._session_owner_id(session),
+                "expected_turn": expected_turn,
+                "is_replay": is_replay,
+                "turn_no": resolution.turn_no,
+                "next_turn": resolution.next_turn,
+                "current_stage_id": resolution.current_stage_id,
+                "resolved_ending": resolution.resolved_ending,
+                "party": party.model_dump(mode="json"),
+                "kp_view": keeper_view.model_dump(mode="json"),
+                "turn_resolution": resolution.model_dump(mode="json"),
+            },
+        )
+        return resolution
 
     def get_turn_resolution(self, session_id: str, turn_no: int) -> TurnResolution:
         """读取已结算回合结果。"""
@@ -279,22 +346,55 @@ class ScenarioService:
                 raw_text=payload.text,
             )
             if not normalization.accepted or normalization.intent_payload is None:
-                return SubmitTextIntentResponse(
+                response = SubmitTextIntentResponse(
                     accepted=False,
                     normalization=normalization,
                     party=self._build_party_summary(session),
                 )
+                self._write_kp_audit(
+                    "text_intent_submitted",
+                    session_id=session_id,
+                    payload={
+                        "module_id": session.module_id,
+                        "turn_no": session.current_turn,
+                        "player_id": payload.player_id,
+                        "raw_text": payload.text,
+                        "accepted": False,
+                        "normalization": normalization.model_dump(mode="json"),
+                        "party": response.party.model_dump(mode="json")
+                        if response.party is not None
+                        else None,
+                    },
+                )
+                return response
             self._runtime.submit_intent(
                 session_id,
                 payload.player_id,
                 normalization.intent_payload,
             )
             session = self._runtime.get_session(session_id)
-            return SubmitTextIntentResponse(
+            response = SubmitTextIntentResponse(
                 accepted=True,
                 normalization=normalization,
                 party=self._build_party_summary(session),
             )
+            self._write_kp_audit(
+                "text_intent_submitted",
+                session_id=session_id,
+                payload={
+                    "module_id": session.module_id,
+                    "turn_no": session.current_turn,
+                    "player_id": payload.player_id,
+                    "raw_text": payload.text,
+                    "accepted": True,
+                    "normalization": normalization.model_dump(mode="json"),
+                    "submitted_intent": normalization.intent_payload,
+                    "party": response.party.model_dump(mode="json")
+                    if response.party is not None
+                    else None,
+                },
+            )
+            return response
 
     def get_player_view(
         self,
@@ -375,6 +475,21 @@ class ScenarioService:
             status=status,
             pending_players=sorted(session.pending_intents),
             players=players,
+        )
+
+    def _write_kp_audit(
+        self,
+        event_type: str,
+        *,
+        session_id: str,
+        payload: dict[str, object],
+    ) -> None:
+        if self._kp_audit_logger is None:
+            return
+        self._kp_audit_logger.append(
+            event_type,
+            session_id=session_id,
+            payload=payload,
         )
 
     def _ensure_player_view_access(
