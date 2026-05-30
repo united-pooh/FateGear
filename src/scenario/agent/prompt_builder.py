@@ -310,6 +310,14 @@ class PromptBuilder:
                         action_description=action.description if action else "",
                     )
                 )
+            elif intent_type == "observe":
+                result.append(
+                    PlayerIntentSummary(
+                        player_id=player_id,
+                        intent_type="observe",
+                        observation_text=str(raw_intent.get("text", "")),
+                    )
+                )
             else:
                 logger.warning(
                     "PromptBuilder: 未知意图类型 %s，player_id=%s",

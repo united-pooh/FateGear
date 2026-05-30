@@ -133,6 +133,8 @@ class PlayerIntentSummary(BaseModel):
     action_id: str = Field(default="")
     action_name: str = Field(default="")
     action_description: str = Field(default="")
+    # 观察/确认环境等不直接触发模组动作的自由意图
+    observation_text: str = Field(default="")
 
 
 class AgentPlanPrompt(BaseModel):

@@ -187,6 +187,11 @@ def _build_user_message(prompt: AgentPlanPrompt) -> str:
                 if intent.action_description:
                     action_line += f"：{intent.action_description}"
                 lines.append(action_line)
+            elif intent.intent_type == "observe":
+                lines.append(
+                    f"  - {intent.player_id} 暂不推动明确动作，只想观察/确认环境："
+                    f"{intent.observation_text}"
+                )
     else:
         lines.append(f"\n【第 {prompt.turn_no} 回合：本场景无待结算意图。】")
 
@@ -223,6 +228,7 @@ example json:
 如果技能列表为空，或当前动作已经由模组静态规则处理，请让 proposed_checks 保持 []。
 proposed_effects 只能表达 set_flag/remove_flag/advance_clock 且必须包含 target_id；
 氛围描写、NPC 反应、移动说明不要放入 proposed_effects，请写入 keeper_notes。
+如果玩家只是观察/确认环境，不要为其提议检定、效果或剧情迁移；让 Render 阶段给出环境反馈。
 如果有剧情迁移，`proposed_transition` 必须是 object：
 {
   "transition_id": "unlock_access",

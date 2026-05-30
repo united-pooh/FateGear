@@ -26,6 +26,24 @@ class IntentNormalizer:
     """把短自然语言输入归一化为当前 runtime 支持的结构化意图。"""
 
     _MOVE_HINTS = ("去", "到", "进入", "前往", "移动", "走向", "返回", "回到")
+    _OBSERVE_TERMS = (
+        "观察",
+        "查看周围",
+        "看看周围",
+        "看周围",
+        "环顾",
+        "环视",
+        "环绕四周",
+        "四周",
+        "周围环境",
+        "确认情况",
+        "什么情况",
+        "现在情况",
+        "打量",
+        "感知",
+        "听听",
+        "闻闻",
+    )
 
     def normalize(
         self,
@@ -77,10 +95,22 @@ class IntentNormalizer:
                 raw_text=raw_text,
                 match=matches[0],
             )
+        observe_score = self._observe_match_score(normalized_text)
+        if observe_score > 0 and not matches:
+            return self._accepted(
+                player_id=player_id,
+                raw_text=raw_text,
+                match=_Match(
+                    kind="observe",
+                    item_id="observe",
+                    label="观察当前环境",
+                    confidence=observe_score,
+                ),
+            )
         return self._clarify(
             player_id=player_id,
             raw_text=raw_text,
-            question="这个意图有些含糊，请明确你要移动到哪个场景，或执行哪个动作。",
+            question="这个意图有些含糊，请明确你要移动到哪个场景、执行哪个动作，或说你想观察环境。",
             candidates=[match.label for match in matches] or self._available_labels(
                 runtime=runtime,
                 session=session,
@@ -155,6 +185,13 @@ class IntentNormalizer:
         ]
         return self._best_term_score(terms, normalized_text, exact_score=0.95)
 
+    def _observe_match_score(self, normalized_text: str) -> float:
+        return self._best_term_score(
+            list(self._OBSERVE_TERMS),
+            normalized_text,
+            exact_score=0.82,
+        )
+
     def _best_term_score(
         self,
         terms: list[str],
@@ -185,8 +222,10 @@ class IntentNormalizer:
                 "type": "move",
                 "target_scene_id": match.item_id,
             }
-        else:
+        elif match.kind == "action":
             payload = {"type": "action", "action_id": match.item_id}
+        else:
+            payload = {"type": "observe", "text": raw_text}
         return NormalizedIntentResult(
             player_id=player_id,
             raw_text=raw_text,
@@ -231,7 +270,7 @@ class IntentNormalizer:
             f"执行「{action.name}」"
             for action in runtime.list_available_actions(session, player_id)
         ]
-        return [*move_labels, *action_labels]
+        return [*move_labels, *action_labels, "观察当前环境"]
 
     def _normalize_text(self, text: str) -> str:
         return re.sub(r"\s+", "", text).lower()

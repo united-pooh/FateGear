@@ -71,3 +71,54 @@ def test_intent_normalizer_returns_clarification_for_unknown_text() -> None:
     assert result.accepted is False
     assert "请明确" in result.clarification_question
     assert "移动到「储藏室」" in result.candidates
+    assert "观察当前环境" in result.candidates
+
+
+def test_intent_normalizer_accepts_observe_without_forcing_progression() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    result = IntentNormalizer().normalize(
+        runtime=runtime,
+        session=session,
+        module=module,
+        player_id="p1",
+        raw_text="环绕四周，查看周围环境",
+    )
+
+    assert result.accepted is True
+    assert result.intent_payload == {
+        "type": "observe",
+        "text": "环绕四周，查看周围环境",
+    }
+    assert result.matched_kind == "observe"
+
+
+def test_intent_normalizer_accepts_checking_current_situation_as_observe() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    result = IntentNormalizer().normalize(
+        runtime=runtime,
+        session=session,
+        module=module,
+        player_id="p1",
+        raw_text="我只是想确认一下什么情况",
+    )
+
+    assert result.accepted is True
+    assert result.intent_payload == {
+        "type": "observe",
+        "text": "我只是想确认一下什么情况",
+    }
+    assert result.matched_kind == "observe"

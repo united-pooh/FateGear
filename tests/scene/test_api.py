@@ -134,6 +134,31 @@ def test_scenario_service_submit_text_intent_accepts_clear_move() -> None:
     assert latest.pending_players == ["keeper"]
 
 
+def test_scenario_service_submit_text_intent_accepts_observe() -> None:
+    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    created = service.create_party(
+        {"module_id": "tokoyami_subset", "creator_id": "keeper"}
+    )
+
+    response = service.submit_text_intent(
+        created.session_id,
+        {"player_id": "keeper", "text": "我只是想确认一下什么情况"},
+    )
+    resolution = asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
+    latest = service.get_party(created.session_id)
+
+    assert response.accepted is True
+    assert response.normalization.intent_payload == {
+        "type": "observe",
+        "text": "我只是想确认一下什么情况",
+    }
+    assert response.normalization.matched_kind == "observe"
+    assert resolution.scene_batches[0].outcomes[0].intent_type == "observe"
+    assert resolution.scene_batches[0].outcomes[0].effects_applied == []
+    assert latest.current_stage_id == "awake"
+    assert latest.players[0].current_scene_id == "car_6"
+
+
 def test_scenario_service_submit_text_intent_clarifies_unclear_input() -> None:
     service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})

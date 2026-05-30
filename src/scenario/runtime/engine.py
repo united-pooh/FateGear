@@ -28,6 +28,7 @@ from .contracts import (
     DiceRollAudit,
     IntentResolution,
     MoveIntent,
+    ObserveIntent,
     RuntimeEvent,
     SCENE_INTENT_ADAPTER,
     SceneBatchResolution,
@@ -220,7 +221,7 @@ class SceneRuntime:
                 raise ValueError(
                     f"玩家 {player_id} 提交了不存在的目标场景: {validated.target_scene_id}"
                 )
-        else:
+        elif not isinstance(validated, ObserveIntent):
             if validated.action_id not in module.action_map():
                 raise ValueError(
                     f"玩家 {player_id} 提交了不存在的动作: {validated.action_id}"
@@ -361,6 +362,12 @@ class SceneRuntime:
             agent_prompt = None
             # 本批次 Agent 提议的动态检定结果，key 为 (player_id, action_id)
             dynamic_check_results: dict[tuple[str, str], dict] = {}
+            pending_action_ids_by_player: dict[str, set[str]] = defaultdict(set)
+            for pending_player_id, pending_payload in intents:
+                if str(pending_payload.get("type", "")) == "action":
+                    pending_action_ids_by_player[pending_player_id].add(
+                        str(pending_payload.get("action_id", ""))
+                    )
 
             if self._plan_agent is not None and self._prompt_builder is not None:
                 try:
@@ -407,6 +414,18 @@ class SceneRuntime:
                     )
                     # 执行 Agent 提议的动态检定（在规则引擎静态检定之前）
                     for proposed in plan.proposed_checks:
+                        if proposed.action_id not in pending_action_ids_by_player.get(
+                            proposed.player_id,
+                            set(),
+                        ):
+                            logger.info(
+                                "Plan Agent 提议的检定未绑定本轮动作，已跳过："
+                                "player=%s action=%s skill=%s",
+                                proposed.player_id,
+                                proposed.action_id,
+                                proposed.skill_key,
+                            )
+                            continue
                         ps = snapshot.player_states.get(proposed.player_id)
                         if ps is None:
                             logger.warning(
@@ -516,6 +535,36 @@ class SceneRuntime:
                             success=decision.allowed,
                             reason=decision.reason,
                             target_scene_id=intent.target_scene_id,
+                        )
+                    )
+                    continue
+
+                if isinstance(intent, ObserveIntent):
+                    current_scene_name = scene_by_id[player_state.current_scene_id].name
+                    event_log.append(
+                        RuntimeEvent(
+                            type="observation_requested",
+                            turn_no=snapshot.current_turn,
+                            player_id=player_id,
+                            scene_id=player_state.current_scene_id,
+                            scene_name=current_scene_name,
+                            success=True,
+                            reason=intent.text,
+                            message=(
+                                f"玩家 {player_id} 在"
+                                f"{current_scene_name}（{player_state.current_scene_id}）"
+                                f"观察环境：{intent.text}"
+                            ),
+                        )
+                    )
+                    outcomes.append(
+                        IntentResolution(
+                            player_id=player_id,
+                            scene_id=player_state.current_scene_id,
+                            intent_type="observe",
+                            success=True,
+                            reason="观察环境，不触发模组动作。",
+                            observation_text=intent.text,
                         )
                     )
                     continue
