@@ -277,6 +277,29 @@ def test_intent_normalizer_accepts_physical_sensory_action_as_freeform() -> None
     assert result.matched_id == "freeform"
 
 
+def test_intent_normalizer_defers_narrated_object_manipulation_to_llm() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    result = IntentNormalizer().normalize(
+        runtime=runtime,
+        session=session,
+        module=module,
+        player_id="p1",
+        raw_text="我申请尝试破坏这个金属隔板，周围有没有什么趁手的工具",
+    )
+
+    assert result.accepted is False
+    assert result.intent_payload is None
+    assert result.clarification_question
+    assert "自由观察/行动" in result.candidates
+
+
 def test_intent_normalizer_accepts_off_map_car_as_freeform_boundary() -> None:
     runtime = SceneRuntime()
     session = runtime.create_session(

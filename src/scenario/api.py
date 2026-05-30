@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from hashlib import sha1
 from pathlib import Path
 from threading import RLock
@@ -12,6 +13,7 @@ from cards.domain.card import InvestigatorCard
 from cards.domain.skills import SkillTemplate
 from pydantic import BaseModel, Field
 
+from .agent import IntentAgentDecision, IntentAgentPrompt
 from .audit import JsonlKPAuditLogger
 from .intent import IntentNormalizer, NormalizedIntentResult, RawPlayerIntent
 from .io import MODULE_ROOT, load_module_by_id
@@ -22,6 +24,7 @@ from .view import KeeperSessionView, KeeperTurnView, PlayerSessionView, PlayerTu
 from .view import ScenarioViewBuilder, TurnViewBuilder
 
 if TYPE_CHECKING:
+    from .agent import KeeperIntentAgent
     from .store import ScenarioStateStore
 
 
@@ -80,6 +83,7 @@ class ScenarioService:
         module_root: str | Path | None = None,
         state_store: "ScenarioStateStore | None" = None,
         kp_audit_log_path: str | Path | None = None,
+        intent_agent: "KeeperIntentAgent | None" = None,
     ) -> None:
         resolved_module_root = (
             Path(module_root) if module_root is not None else MODULE_ROOT
@@ -95,6 +99,7 @@ class ScenarioService:
         self._scenario_view_builder = ScenarioViewBuilder()
         self._turn_view_builder = TurnViewBuilder()
         self._intent_normalizer = IntentNormalizer()
+        self._intent_agent = intent_agent
         self._kp_audit_logger = (
             JsonlKPAuditLogger(kp_audit_log_path)
             if kp_audit_log_path is not None
@@ -330,6 +335,14 @@ class ScenarioService:
         request: RawPlayerIntent | dict[str, object],
     ) -> SubmitTextIntentResponse:
         """提交自然语言意图；可明确归一化时自动写入 pending intent。"""
+        if self._intent_agent is not None:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return asyncio.run(
+                    self.submit_text_intent_async(session_id, request)
+                )
+
         payload = (
             request
             if isinstance(request, RawPlayerIntent)
@@ -395,6 +408,218 @@ class ScenarioService:
                 },
             )
             return response
+
+    async def submit_text_intent_async(
+        self,
+        session_id: str,
+        request: RawPlayerIntent | dict[str, object],
+    ) -> SubmitTextIntentResponse:
+        """提交自然语言意图；灰区自由行动可交给 LLM 裁定。"""
+        payload = (
+            request
+            if isinstance(request, RawPlayerIntent)
+            else RawPlayerIntent.model_validate(request)
+        )
+        with self._lock:
+            session = self._runtime.get_session(session_id)
+            module = load_module_by_id(session.module_id, module_root=self._module_root)
+            normalization = self._intent_normalizer.normalize(
+                runtime=self._runtime,
+                session=session,
+                module=module,
+                player_id=payload.player_id,
+                raw_text=payload.text,
+            )
+            should_call_agent = self._intent_agent is not None and (
+                not normalization.accepted
+                or normalization.matched_kind == "freeform"
+            )
+            prompt = (
+                self._build_intent_agent_prompt(
+                    session=session,
+                    module=module,
+                    player_id=payload.player_id,
+                    raw_text=payload.text,
+                    deterministic=normalization,
+                )
+                if should_call_agent
+                else None
+            )
+
+        if prompt is not None and self._intent_agent is not None:
+            record = await self._intent_agent.call(prompt)
+            agent_fallback = bool(getattr(record.meta, "fallback_used", False))
+            if not (agent_fallback and normalization.accepted):
+                normalization = self._normalization_from_intent_decision(
+                    player_id=payload.player_id,
+                    raw_text=payload.text,
+                    decision=record.output,
+                    fallback=normalization,
+                )
+
+        with self._lock:
+            session = self._runtime.get_session(session_id)
+            return self._finalize_text_intent_locked(
+                session_id=session_id,
+                payload=payload,
+                session=session,
+                normalization=normalization,
+            )
+
+    def _finalize_text_intent_locked(
+        self,
+        *,
+        session_id: str,
+        payload: RawPlayerIntent,
+        session: SessionMapState,
+        normalization: NormalizedIntentResult,
+    ) -> SubmitTextIntentResponse:
+        if not normalization.accepted or normalization.intent_payload is None:
+            response = SubmitTextIntentResponse(
+                accepted=False,
+                normalization=normalization,
+                party=self._build_party_summary(session),
+            )
+            self._write_kp_audit(
+                "text_intent_submitted",
+                session_id=session_id,
+                payload={
+                    "module_id": session.module_id,
+                    "turn_no": session.current_turn,
+                    "player_id": payload.player_id,
+                    "raw_text": payload.text,
+                    "accepted": False,
+                    "normalization": normalization.model_dump(mode="json"),
+                    "party": response.party.model_dump(mode="json")
+                    if response.party is not None
+                    else None,
+                },
+            )
+            return response
+
+        self._runtime.submit_intent(
+            session_id,
+            payload.player_id,
+            normalization.intent_payload,
+        )
+        session = self._runtime.get_session(session_id)
+        response = SubmitTextIntentResponse(
+            accepted=True,
+            normalization=normalization,
+            party=self._build_party_summary(session),
+        )
+        self._write_kp_audit(
+            "text_intent_submitted",
+            session_id=session_id,
+            payload={
+                "module_id": session.module_id,
+                "turn_no": session.current_turn,
+                "player_id": payload.player_id,
+                "raw_text": payload.text,
+                "accepted": True,
+                "normalization": normalization.model_dump(mode="json"),
+                "submitted_intent": normalization.intent_payload,
+                "party": response.party.model_dump(mode="json")
+                if response.party is not None
+                else None,
+            },
+        )
+        return response
+
+    def _build_intent_agent_prompt(
+        self,
+        *,
+        session: SessionMapState,
+        module: ModuleDefinition,
+        player_id: str,
+        raw_text: str,
+        deterministic: NormalizedIntentResult,
+    ) -> IntentAgentPrompt:
+        player_state = session.player_states[player_id]
+        scene_map = module.scene_map()
+        scene = scene_map[player_state.current_scene_id]
+        reachable_scenes = [
+            {
+                "id": target_id,
+                "name": scene_map[target_id].name,
+                "description": scene_map[target_id].description,
+            }
+            for target_id in self._runtime.list_reachable_scenes(session, player_id)
+        ]
+        available_actions = [
+            {
+                "id": action.id,
+                "name": action.name,
+                "description": action.description,
+            }
+            for action in self._runtime.list_available_actions(session, player_id)
+        ]
+        return IntentAgentPrompt(
+            module_id=module.module_id,
+            module_title=module.title,
+            current_stage_id=session.story_state.current_stage_id,
+            current_scene_id=scene.id,
+            current_scene_name=scene.name,
+            current_scene_description=scene.description,
+            reachable_scenes=reachable_scenes,
+            available_actions=available_actions,
+            raw_text=raw_text,
+            deterministic_accepted=deterministic.accepted,
+            deterministic_payload=deterministic.intent_payload,
+            deterministic_matched_kind=deterministic.matched_kind,
+            deterministic_matched_id=deterministic.matched_id,
+            deterministic_candidates=deterministic.candidates,
+            deterministic_question=deterministic.clarification_question,
+        )
+
+    def _normalization_from_intent_decision(
+        self,
+        *,
+        player_id: str,
+        raw_text: str,
+        decision: IntentAgentDecision,
+        fallback: NormalizedIntentResult,
+    ) -> NormalizedIntentResult:
+        if decision.intent_type == "freeform":
+            freeform_kind = decision.freeform_kind.strip()
+            matched_id = (
+                "off_map_move" if freeform_kind == "off_map_move" else "llm_freeform"
+            )
+            payload: dict[str, object] = {"type": "freeform", "text": raw_text}
+            if freeform_kind:
+                payload["freeform_kind"] = freeform_kind
+            if decision.intended_target:
+                payload["intended_target"] = decision.intended_target
+            if decision.risk_hint:
+                payload["risk_hint"] = decision.risk_hint
+            label = (
+                f"尝试前往未知区域「{decision.intended_target}」"
+                if freeform_kind == "off_map_move" and decision.intended_target
+                else "尝试自由行动"
+            )
+            return NormalizedIntentResult(
+                player_id=player_id,
+                raw_text=raw_text,
+                accepted=True,
+                intent_payload=payload,
+                confidence=decision.confidence,
+                matched_kind="freeform",
+                matched_id=matched_id,
+                candidates=[label],
+                match_basis=[f"llm:{matched_id}:{decision.confidence:.2f}"],
+            )
+
+        question = decision.clarification_question or fallback.clarification_question
+        candidates = decision.candidates or fallback.candidates
+        return NormalizedIntentResult(
+            player_id=player_id,
+            raw_text=raw_text,
+            accepted=False,
+            confidence=decision.confidence,
+            clarification_question=question,
+            candidates=candidates,
+            match_basis=[f"llm:clarify:{decision.confidence:.2f}"],
+        )
 
     def get_player_view(
         self,

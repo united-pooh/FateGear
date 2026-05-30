@@ -142,6 +142,41 @@ class PlayerIntentSummary(BaseModel):
     risk_hint: str = Field(default="")
 
 
+class IntentAgentPrompt(BaseModel):
+    """自然语言意图裁定 Agent 的输入。"""
+
+    module_id: str
+    module_title: str = Field(default="")
+    current_stage_id: str = Field(default="")
+    current_scene_id: str
+    current_scene_name: str = Field(default="")
+    current_scene_description: str = Field(default="")
+    reachable_scenes: list[dict[str, str]] = Field(default_factory=list)
+    available_actions: list[dict[str, str]] = Field(default_factory=list)
+    raw_text: str
+    deterministic_accepted: bool = Field(default=False)
+    deterministic_payload: dict[str, object] | None = Field(default=None)
+    deterministic_matched_kind: str = Field(default="")
+    deterministic_matched_id: str = Field(default="")
+    deterministic_candidates: list[str] = Field(default_factory=list)
+    deterministic_question: str = Field(default="")
+
+
+class IntentAgentDecision(BaseModel):
+    """自然语言意图裁定 Agent 的输出。"""
+
+    intent_type: str = Field(
+        description="`freeform` 或 `clarify`。菜单移动/动作应由确定性层处理。"
+    )
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    freeform_kind: str = Field(default="")
+    intended_target: str = Field(default="")
+    risk_hint: str = Field(default="")
+    clarification_question: str = Field(default="")
+    candidates: list[str] = Field(default_factory=list)
+    rationale: str = Field(default="")
+
+
 class AgentPlanPrompt(BaseModel):
     """Plan 阶段 prompt 的完整结构。
 

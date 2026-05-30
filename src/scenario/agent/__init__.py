@@ -13,6 +13,7 @@
 - ``KeeperNarration``：Render 阶段输出（叙事文本）。
 
 - ``PromptBuilder``：从会话快照构造 AgentPlanPrompt。
+- ``KeeperIntentAgent``：自然语言意图裁定 Agent（OpenAI 后端，含降级）。
 - ``KeeperPlanAgent``：Plan 阶段 Agent（OpenAI 后端，含降级）。
 - ``KeeperRenderAgent``：Render 阶段 Agent（OpenAI 后端，含降级）。
 """
@@ -30,6 +31,8 @@ from .models import (
     AuthorizedPrivateClue,
     CommitResult,
     HistoryLayer,
+    IntentAgentDecision,
+    IntentAgentPrompt,
     KeeperAgentPlan,
     KeeperNarration,
     KeeperPrivateLayer,
@@ -45,6 +48,7 @@ from .models import (
     SystemLayer,
     VisibleScope,
 )
+from .intent_agent import KeeperIntentAgent
 from .plan_agent import KeeperPlanAgent
 from .prompt_builder import PromptBuilder
 from .render_agent import KeeperRenderAgent
@@ -66,6 +70,8 @@ __all__ = [
     "SpatialLayer",
     "HistoryLayer",
     "KeeperPrivateLayer",
+    "IntentAgentPrompt",
+    "IntentAgentDecision",
     "PlayerIntentSummary",
     "KeeperAgentPlan",
     "ProposedCheck",
@@ -78,6 +84,7 @@ __all__ = [
     "VisibleScope",
     # 工具与实现
     "PromptBuilder",
+    "KeeperIntentAgent",
     "KeeperPlanAgent",
     "KeeperRenderAgent",
 ]

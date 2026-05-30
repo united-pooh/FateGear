@@ -13,7 +13,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from scenario.agent import KeeperPlanAgent, KeeperRenderAgent  # noqa: E402
+from scenario.agent import KeeperIntentAgent, KeeperPlanAgent, KeeperRenderAgent  # noqa: E402
 from scenario.agent.config import detect_provider_kind, load_agent_settings  # noqa: E402
 from scenario.api import (  # noqa: E402
     CreatePartyRequest,
@@ -168,7 +168,7 @@ async def handle_submit_intent(request: web.Request) -> web.Response:
 async def handle_submit_text_intent(request: web.Request) -> web.Response:
     session_id = request.match_info["session_id"]
     payload = RawPlayerIntent.model_validate(await _read_json_body(request))
-    response = _service(request).submit_text_intent(session_id, payload)
+    response = await _service(request).submit_text_intent_async(session_id, payload)
     return web.json_response(response.model_dump())
 
 
@@ -244,6 +244,7 @@ def build_service(
             kp_audit_log_path=kp_audit_log_path,
         )
 
+    intent_agent = KeeperIntentAgent(config=settings)
     planner = KeeperPlanAgent(config=settings)
     narrator = KeeperRenderAgent(config=settings)
     runtime = SceneRuntime(
@@ -254,11 +255,13 @@ def build_service(
     provider_kind = detect_provider_kind(client=settings.default_provider)
     print(
         "Agent provider enabled: "
-        f"{provider_kind}; planner={planner.model_id}; narrator={narrator.model_id}"
+        f"{provider_kind}; planner={planner.model_id}; narrator={narrator.model_id}; "
+        f"intent={intent_agent.model_id}"
     )
     return ScenarioService(
         module_root=module_root,
         runtime=runtime,
+        intent_agent=intent_agent,
         kp_audit_log_path=kp_audit_log_path,
     )
 

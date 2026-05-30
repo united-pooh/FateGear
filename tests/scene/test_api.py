@@ -1,11 +1,40 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
+from scenario.agent import IntentAgentDecision
 from scenario.api import ScenarioService
 from scenario.runtime import SceneRuntime
+
+
+@dataclass
+class _IntentRecord:
+    prompt: Any
+    output: Any
+    meta: Any = field(default_factory=lambda: object())
+
+
+class _FreeformIntentAgent:
+    def __init__(self) -> None:
+        self.records: list[_IntentRecord] = []
+
+    async def call(self, prompt: Any) -> _IntentRecord:
+        record = _IntentRecord(
+            prompt=prompt,
+            output=IntentAgentDecision(
+                intent_type="freeform",
+                confidence=0.91,
+                freeform_kind="generic",
+                risk_hint="玩家正在操作上一轮叙事中出现的物件，可由 KP 自由裁定风险。",
+                rationale="这是角色在场景内尝试破坏边界并寻找工具。",
+            ),
+        )
+        self.records.append(record)
+        return record
 
 
 def test_scenario_service_lists_sample_modules() -> None:
@@ -185,6 +214,49 @@ def test_scenario_service_submit_text_intent_accepts_freeform_non_progression() 
     assert resolution.scene_batches[0].outcomes[0].freeform_text == "我开始跳舞"
     assert resolution.scene_batches[0].outcomes[0].effects_applied == []
     assert latest.players[0].current_scene_id == "foyer"
+
+
+def test_scenario_service_uses_intent_agent_for_ambiguous_freeform_action() -> None:
+    intent_agent = _FreeformIntentAgent()
+    service = ScenarioService(
+        runtime=SceneRuntime(roll_provider=lambda: 1),
+        intent_agent=intent_agent,
+    )
+    created = service.create_party(
+        {"module_id": "tokoyami_subset", "creator_id": "keeper"}
+    )
+
+    response = asyncio.run(
+        service.submit_text_intent_async(
+            created.session_id,
+            {
+                "player_id": "keeper",
+                "text": "我申请尝试破坏这个金属隔板，周围有没有什么趁手的工具",
+            },
+        )
+    )
+    resolution = asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
+
+    assert len(intent_agent.records) == 1
+    assert intent_agent.records[0].prompt.raw_text == (
+        "我申请尝试破坏这个金属隔板，周围有没有什么趁手的工具"
+    )
+    assert response.accepted is True
+    assert response.normalization.matched_kind == "freeform"
+    assert response.normalization.matched_id == "llm_freeform"
+    assert response.normalization.match_basis == ["llm:llm_freeform:0.91"]
+    assert response.normalization.intent_payload == {
+        "type": "freeform",
+        "text": "我申请尝试破坏这个金属隔板，周围有没有什么趁手的工具",
+        "freeform_kind": "generic",
+        "risk_hint": "玩家正在操作上一轮叙事中出现的物件，可由 KP 自由裁定风险。",
+    }
+    outcome = resolution.scene_batches[0].outcomes[0]
+    assert outcome.intent_type == "freeform"
+    assert outcome.freeform_text == (
+        "我申请尝试破坏这个金属隔板，周围有没有什么趁手的工具"
+    )
+    assert outcome.freeform_kind == "generic"
 
 
 def test_scenario_service_submit_text_intent_accepts_off_map_move_as_freeform() -> None:

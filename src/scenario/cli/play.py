@@ -6,7 +6,7 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from scenario.agent import KeeperPlanAgent, KeeperRenderAgent
+from scenario.agent import KeeperIntentAgent, KeeperPlanAgent, KeeperRenderAgent
 from scenario.agent.config import detect_provider_kind, load_agent_settings
 from scenario.api import ScenarioService
 from scenario.io import MODULE_ROOT
@@ -58,6 +58,7 @@ def _build_service(
     if not has_agent_key:
         return ScenarioService(module_root=module_root, kp_audit_log_path=kp_log_path)
 
+    intent_agent = KeeperIntentAgent(config=settings)
     planner = KeeperPlanAgent(config=settings)
     narrator = KeeperRenderAgent(config=settings)
     runtime = SceneRuntime(
@@ -68,11 +69,12 @@ def _build_service(
     provider = detect_provider_kind(client=settings.default_provider)
     print(
         f"[agent] provider={provider} planner={planner.model_id} "
-        f"narrator={narrator.model_id}"
+        f"narrator={narrator.model_id} intent={intent_agent.model_id}"
     )
     return ScenarioService(
         module_root=module_root,
         runtime=runtime,
+        intent_agent=intent_agent,
         kp_audit_log_path=kp_log_path,
     )
 
@@ -256,7 +258,7 @@ async def _run() -> None:
         ):
             continue
 
-        response = service.submit_text_intent(
+        response = await service.submit_text_intent_async(
             session_id,
             {"player_id": args.player, "text": raw},
         )
