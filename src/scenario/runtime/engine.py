@@ -12,7 +12,12 @@ from uuid import uuid4
 
 from cards.domain.card import InvestigatorCard
 
-from ..agent.models import AuthorizedPrivateClue, CommitResult, KeeperAgentPlan
+from ..agent.models import (
+    AuthorizedPrivateClue,
+    CommitResult,
+    KeeperAgentPlan,
+    ProposedCheck,
+)
 from ..agent.plan_agent import KeeperPlanAgent
 from ..agent.prompt_builder import PromptBuilder
 from ..agent.render_agent import KeeperRenderAgent
@@ -569,6 +574,33 @@ class SceneRuntime:
                 if isinstance(intent, FreeformIntent):
                     current_scene_name = scene_by_id[player_state.current_scene_id].name
                     dynamic_result = dynamic_check_results.get((player_id, "freeform"))
+                    runtime_risk = self._resolve_runtime_freeform_risk(
+                        session_id=session_id,
+                        snapshot=snapshot,
+                        module=module,
+                        player_state=player_state,
+                        intent=intent,
+                        agent_check_result=dynamic_result,
+                    )
+                    runtime_risk_effects = [
+                        str(effect)
+                        for effect in runtime_risk.get("effects_applied", [])
+                    ]
+                    if dynamic_result is None and runtime_risk.get("check_result"):
+                        dynamic_result = runtime_risk["check_result"]
+                        batch_resolved_checks.append(dynamic_result)
+                        dice_rolls.append(
+                            self._build_dice_roll_audit(
+                                source="runtime_freeform_check",
+                                turn_no=snapshot.current_turn,
+                                scene_id=scene.id,
+                                scene_name=scene.name,
+                                action=None,
+                                result=dynamic_result,
+                            )
+                        )
+                    for clock_id, delta in runtime_risk.get("clock_deltas", {}).items():
+                        clock_deltas[str(clock_id)] += int(delta)
                     check_passed = (
                         bool(dynamic_result.get("success", False))
                         if dynamic_result is not None
@@ -584,13 +616,18 @@ class SceneRuntime:
                         if dynamic_result is not None
                         else ""
                     )
+                    runtime_risk_reason = str(runtime_risk.get("reason", ""))
                     reason = (
                         check_note
                         if check_note
                         else (
-                            intent.risk_hint
-                            if intent.risk_hint
-                            else "自由行动已由守密人裁定；不触发模组关键动作。"
+                            runtime_risk_reason
+                            if runtime_risk_reason
+                            else (
+                                intent.risk_hint
+                                if intent.risk_hint
+                                else "自由行动已由守密人裁定；不触发模组关键动作。"
+                            )
                         )
                     )
                     event_log.append(
@@ -602,6 +639,7 @@ class SceneRuntime:
                             scene_name=current_scene_name,
                             success=check_passed,
                             reason=reason,
+                            effects_applied=runtime_risk_effects,
                             message=(
                                 f"玩家 {player_id} 在"
                                 f"{current_scene_name}（{player_state.current_scene_id}）"
@@ -627,6 +665,7 @@ class SceneRuntime:
                             freeform_kind=intent.freeform_kind,
                             intended_target=intent.intended_target,
                             risk_hint=intent.risk_hint,
+                            effects_applied=runtime_risk_effects,
                         )
                     )
                     continue
@@ -1015,6 +1054,7 @@ class SceneRuntime:
             render_payloads=render_payloads,
             event_log=event_log,
             agent_calls=agent_calls,
+            applied_clock_deltas=combined_clock_deltas,
             applied_story_transition_id=applied_story_transition_id,
             new_stage=new_stage,
             resolved_ending=resolved_ending,
@@ -1072,6 +1112,7 @@ class SceneRuntime:
         ],
         event_log: list[RuntimeEvent],
         agent_calls: list[AgentCallAudit],
+        applied_clock_deltas: dict[str, int],
         applied_story_transition_id: str | None,
         new_stage: str | None,
         resolved_ending: str | None,
@@ -1157,6 +1198,8 @@ class SceneRuntime:
                 scene_description=scene.description,
                 resolved_checks=resolved_checks,
                 applied_effects=batch_effects,
+                applied_clock_deltas=dict(applied_clock_deltas),
+                clock_values=dict(session.clock_values),
                 applied_transition_id=applied_story_transition_id,
                 new_stage_id=new_stage,
                 resolved_ending=resolved_ending,
@@ -1329,6 +1372,238 @@ class SceneRuntime:
         if self._state_store is None:
             return
         self._state_store.save_turn(resolution)
+
+    def _resolve_runtime_freeform_risk(
+        self,
+        *,
+        session_id: str,
+        snapshot: SessionMapState,
+        module: ModuleDefinition,
+        player_state: SessionPlayerState,
+        intent: FreeformIntent,
+        agent_check_result: dict | None,
+    ) -> dict[str, object]:
+        """为危险自由行动提供运行时兜底检定与后果。
+
+        Plan Agent 可以更细腻地裁定自由行动；这层只处理它漏掉的高风险边界：
+        连续探索地图外、深渊、后方声源，或在威胁接近时奔跑/制造声响。
+        """
+        prior_boundary_attempts = self._count_prior_boundary_freeforms(
+            session_id=session_id,
+            player_id=player_state.player_id,
+        )
+        text = intent.text
+        noisy_or_rushing = self._matches_any(
+            text,
+            (
+                "不顾一切",
+                "大步",
+                "跑",
+                "奔",
+                "冲",
+                "喊",
+                "大叫",
+                "砸",
+                "撞",
+                "踹",
+                "敲",
+                "拍",
+                "破坏",
+            ),
+        )
+        dangerous_observation = self._matches_any(
+            text,
+            ("探出", "半个身子", "观察", "查看", "看", "寻找", "确认"),
+        ) and self._matches_any(
+            text,
+            (
+                "深渊",
+                "车外",
+                "门框外",
+                "后面车厢",
+                "后方",
+                "声音来源",
+                "声源",
+                "咀嚼声",
+                "黑暗",
+            ),
+        )
+        moving_deeper = self._matches_any(
+            text,
+            (
+                "朝着黑暗",
+                "继续朝",
+                "走进黑暗",
+                "走向黑暗",
+                "深入",
+                "前往七号",
+                "前往7号",
+                "往后",
+                "向后",
+                "靠近",
+                "接近",
+                "走过去",
+            ),
+        )
+        sound_source_push = self._matches_any(
+            text,
+            ("声音来源", "声源", "咀嚼声", "后方声音"),
+        ) and self._matches_any(text, ("走", "靠近", "接近", "寻找", "观察", "看"))
+        boundary_attempt = self._is_boundary_freeform(intent) or (
+            prior_boundary_attempts > 0
+            and (noisy_or_rushing or dangerous_observation or moving_deeper)
+        )
+        needs_check = boundary_attempt and (
+            prior_boundary_attempts > 0
+            or noisy_or_rushing
+            or dangerous_observation
+            or sound_source_push
+        )
+
+        if not needs_check:
+            return {}
+
+        check_result: dict | None = None
+        has_agent_check = agent_check_result is not None
+        effects_applied: list[str] = []
+        reason = "运行时兜底：危险自由行动需要先裁定风险，不能无成本推进。"
+        skill_key = self._choose_freeform_risk_skill(
+            player_state=player_state,
+            prefer_observation=dangerous_observation and not noisy_or_rushing,
+        )
+        if skill_key and not has_agent_check:
+            if noisy_or_rushing:
+                reason = "运行时兜底：在后方威胁接近时奔跑或制造声响会吸引循声者。"
+            elif dangerous_observation:
+                reason = "运行时兜底：探看深渊、车外或后方声源需要先确认风险。"
+            proposed = ProposedCheck(
+                player_id=player_state.player_id,
+                action_id="freeform",
+                skill_key=skill_key,
+                proposed_difficulty=(
+                    "hard"
+                    if noisy_or_rushing or prior_boundary_attempts >= 3
+                    else "normal"
+                ),
+                rationale=reason,
+            )
+            check_result = self._rule_engine.resolve_proposed_check(
+                proposed=proposed,
+                player_state=player_state,
+            )
+            effects_applied.append(f"运行时自由行动检定:{skill_key}")
+
+        clock_deltas: dict[str, int] = {}
+        clock = module.clock_map().get("rear_threat")
+        if clock is not None:
+            current_threat = snapshot.clock_values.get(clock.id, clock.start)
+            effective_check_result = check_result or agent_check_result
+            severe_noise = noisy_or_rushing and (
+                prior_boundary_attempts >= 4 or current_threat >= 6
+            )
+            extra_threat = 0
+            if severe_noise:
+                if effective_check_result is not None and bool(
+                    effective_check_result.get("success")
+                ):
+                    extra_threat = 1
+                else:
+                    extra_threat = max(1, clock.max_value - current_threat)
+            elif moving_deeper and prior_boundary_attempts >= 3:
+                extra_threat = 1
+            elif noisy_or_rushing and prior_boundary_attempts > 0:
+                extra_threat = 1
+
+            if extra_threat > 0:
+                clock_deltas[clock.id] = extra_threat
+                effects_applied.append(f"运行时推进时钟:{clock.id}+{extra_threat}")
+
+        return {
+            "check_result": check_result,
+            "clock_deltas": clock_deltas,
+            "effects_applied": effects_applied,
+            "reason": reason,
+        }
+
+    def _count_prior_boundary_freeforms(
+        self,
+        *,
+        session_id: str,
+        player_id: str,
+    ) -> int:
+        count = 0
+        for resolution in self._turn_history.get(session_id, {}).values():
+            for batch in resolution.scene_batches:
+                for outcome in batch.outcomes:
+                    if outcome.player_id != player_id:
+                        continue
+                    if outcome.intent_type != "freeform":
+                        continue
+                    if self._is_boundary_freeform(
+                        FreeformIntent(
+                            type="freeform",
+                            text=outcome.freeform_text or outcome.observation_text,
+                            freeform_kind=outcome.freeform_kind,
+                            intended_target=outcome.intended_target,
+                            risk_hint=outcome.risk_hint,
+                        )
+                    ):
+                        count += 1
+        return count
+
+    def _is_boundary_freeform(self, intent: FreeformIntent) -> bool:
+        if intent.freeform_kind == "off_map_move":
+            return True
+        combined = " ".join(
+            part
+            for part in (
+                intent.text,
+                intent.intended_target,
+                intent.risk_hint,
+            )
+            if part
+        )
+        return self._matches_any(
+            combined,
+            (
+                "七号车厢",
+                "7号车厢",
+                "地图外",
+                "不可达",
+                "车厢外",
+                "车外",
+                "门框外",
+                "后面车厢",
+                "后方",
+                "车尾",
+                "深渊",
+                "黑暗",
+                "声音来源",
+                "声源",
+                "咀嚼声",
+                "金属隔板",
+                "隔板",
+            ),
+        )
+
+    def _choose_freeform_risk_skill(
+        self,
+        *,
+        player_state: SessionPlayerState,
+        prefer_observation: bool,
+    ) -> str:
+        skills = player_state.investigator.skills
+        if prefer_observation and "spot_hidden" in skills:
+            return "spot_hidden"
+        if "stealth" in skills:
+            return "stealth"
+        if "spot_hidden" in skills:
+            return "spot_hidden"
+        return ""
+
+    def _matches_any(self, text: str, needles: tuple[str, ...]) -> bool:
+        haystack = text.casefold()
+        return any(needle.casefold() in haystack for needle in needles)
 
     def _queue_agent_proposed_effects(
         self,

@@ -828,7 +828,36 @@ class ScenarioService:
                     module_id=module.module_id,
                 )
             skill_inputs[check.skill_key] = skill_input
+        if module.clock_map().get("rear_threat") is not None:
+            self._ensure_default_skill_input(
+                skill_inputs=skill_inputs,
+                skill_key="spot_hidden",
+                value=60,
+                module_id=module.module_id,
+            )
+            self._ensure_default_skill_input(
+                skill_inputs=skill_inputs,
+                skill_key="stealth",
+                value=60,
+                module_id=module.module_id,
+            )
         return [skill_inputs[key] for key in sorted(skill_inputs)]
+
+    def _ensure_default_skill_input(
+        self,
+        *,
+        skill_inputs: dict[str, dict[str, object]],
+        skill_key: str,
+        value: int,
+        module_id: str,
+    ) -> None:
+        if skill_key in skill_inputs:
+            return
+        if skill_key not in self._skill_templates:
+            raise ValueError(
+                f"模组 {module_id} 需要默认技能，但技能模板不存在: {skill_key}"
+            )
+        skill_inputs[skill_key] = {"template_key": skill_key, "value": value}
 
     def _fill_branch_skill_input(
         self,

@@ -60,6 +60,7 @@ _SYSTEM_PROMPT = """\
 8. private_clues 只能使用【本轮授权私有线索】中的内容；没有授权线索时必须返回空数组。
 9. 除非本轮裁定结果里有成功的 move，否则不要叙述玩家已经进入、抵达或穿过其他场景；freeform 只能写成在当前场景内试探、靠近边界、感知后果或受阻。
 10. 如果 freeform_kind 是 "off_map_move"，这是玩家主动试探地图外/未定义区域；要根据裁定结果和检定结果写出危险边界、警告、阻力、奖励或代价，但仍不能把角色移动到不存在的场景节点。
+11. 严格保持威胁距离连续性：如果当前时钟显示后方威胁已经接近，不要再写成“远处”“遥远”“像幻觉”；如果时钟达到上限或已进入结局，必须写出被追上/吞没的后果。
 """
 
 
@@ -322,6 +323,28 @@ def _build_render_user_message(commit: CommitResult) -> str:
     if scene_description:
         lines.append(f"【场景可感知描述】{scene_description}")
 
+    applied_clock_deltas = _value(commit, "applied_clock_deltas", {}) or {}
+    clock_values = _value(commit, "clock_values", {}) or {}
+    if applied_clock_deltas or clock_values:
+        lines.append("【时钟状态】")
+        if applied_clock_deltas:
+            lines.append(f"  - 本轮推进：{applied_clock_deltas}")
+        if clock_values:
+            lines.append(f"  - 当前值：{clock_values}")
+        rear_threat = (
+            int(clock_values.get("rear_threat", 0))
+            if isinstance(clock_values, dict)
+            else 0
+        )
+        if rear_threat >= 10 or _value(commit, "resolved_ending", None):
+            lines.append(
+                "  - 威胁连续性：rear_threat 已到上限或会话已结局，叙事必须写出被追上/吞没的后果。"
+            )
+        elif rear_threat >= 6:
+            lines.append(
+                "  - 威胁连续性：rear_threat 已接近高压，咀嚼声/追逐声必须写成近处或正在逼近，不要写回远处、遥远或像幻觉。"
+            )
+
     if outcomes:
         lines.append("【本轮裁定结果】")
         for outcome in outcomes:
@@ -350,6 +373,9 @@ def _build_render_user_message(commit: CommitResult) -> str:
                         f"目标={intended_target or '未指定'}；"
                         f"提示={risk_hint or '无'}"
                     )
+                effects = _list_value(outcome, "effects_applied")
+                if effects:
+                    lines.append("    后果：" + "；".join(str(item) for item in effects))
             elif intent_type == "action":
                 lines.append(
                     f"  - {player} 执行动作 {_value(outcome, 'action_id', '')}："

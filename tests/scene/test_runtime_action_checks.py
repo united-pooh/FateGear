@@ -90,6 +90,32 @@ class _OffMapBoundaryPlanner:
         return record
 
 
+class _FreeformStealthPlanner:
+    def __init__(self) -> None:
+        self.records: list[_Record] = []
+
+    async def call(self, prompt: Any) -> _Record:
+        record = _Record(
+            prompt=prompt,
+            output=KeeperAgentPlan(
+                intent_summary="自由行动潜行检定测试",
+                proposed_checks=[
+                    ProposedCheck(
+                        player_id=intent.player_id,
+                        action_id="freeform",
+                        skill_key="stealth",
+                        proposed_difficulty="hard",
+                        rationale="连续接近黑暗边界时需要压低脚步。",
+                    )
+                    for intent in prompt.pending_intents
+                    if intent.intent_type == "freeform"
+                ],
+            ),
+        )
+        self.records.append(record)
+        return record
+
+
 def _load_investigator_payload() -> dict[str, object]:
     fixture = (
         Path(__file__).resolve().parents[1]
@@ -242,6 +268,142 @@ def test_off_map_freeform_can_apply_agent_boundary_consequence() -> None:
         and event.effects_applied == ["Agent推进时钟:rear_threat+2"]
         for event in resolution.event_log
     )
+
+
+def test_repeated_tokoyami_boundary_freeform_triggers_runtime_checks_and_bad_end() -> None:
+    rolls = iter([99, 99, 99, 99, 99])
+    runtime = SceneRuntime(roll_provider=lambda: next(rolls, 99))
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+
+    scripted_inputs = [
+        {
+            "type": "freeform",
+            "text": "前往七号车厢",
+            "freeform_kind": "off_map_move",
+            "intended_target": "七号车厢",
+        },
+        {
+            "type": "freeform",
+            "text": "探出半个身子出去尝试看深渊底下有什么",
+            "freeform_kind": "off_map_move",
+        },
+        {
+            "type": "freeform",
+            "text": "尝试从门框外观察列车后面车厢的情况，试图寻找声音来源",
+            "freeform_kind": "off_map_move",
+        },
+        {
+            "type": "freeform",
+            "text": "朝着黑暗走去",
+            "freeform_kind": "off_map_move",
+        },
+        {
+            "type": "freeform",
+            "text": "继续朝着黑暗走去",
+            "freeform_kind": "off_map_move",
+        },
+        {
+            "type": "freeform",
+            "text": "不顾一切大步跑起来",
+            "freeform_kind": "generic",
+        },
+    ]
+
+    resolutions = [
+        _submit_and_resolve(
+            runtime,
+            session_id=session.session_id,
+            intents={"p1": intent},
+        )
+        for intent in scripted_inputs
+    ]
+
+    assert [len(result.dice_rolls) for result in resolutions] == [0, 1, 1, 1, 1, 1]
+    assert [
+        result.dice_rolls[0].skill_key if result.dice_rolls else ""
+        for result in resolutions
+    ] == ["", "spot_hidden", "spot_hidden", "stealth", "stealth", "stealth"]
+    assert all(
+        roll.source == "runtime_freeform_check"
+        for result in resolutions[1:]
+        for roll in result.dice_rolls
+    )
+
+    final_resolution = resolutions[-1]
+    final_outcome = final_resolution.scene_batches[0].outcomes[0]
+    assert final_outcome.success is False
+    assert "运行时推进时钟:rear_threat+3" in final_outcome.effects_applied
+    assert final_resolution.applied_clock_deltas["rear_threat"] == 4
+    assert final_resolution.clock_values["rear_threat"] == 10
+    assert "rear_threat:10" in final_resolution.triggered_clock_events
+    assert final_resolution.new_stage == "bad_end"
+    assert final_resolution.resolved_ending == "bad_end"
+    assert session.story_state.current_stage_id == "bad_end"
+    assert session.resolved_ending == "bad_end"
+    assert session.player_states["p1"].current_scene_id == "car_6"
+
+
+def test_runtime_freeform_clock_respects_successful_agent_check() -> None:
+    planner = _FreeformStealthPlanner()
+    runtime = SceneRuntime(roll_provider=lambda: 1, plan_agent=planner)
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+
+    scripted_inputs = [
+        {
+            "type": "freeform",
+            "text": "前往七号车厢",
+            "freeform_kind": "off_map_move",
+            "intended_target": "七号车厢",
+        },
+        {
+            "type": "freeform",
+            "text": "探出半个身子出去尝试看深渊底下有什么",
+            "freeform_kind": "off_map_move",
+        },
+        {
+            "type": "freeform",
+            "text": "尝试从门框外观察列车后面车厢的情况，试图寻找声音来源",
+            "freeform_kind": "off_map_move",
+        },
+        {
+            "type": "freeform",
+            "text": "朝着黑暗走去",
+            "freeform_kind": "off_map_move",
+        },
+        {
+            "type": "freeform",
+            "text": "继续朝着黑暗走去",
+            "freeform_kind": "off_map_move",
+        },
+        {
+            "type": "freeform",
+            "text": "不顾一切大步跑起来",
+            "freeform_kind": "generic",
+        },
+    ]
+    resolutions = [
+        _submit_and_resolve(
+            runtime,
+            session_id=session.session_id,
+            intents={"p1": intent},
+        )
+        for intent in scripted_inputs
+    ]
+
+    final_resolution = resolutions[-1]
+    assert final_resolution.scene_batches[0].outcomes[0].success is True
+    assert final_resolution.applied_clock_deltas["rear_threat"] == 2
+    assert final_resolution.clock_values["rear_threat"] == 9
+    assert final_resolution.resolved_ending is None
+    assert "rear_threat:10" not in final_resolution.triggered_clock_events
 
 
 def test_create_session_requires_player_cards_for_all_players() -> None:

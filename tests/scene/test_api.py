@@ -94,6 +94,19 @@ def test_scenario_service_mounts_default_module_skills() -> None:
     assert {"spot_hidden", "art_craft:locksmith", "science:physics"} <= set(skills)
 
 
+def test_scenario_service_mounts_tokoyami_freeform_risk_skills() -> None:
+    service = ScenarioService()
+    created = service.create_party(
+        {"module_id": "tokoyami_subset", "creator_id": "keeper"}
+    )
+    session = service._runtime.get_session(created.session_id)
+    skills = session.player_states["keeper"].investigator.skills
+
+    assert {"spot_hidden", "stealth"} <= set(skills)
+    assert skills["spot_hidden"].value == 60
+    assert skills["stealth"].value == 60
+
+
 def test_scenario_service_submit_intent_and_resolve_turn() -> None:
     service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})

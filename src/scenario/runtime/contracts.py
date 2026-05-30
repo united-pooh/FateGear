@@ -123,7 +123,11 @@ class RuntimeEvent(BaseModel):
 
 
 class DiceRollAudit(BaseModel):
-    source: Literal["static_action_check", "dynamic_agent_check"]
+    source: Literal[
+        "static_action_check",
+        "dynamic_agent_check",
+        "runtime_freeform_check",
+    ]
     turn_no: int = Field(default=0)
     player_id: str = Field(default="")
     scene_id: str = Field(default="")

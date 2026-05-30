@@ -137,6 +137,35 @@ def test_render_prompt_keeps_freeform_from_becoming_scene_movement() -> None:
     assert "不得叙述成已经移动到其他场景" in render_user
 
 
+def test_render_prompt_preserves_rear_threat_distance_continuity() -> None:
+    commit = CommitResult(
+        session_id="s1",
+        turn_no=6,
+        scene_id="car_6",
+        scene_name="6号车厢",
+        applied_clock_deltas={"rear_threat": 4},
+        clock_values={"rear_threat": 10},
+        resolved_ending="bad_end",
+        outcomes=[
+            {
+                "player_id": "p1",
+                "intent_type": "freeform",
+                "success": False,
+                "freeform_text": "不顾一切大步跑起来",
+                "effects_applied": ["运行时推进时钟:rear_threat+3"],
+            }
+        ],
+    )
+
+    render_system = _build_render_system_prompt(commit)
+    render_user = _build_render_user_message(commit)
+
+    assert "威胁距离连续性" in render_system
+    assert "rear_threat" in render_user
+    assert "被追上/吞没" in render_user
+    assert "运行时推进时钟:rear_threat+3" in render_user
+
+
 def test_plan_prompt_marks_off_map_freeform_as_boundary_attempt() -> None:
     runtime = SceneRuntime()
     session = runtime.create_session(

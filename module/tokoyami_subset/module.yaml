@@ -264,7 +264,7 @@ story_stages:
     terminal_type: success
   - id: bad_end
     name: 坏结局
-    description: 列车减速后陷入黑暗，大嘴在近处咀嚼。
+    description: 后方黑暗追上列车，大嘴在近处咀嚼。
     is_terminal: true
     terminal_type: failure
 
@@ -304,6 +304,13 @@ story_transitions:
     trigger_type: action_succeeded
     trigger_value: brake_train
     priority: 20
+  - id: awake_overwhelmed
+    source_stage_id: awake
+    target_stage_id: bad_end
+    required_flags: [rear_threat_overwhelms]
+    trigger_type: clock_threshold_triggered
+    trigger_value: rear_threat:10
+    priority: 0
   - id: informed_overwhelmed
     source_stage_id: informed
     target_stage_id: bad_end
@@ -338,4 +345,4 @@ endings:
     conditions:
       - type: flag_set
         flag: chose_decelerate
-    result: 列车减速后陷入黑暗，大嘴在近处咀嚼。
+    result: 后方黑暗追上列车，大嘴在近处咀嚼。

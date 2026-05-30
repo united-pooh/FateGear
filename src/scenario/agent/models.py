@@ -321,6 +321,14 @@ class CommitResult(BaseModel):
         default_factory=list,
         description="已生效的效果描述列表，例如 '设置标记:clue_found'。",
     )
+    applied_clock_deltas: dict[str, int] = Field(
+        default_factory=dict,
+        description="本轮实际应用的时钟增量，含每回合自然推进。",
+    )
+    clock_values: dict[str, int] = Field(
+        default_factory=dict,
+        description="本轮提交后的权威时钟值。",
+    )
 
     # 是否触发了剧情迁移
     applied_transition_id: str | None = Field(default=None)
