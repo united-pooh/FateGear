@@ -13,6 +13,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from scenario.agent import KeeperPlanAgent, KeeperRenderAgent  # noqa: E402
+from scenario.agent.config import detect_provider_kind, load_agent_settings  # noqa: E402
 from scenario.api import (  # noqa: E402
     CreatePartyRequest,
     JoinPartyRequest,
@@ -20,6 +22,7 @@ from scenario.api import (  # noqa: E402
     ScenarioService,
     SubmitIntentRequest,
 )
+from scenario.runtime import SceneRuntime  # noqa: E402
 
 APP_SERVICE_KEY = web.AppKey("scenario_service", ScenarioService)
 
@@ -217,6 +220,38 @@ def create_app(service: ScenarioService) -> web.Application:
     return app
 
 
+def build_service(
+    *,
+    module_root: str | Path,
+    enable_agents: bool = True,
+) -> ScenarioService:
+    """Create the scenario service and attach configured LLM agents when available."""
+
+    if not enable_agents:
+        return ScenarioService(module_root=module_root)
+
+    settings = load_agent_settings()
+    has_agent_key = bool(
+        settings.planner_provider.api_key or settings.narrator_provider.api_key
+    )
+    if not has_agent_key:
+        return ScenarioService(module_root=module_root)
+
+    planner = KeeperPlanAgent(config=settings)
+    narrator = KeeperRenderAgent(config=settings)
+    runtime = SceneRuntime(
+        module_root=module_root,
+        plan_agent=planner,
+        render_agent=narrator,
+    )
+    provider_kind = detect_provider_kind(client=settings.default_provider)
+    print(
+        "Agent provider enabled: "
+        f"{provider_kind}; planner={planner.model_id}; narrator={narrator.model_id}"
+    )
+    return ScenarioService(module_root=module_root, runtime=runtime)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="启动 FateGear aiohttp 服务")
     parser.add_argument("--host", default="127.0.0.1", help="监听地址")
@@ -226,12 +261,20 @@ def parse_args() -> argparse.Namespace:
         default=str(ROOT / "module"),
         help="模组目录路径",
     )
+    parser.add_argument(
+        "--no-agents",
+        action="store_true",
+        help="禁用 Plan/Render LLM Agent，强制使用离线规则模式",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    service = ScenarioService(module_root=args.module_root)
+    service = build_service(
+        module_root=args.module_root,
+        enable_agents=not args.no_agents,
+    )
     app = create_app(service)
 
     print(f"FateGear aiohttp server running on http://{args.host}:{args.port}")

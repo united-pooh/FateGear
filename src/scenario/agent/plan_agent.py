@@ -140,7 +140,15 @@ def _build_user_message(prompt: AgentPlanPrompt) -> str:
     if sp.player_skill_keys:
         lines.append("【玩家技能（proposed_checks 中的 skill_key 必须来自此列表）】")
         for pid, skill_keys in sp.player_skill_keys.items():
-            lines.append(f"  {pid}: {', '.join(skill_keys)}")
+            if skill_keys:
+                lines.append(f"  {pid}: {', '.join(skill_keys)}")
+            else:
+                lines.append(f"  {pid}: 无可用检定技能，不得为该玩家提议检定")
+        if any(not skill_keys for skill_keys in sp.player_skill_keys.values()):
+            lines.append(
+                "重要：玩家技能为空时，proposed_checks 必须保持空数组；"
+                "不要为了增加戏剧性虚构技能检定。"
+            )
     if sp.clock_values:
         clocks = "、".join(f"{k}={v}" for k, v in sp.clock_values.items())
         lines.append(f"时钟：{clocks}")
@@ -211,6 +219,10 @@ example json:
   "keeper_notes": "给守密人的内部备注"
 }
 如果没有提议检定或提议效果，请返回空数组；如果没有剧情迁移，请返回 null。
+只有当玩家技能列表中明确存在对应 skill_key 时，才可以写入 proposed_checks；
+如果技能列表为空，或当前动作已经由模组静态规则处理，请让 proposed_checks 保持 []。
+proposed_effects 只能表达 set_flag/remove_flag/advance_clock 且必须包含 target_id；
+氛围描写、NPC 反应、移动说明不要放入 proposed_effects，请写入 keeper_notes。
 如果有剧情迁移，`proposed_transition` 必须是 object：
 {
   "transition_id": "unlock_access",
@@ -255,6 +267,28 @@ def _normalize_plan_payload(data: object) -> object:
                     rewritten.setdefault("rationale", "")
                     normalized["proposed_transition"] = rewritten
                     break
+
+    proposed_effects = normalized.get("proposed_effects")
+    if isinstance(proposed_effects, list):
+        retained_effects: list[object] = []
+        for effect in proposed_effects:
+            if not isinstance(effect, dict):
+                continue
+            rewritten = dict(effect)
+            if "target_id" not in rewritten:
+                for alias in ("target", "flag", "flag_id", "clock_id", "id"):
+                    candidate = rewritten.get(alias)
+                    if isinstance(candidate, str) and candidate.strip():
+                        rewritten["target_id"] = candidate.strip()
+                        break
+            if "target_id" in rewritten and "effect_type" in rewritten:
+                retained_effects.append(rewritten)
+                continue
+            logger.info(
+                "KeeperPlanAgent: 丢弃缺少 effect_type/target_id 的 proposed_effect=%r。",
+                effect,
+            )
+        normalized["proposed_effects"] = retained_effects
     return normalized
 
 
@@ -312,6 +346,7 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
             if timeout_seconds is None
             else timeout_seconds
         )
+        self._deepseek_thinking = settings.deepseek_thinking
         self._provider_kind = detect_provider_kind(
             model_id=self._model_id,
             client=self._client,
@@ -375,6 +410,9 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
             )
         if self._provider_kind == "deepseek":
             request_kwargs["max_tokens"] = 1200
+            request_kwargs["extra_body"] = {
+                "thinking": {"type": self._deepseek_thinking}
+            }
 
         # OpenAI structured outputs（response_format）
         response = await self._client.chat.completions.create(**request_kwargs)

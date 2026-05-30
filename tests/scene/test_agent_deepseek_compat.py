@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 
 from scenario.runtime.engine import KeeperPlanAgent, KeeperRenderAgent
+from scenario.agent.plan_agent import _normalize_plan_payload
+from scenario.agent.render_agent import _normalize_narration_payload
 
 
 class _RecordingCompletions:
@@ -31,6 +33,7 @@ class _RecordingLiveClient:
 
 
 _LOG_DIR = Path(__file__).resolve().parents[2] / "log" / "scene"
+_DEEPSEEK_LIVE_MODEL = "deepseek-v4-pro"
 
 
 def _write_trace_log(
@@ -62,10 +65,13 @@ def _build_live_deepseek_client(agent_factory) -> _RecordingLiveClient:
             "openai SDK 未安装；请先用项目 .venv 安装 requirements.txt。"
         )
 
-    bootstrap_agent = agent_factory(model_id="deepseek-chat", timeout_seconds=20.0)
+    bootstrap_agent = agent_factory(
+        model_id=_DEEPSEEK_LIVE_MODEL,
+        timeout_seconds=20.0,
+    )
     if bootstrap_agent._client is None:
         pytest.skip(
-            "未检测到可用的 DeepSeek Agent 配置；请检查 .env 中的 AGENT_API_KEY / AGENT_BASE_URL。"
+            "未检测到可用的 DeepSeek Agent 配置；请检查 DEEPSEEK_API_KEY 或 AGENT_API_KEY / AGENT_BASE_URL。"
         )
     return _RecordingLiveClient(bootstrap_agent._client)
 
@@ -125,7 +131,7 @@ def test_plan_agent_uses_json_object_for_deepseek() -> None:
     client = _build_live_deepseek_client(KeeperPlanAgent)
     agent = KeeperPlanAgent(
         openai_client=client,
-        model_id="deepseek-chat",
+        model_id=_DEEPSEEK_LIVE_MODEL,
         timeout_seconds=20.0,
     )
     agent.max_retries = 0
@@ -143,16 +149,49 @@ def test_plan_agent_uses_json_object_for_deepseek() -> None:
     assert isinstance(payload, dict)
     assert call["response_format"] == {"type": "json_object"}
     assert call["max_tokens"] == 1200
+    assert call["extra_body"] == {"thinking": {"type": "disabled"}}
     assert "json object" in call["messages"][0]["content"].lower()
     assert "example json" in call["messages"][0]["content"].lower()
     assert "json object" in call["messages"][1]["content"].lower()
+
+
+def test_plan_payload_normalizer_drops_invalid_proposed_effects() -> None:
+    payload = _normalize_plan_payload(
+        {
+            "intent_summary": "ok",
+            "proposed_checks": [],
+            "proposed_effects": [
+                {"player_id": "p1", "effect": "氛围建议"},
+                {
+                    "effect_type": "advance_clock",
+                    "clock_id": "rear_threat",
+                    "value": 1,
+                },
+            ],
+            "proposed_transition": "advance",
+            "keeper_notes": "",
+        }
+    )
+
+    assert payload["proposed_effects"] == [
+        {
+            "effect_type": "advance_clock",
+            "clock_id": "rear_threat",
+            "target_id": "rear_threat",
+            "value": 1,
+        }
+    ]
+    assert payload["proposed_transition"] == {
+        "transition_id": "advance",
+        "rationale": "",
+    }
 
 
 def test_render_agent_uses_json_object_for_deepseek() -> None:
     client = _build_live_deepseek_client(KeeperRenderAgent)
     agent = KeeperRenderAgent(
         openai_client=client,
-        model_id="deepseek-chat",
+        model_id=_DEEPSEEK_LIVE_MODEL,
         timeout_seconds=20.0,
     )
     agent.max_retries = 0
@@ -171,6 +210,46 @@ def test_render_agent_uses_json_object_for_deepseek() -> None:
     assert payload.get("public_narration")
     assert call["response_format"] == {"type": "json_object"}
     assert call["max_tokens"] == 1600
+    assert call["extra_body"] == {"thinking": {"type": "disabled"}}
     assert "json object" in call["messages"][0]["content"].lower()
     assert "example json" in call["messages"][0]["content"].lower()
     assert "json object" in call["messages"][1]["content"].lower()
+
+
+def test_narration_payload_normalizer_accepts_common_deepseek_aliases() -> None:
+    payload = _normalize_narration_payload(
+        {
+            "public_narration": "叙事",
+            "npc_dialogues": [
+                {"npc_name": "乘务员", "text": "别出声。", "audience": "all"},
+                {"target": "p1", "content": "这不是 NPC 台词。"},
+                "不是对象",
+            ],
+            "private_clues": [
+                {"target_player": "p1", "text": "你看见了钥匙。"},
+                {"content": "没有接收者。"},
+                "字符串线索",
+            ],
+            "keeper_notes": "继续推进压力。",
+        }
+    )
+
+    assert payload["npc_dialogues"] == [
+        {
+            "npc_name": "乘务员",
+            "text": "别出声。",
+            "audience": "all",
+            "npc_id": "乘务员",
+            "dialogue": "别出声。",
+            "visible_scope": "public",
+        }
+    ]
+    assert payload["private_clues"] == [
+        {
+            "target_player": "p1",
+            "text": "你看见了钥匙。",
+            "player_id": "p1",
+            "clue_text": "你看见了钥匙。",
+        }
+    ]
+    assert payload["keeper_hint"] == "继续推进压力。"

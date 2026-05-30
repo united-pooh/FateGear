@@ -59,6 +59,93 @@ _SYSTEM_PROMPT = """\
 """
 
 
+def _normalize_narration_payload(data: object) -> object:
+    """兼容 DeepSeek 常见的叙事字段别名。"""
+    if not isinstance(data, dict):
+        return data
+
+    normalized = dict(data)
+    dialogues = normalized.get("npc_dialogues")
+    if isinstance(dialogues, list):
+        rewritten_dialogues: list[object] = []
+        for dialogue in dialogues:
+            if not isinstance(dialogue, dict):
+                continue
+            rewritten = dict(dialogue)
+            if "npc_id" not in rewritten:
+                for alias in (
+                    "npc",
+                    "npcId",
+                    "character_id",
+                    "character",
+                    "npc_name",
+                ):
+                    candidate = rewritten.get(alias)
+                    if isinstance(candidate, str) and candidate.strip():
+                        rewritten["npc_id"] = candidate.strip()
+                        break
+            if "dialogue" not in rewritten:
+                for alias in ("text", "line", "content"):
+                    candidate = rewritten.get(alias)
+                    if isinstance(candidate, str):
+                        rewritten["dialogue"] = candidate
+                        break
+            if "visible_scope" not in rewritten:
+                candidate = rewritten.get("visible_to") or rewritten.get("audience")
+                if isinstance(candidate, str) and candidate.strip():
+                    scope = candidate.strip().lower()
+                    if scope in {"all", "public", "players"}:
+                        rewritten["visible_scope"] = "public"
+                    elif scope in {"gm", "keeper"}:
+                        rewritten["visible_scope"] = "keeper"
+                    else:
+                        rewritten["visible_scope"] = scope
+            if "npc_id" not in rewritten or "dialogue" not in rewritten:
+                logger.info(
+                    "KeeperRenderAgent: 丢弃缺少 npc_id/dialogue 的 npc_dialogue=%r。",
+                    dialogue,
+                )
+                continue
+            rewritten_dialogues.append(rewritten)
+        normalized["npc_dialogues"] = rewritten_dialogues
+
+    private_clues = normalized.get("private_clues")
+    if isinstance(private_clues, list):
+        rewritten_clues: list[object] = []
+        for clue in private_clues:
+            if not isinstance(clue, dict):
+                continue
+            rewritten = dict(clue)
+            if "player_id" not in rewritten:
+                for alias in ("player", "target", "target_player", "recipient", "to"):
+                    candidate = rewritten.get(alias)
+                    if isinstance(candidate, str) and candidate.strip():
+                        rewritten["player_id"] = candidate.strip()
+                        break
+            if "clue_text" not in rewritten:
+                for alias in ("text", "clue", "content"):
+                    candidate = rewritten.get(alias)
+                    if isinstance(candidate, str):
+                        rewritten["clue_text"] = candidate
+                        break
+            if "player_id" not in rewritten or "clue_text" not in rewritten:
+                logger.info(
+                    "KeeperRenderAgent: 丢弃缺少 player_id/clue_text 的 private_clue=%r。",
+                    clue,
+                )
+                continue
+            rewritten_clues.append(rewritten)
+        normalized["private_clues"] = rewritten_clues
+
+    if "keeper_hint" not in normalized:
+        for alias in ("keeper_notes", "keeper_note", "gm_hint"):
+            candidate = normalized.get(alias)
+            if isinstance(candidate, str):
+                normalized["keeper_hint"] = candidate
+                break
+    return normalized
+
+
 def _build_render_system_prompt(commit: CommitResult) -> str:
     """构建包含只读叙事上下文的 Render system prompt。"""
     lines = [_SYSTEM_PROMPT]
@@ -224,6 +311,7 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
             if timeout_seconds is None
             else timeout_seconds
         )
+        self._deepseek_thinking = settings.deepseek_thinking
         self._provider_kind = detect_provider_kind(
             model_id=self._model_id,
             client=self._client,
@@ -283,6 +371,9 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
             )
         if self._provider_kind == "deepseek":
             request_kwargs["max_tokens"] = 1600
+            request_kwargs["extra_body"] = {
+                "thinking": {"type": self._deepseek_thinking}
+            }
 
         response = await self._client.chat.completions.create(**request_kwargs)
 
@@ -303,7 +394,7 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
         if not raw:
             raise AgentOutputError("LLM 返回空内容。")
         try:
-            data = json.loads(raw)
+            data = _normalize_narration_payload(json.loads(raw))
             return KeeperNarration.model_validate(data)
         except (json.JSONDecodeError, ValidationError) as exc:
             raise AgentOutputError(f"KeeperNarration 解析失败：{exc}") from exc

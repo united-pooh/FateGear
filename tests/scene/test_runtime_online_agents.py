@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -167,14 +168,18 @@ def _submit_and_resolve(
 
 
 def _require_online_agent_prerequisites() -> tuple[KeeperPlanAgent, KeeperRenderAgent]:
+    if os.environ.get("RUN_ONLINE_AGENT_TESTS") != "1":
+        pytest.skip(
+            "长联网 runtime smoke test 默认跳过；设置 RUN_ONLINE_AGENT_TESTS=1 后手动运行。"
+        )
     if importlib.util.find_spec("openai") is None:
         pytest.skip(
             "openai SDK 未安装；请使用 `UV_CACHE_DIR=/tmp/uv-cache uv run --python .venv/bin/python "
             "pip install -r requirements.txt` 先同步项目环境。"
         )
 
-    planner = KeeperPlanAgent(timeout_seconds=20.0)
-    narrator = KeeperRenderAgent(timeout_seconds=20.0)
+    planner = KeeperPlanAgent(timeout_seconds=120.0)
+    narrator = KeeperRenderAgent(timeout_seconds=120.0)
     planner.max_retries = 0
     narrator.max_retries = 0
     missing: list[str] = []
@@ -203,7 +208,7 @@ def test_generic_mvp_runtime_online_agents_happy_path() -> None:
     """真实联网的 runtime e2e smoke test。
 
     推荐执行方式：
-    `UV_CACHE_DIR=/tmp/uv-cache uv run --python .venv/bin/python pytest -q tests/scene/test_runtime_online_agents.py`
+    `RUN_ONLINE_AGENT_TESTS=1 pytest -q tests/scene/test_runtime_online_agents.py`
     """
 
     planner, narrator = _require_online_agent_prerequisites()

@@ -21,6 +21,12 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _DEFAULT_ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
+_DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com"
+_DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-pro"
+_DEEPSEEK_DEFAULT_PLANNER_TIMEOUT_SECONDS = 90.0
+_DEEPSEEK_DEFAULT_NARRATOR_TIMEOUT_SECONDS = 120.0
+_DEEPSEEK_DEFAULT_THINKING = "disabled"
+_OPENAI_DEFAULT_MODEL = "gpt-4o"
 
 
 @dataclass(frozen=True)
@@ -61,6 +67,7 @@ class AgentSettings:
     narrator_provider: OpenAIProviderConfig
     planner: AgentModelConfig
     narrator: AgentModelConfig
+    deepseek_thinking: str = _DEEPSEEK_DEFAULT_THINKING
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -168,6 +175,22 @@ def _read_optional_int(
         return default
 
 
+def _read_deepseek_thinking(env_file_values: dict[str, str]) -> str:
+    raw = _read_str(
+        "DEEPSEEK_THINKING",
+        env_file_values=env_file_values,
+        default=_DEEPSEEK_DEFAULT_THINKING,
+    ).strip().lower()
+    if raw in {"enabled", "disabled"}:
+        return raw
+    logger.warning(
+        "Agent 配置 DEEPSEEK_THINKING=%r 非法，回退为 %s",
+        raw,
+        _DEEPSEEK_DEFAULT_THINKING,
+    )
+    return _DEEPSEEK_DEFAULT_THINKING
+
+
 def _resolve_agent_provider(
     *,
     agent_prefix: str,
@@ -217,17 +240,28 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
 
     resolved_env_path = Path(env_path) if env_path is not None else _DEFAULT_ENV_PATH
     env_file_values = _read_env_file(resolved_env_path)
+    deepseek_api_key = _read_str(
+        "DEEPSEEK_API_KEY",
+        env_file_values=env_file_values,
+    )
+    deepseek_base_url = _read_str(
+        "DEEPSEEK_BASE_URL",
+        env_file_values=env_file_values,
+        default=_DEEPSEEK_DEFAULT_BASE_URL if deepseek_api_key else "",
+    )
 
     # 共享默认配置：所有 Agent 默认先继承 AGENT_*。
     default_provider = OpenAIProviderConfig(
         api_key=_read_str(
             "AGENT_API_KEY",
             env_file_values=env_file_values,
+            default=deepseek_api_key,
             aliases=("OPENAI_API_KEY",),
         ),
         base_url=_read_str(
             "AGENT_BASE_URL",
             env_file_values=env_file_values,
+            default=deepseek_base_url,
             aliases=("OPENAI_BASE_URL",),
         ),
         organization=_read_str(
@@ -251,12 +285,28 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
         env_file_values=env_file_values,
         default_provider=default_provider,
     )
+    default_provider_kind = detect_provider_kind(client=default_provider)
+    default_model = (
+        _DEEPSEEK_DEFAULT_MODEL
+        if default_provider_kind == "deepseek"
+        else _OPENAI_DEFAULT_MODEL
+    )
+    planner_timeout_default = (
+        _DEEPSEEK_DEFAULT_PLANNER_TIMEOUT_SECONDS
+        if default_provider_kind == "deepseek"
+        else 45.0
+    )
+    narrator_timeout_default = (
+        _DEEPSEEK_DEFAULT_NARRATOR_TIMEOUT_SECONDS
+        if default_provider_kind == "deepseek"
+        else 60.0
+    )
 
     planner = AgentModelConfig(
         model=_read_str(
             "PLANNER_AGENT_MODEL",
             env_file_values=env_file_values,
-            default="gpt-4o",
+            default=default_model,
         ),
         temperature=_read_float(
             "PLANNER_AGENT_TEMPERATURE",
@@ -275,7 +325,7 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
         timeout_seconds=_read_float(
             "PLANNER_AGENT_TIMEOUT_SECONDS",
             env_file_values=env_file_values,
-            default=45.0,
+            default=planner_timeout_default,
         ),
     )
 
@@ -283,7 +333,7 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
         model=_read_str(
             "NARRATOR_AGENT_MODEL",
             env_file_values=env_file_values,
-            default="gpt-4o",
+            default=default_model,
         ),
         temperature=_read_float(
             "NARRATOR_AGENT_TEMPERATURE",
@@ -302,7 +352,7 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
         timeout_seconds=_read_float(
             "NARRATOR_AGENT_TIMEOUT_SECONDS",
             env_file_values=env_file_values,
-            default=60.0,
+            default=narrator_timeout_default,
         ),
     )
 
@@ -312,6 +362,7 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
         narrator_provider=narrator_provider,
         planner=planner,
         narrator=narrator,
+        deepseek_thinking=_read_deepseek_thinking(env_file_values),
     )
 
 

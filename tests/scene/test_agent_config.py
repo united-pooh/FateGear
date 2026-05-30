@@ -92,3 +92,64 @@ def test_agent_settings_use_shared_provider_as_default_and_allow_overrides(
     assert narrator_provider.base_url == "https://narrator.example/v1"
     assert narrator_provider.organization == "shared-org"
     assert narrator_provider.project == "shared-project"
+
+
+def test_agent_settings_accept_deepseek_api_key_defaults(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+    monkeypatch.delenv("AGENT_API_KEY", raising=False)
+    monkeypatch.delenv("AGENT_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("PLANNER_AGENT_API_KEY", raising=False)
+    monkeypatch.delenv("PLANNER_AGENT_BASE_URL", raising=False)
+    monkeypatch.delenv("PLANNER_AGENT_MODEL", raising=False)
+    monkeypatch.delenv("NARRATOR_AGENT_API_KEY", raising=False)
+    monkeypatch.delenv("NARRATOR_AGENT_BASE_URL", raising=False)
+    monkeypatch.delenv("NARRATOR_AGENT_MODEL", raising=False)
+
+    planner_module = sys.modules[KeeperPlanAgent.__module__]
+    narrator_module = sys.modules[KeeperRenderAgent.__module__]
+    captured: dict[str, object] = {}
+
+    def _capture_planner(provider):
+        captured["planner"] = provider
+        return object()
+
+    def _capture_narrator(provider):
+        captured["narrator"] = provider
+        return object()
+
+    monkeypatch.setattr(planner_module, "build_openai_client", _capture_planner)
+    monkeypatch.setattr(narrator_module, "build_openai_client", _capture_narrator)
+
+    planner = KeeperPlanAgent()
+    narrator = KeeperRenderAgent()
+
+    planner_provider = captured["planner"]
+    narrator_provider = captured["narrator"]
+
+    assert planner.model_id == "deepseek-v4-pro"
+    assert narrator.model_id == "deepseek-v4-pro"
+    assert planner.timeout_seconds == 90.0
+    assert narrator.timeout_seconds == 120.0
+    assert planner._deepseek_thinking == "disabled"
+    assert narrator._deepseek_thinking == "disabled"
+    assert planner._provider_kind == "deepseek"
+    assert narrator._provider_kind == "deepseek"
+    assert planner_provider.api_key == "deepseek-key"
+    assert narrator_provider.api_key == "deepseek-key"
+    assert planner_provider.base_url == "https://api.deepseek.com"
+    assert narrator_provider.base_url == "https://api.deepseek.com"
+
+
+def test_agent_settings_accept_deepseek_thinking_override(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+    monkeypatch.setenv("DEEPSEEK_THINKING", "enabled")
+
+    planner_module = sys.modules[KeeperPlanAgent.__module__]
+    narrator_module = sys.modules[KeeperRenderAgent.__module__]
+    monkeypatch.setattr(planner_module, "build_openai_client", lambda provider: object())
+    monkeypatch.setattr(narrator_module, "build_openai_client", lambda provider: object())
+
+    assert KeeperPlanAgent()._deepseek_thinking == "enabled"
+    assert KeeperRenderAgent()._deepseek_thinking == "enabled"
