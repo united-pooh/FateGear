@@ -6,6 +6,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from cards.domain.card import InvestigatorCard
@@ -33,6 +34,9 @@ from .contracts import (
 from .rule_engine import RollProvider, RuleEngine
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from scenario.narration import KeeperNarrationRecord, NarrationPipeline
 
 
 class SceneRuntime:
@@ -879,6 +883,31 @@ class SceneRuntime:
         )
         return movement_rules.list_reachable_scenes(
             from_scene_id=player_state.current_scene_id
+        )
+
+    def render_narration_after_turn(
+        self,
+        resolution: TurnResolution,
+        pipeline: "NarrationPipeline",
+        *,
+        forbidden_facts: list[str] | None = None,
+        max_prompt_chars: int | None = None,
+    ) -> "KeeperNarrationRecord":
+        """Run an explicit post-resolution narration hook.
+
+        The helper deep-copies committed session state and passes it to the
+        narration layer. It does not change resolve_turn() semantics and does
+        not mutate authoritative session fields.
+        """
+
+        session_snapshot = self._get_session(resolution.session_id).model_copy(deep=True)
+        module = self._load_module(session_snapshot.module_id)
+        return pipeline.render_after_turn(
+            resolution=resolution,
+            session_snapshot=session_snapshot,
+            module=module,
+            forbidden_facts=forbidden_facts or [],
+            max_prompt_chars=max_prompt_chars,
         )
 
     def list_available_actions(
