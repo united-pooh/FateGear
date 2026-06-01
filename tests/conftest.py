@@ -19,4 +19,4 @@ def pytest_sessionstart(session) -> None:
         subdir = LOG_ROOT / subdir_name
         subdir.mkdir(parents=True, exist_ok=True)
         for log_file in subdir.glob("*.log"):
-            log_file.unlink()
+            log_file.unlink(missing_ok=True)

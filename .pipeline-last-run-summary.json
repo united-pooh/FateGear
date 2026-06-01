@@ -1,0 +1,115 @@
+{
+  "version": "1.0",
+  "run_id": "RUN-20260601-KP-NARRATION-CONTEXT",
+  "completed_at": "2026-06-01T21:55:22+08:00",
+  "verdict": "accept",
+  "restart_from": null,
+  "skill_usage_summary": [
+    {
+      "scope": "spec",
+      "required_skills": [
+        "superpowers"
+      ],
+      "applied_skills": [
+        "superpowers"
+      ],
+      "issues": []
+    },
+    {
+      "scope": "plan",
+      "required_skills": [
+        "superpowers"
+      ],
+      "applied_skills": [
+        "superpowers"
+      ],
+      "issues": []
+    },
+    {
+      "scope": "GROUP-1/execution",
+      "required_skills": [],
+      "applied_skills": [],
+      "issues": []
+    },
+    {
+      "scope": "GROUP-2/execution",
+      "required_skills": [],
+      "applied_skills": [],
+      "issues": []
+    }
+  ],
+  "merge_summary": {
+    "groups": [
+      {
+        "group_id": "GROUP-1",
+        "iteration": 2,
+        "status": "merged"
+      },
+      {
+        "group_id": "GROUP-2",
+        "iteration": 2,
+        "status": "merged"
+      }
+    ]
+  },
+  "validation_summary": [
+    {
+      "group_id": "GROUP-1",
+      "iteration": 2,
+      "status": "passed"
+    },
+    {
+      "group_id": "GROUP-2",
+      "iteration": 2,
+      "status": "passed"
+    }
+  ],
+  "complexity_summary": [
+    {
+      "group_id": "GROUP-1",
+      "iteration": 2,
+      "readability_conclusion": "high",
+      "complexity_conclusion": "low",
+      "max_complexity": 17
+    },
+    {
+      "group_id": "GROUP-2",
+      "iteration": 2,
+      "readability_conclusion": "high",
+      "complexity_conclusion": "low",
+      "max_complexity": 4
+    }
+  ],
+  "tree_grading_summary": [
+    {
+      "group_id": "GROUP-1",
+      "iteration": 2,
+      "verdict": "pass"
+    },
+    {
+      "group_id": "GROUP-2",
+      "iteration": 2,
+      "verdict": "pass"
+    }
+  ],
+  "qa_summary": [
+    {
+      "group_id": "GROUP-1",
+      "iteration": 2,
+      "status": "pass"
+    },
+    {
+      "group_id": "GROUP-2",
+      "iteration": 2,
+      "status": "pass"
+    }
+  ],
+  "cleanup_summary": {
+    "deleted_workspace": true,
+    "deleted_paths": [
+      ".pipeline-workspace"
+    ],
+    "retained_file": ".pipeline-last-run-summary.json"
+  },
+  "codex_pet_events": []
+}
