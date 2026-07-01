@@ -1,0 +1,107 @@
+{
+  "grading": {
+    "version": "1.0",
+    "group_id": "GROUP-4",
+    "iteration": 2,
+    "grader_id": 1,
+    "task_id": "GROUP-4-task",
+    "node_results": [
+      {
+        "node_id": "B1-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/pipeline.py: NarrationPipeline accepts optional graph_store: NarrationGraphStore | None = None.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B1-D2-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/pipeline.py: render_after_turn writes repository and vector memory before graph_store.ingest_record(record).",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B2-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/pipeline.py: graph_store is a sink for accepted records and has no runtime mutation path.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B2-D2-01",
+        "raw_score": 1,
+        "evidence": "tests/scene/test_narration_pipeline.py: asserts SessionMapState dump is unchanged and graph fact value is written.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B3-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/__init__.py: exports NarrationGraphStore, PersistentNarrationMemoryStore, and SQLiteNarrationGraphMemory.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B3-D2-01",
+        "raw_score": 1,
+        "evidence": "tests/scene/test_narration_pipeline.py: asserts record, repository, memory_store, and graph_store agree on accepted patch.",
+        "failure_reason": null,
+        "suggestion": null
+      }
+    ]
+  },
+  "validation": {
+    "artifactType": "tree-grading-individual",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-4",
+      "iteration": 2,
+      "grader_id": 1,
+      "task_id": "GROUP-4-task",
+      "node_results": [
+        {
+          "node_id": "B1-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/pipeline.py: NarrationPipeline accepts optional graph_store: NarrationGraphStore | None = None.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B1-D2-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/pipeline.py: render_after_turn writes repository and vector memory before graph_store.ingest_record(record).",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B2-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/pipeline.py: graph_store is a sink for accepted records and has no runtime mutation path.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B2-D2-01",
+          "raw_score": 1,
+          "evidence": "tests/scene/test_narration_pipeline.py: asserts SessionMapState dump is unchanged and graph fact value is written.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B3-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/__init__.py: exports NarrationGraphStore, PersistentNarrationMemoryStore, and SQLiteNarrationGraphMemory.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B3-D2-01",
+          "raw_score": 1,
+          "evidence": "tests/scene/test_narration_pipeline.py: asserts record, repository, memory_store, and graph_store agree on accepted patch.",
+          "failure_reason": null,
+          "suggestion": null
+        }
+      ]
+    }
+  }
+}

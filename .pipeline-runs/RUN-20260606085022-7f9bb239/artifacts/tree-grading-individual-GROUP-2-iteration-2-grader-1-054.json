@@ -1,0 +1,135 @@
+{
+  "grading": {
+    "version": "1.0",
+    "group_id": "GROUP-2",
+    "iteration": 2,
+    "grader_id": 1,
+    "task_id": "GROUP-2-task",
+    "node_results": [
+      {
+        "node_id": "B1-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/memory.py: InMemoryVectorContextStore.retrieve and PersistentNarrationMemoryStore.retrieve both call _matches_packet_scope, allowing exact session/module or explicit global seed only.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B1-D2-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/memory.py: _matches_search_scope now requires both session_id and module_id for ordinary scoped memories; tests/scene/test_narration_memory_persistence.py proves partial scope returns no scoped record.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B2-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/memory.py: forget/redact/stale states stay out of default retrieve/search and remain visible through audit/include_inactive.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B2-D2-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/memory.py: _supersede_patch_memories stales prior same-scope same-path patch memories and records supersedes on the new memory.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B3-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/memory.py: _load parses valid JSONL rows and _persist writes deterministic JSONL through a temp file.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B3-D2-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/memory.py: _load records bad JSONL rows in load_errors and store methods use RLock for in-process mutation/persist protection.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B4-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/memory.py: _patch_memory preserves patch.source_event_ids and falls back to record.source_event_ids only when patch ids are empty.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B4-D2-01",
+        "raw_score": 1,
+        "evidence": "tests/scene/test_narration_memory.py and tests/scene/test_narration_memory_persistence.py: tests cover in-memory scope, persistent session/module scope, global seed, patch provenance, supersession, redact, bad JSONL, search, and audit.",
+        "failure_reason": null,
+        "suggestion": null
+      }
+    ]
+  },
+  "validation": {
+    "artifactType": "tree-grading-individual",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-2",
+      "iteration": 2,
+      "grader_id": 1,
+      "task_id": "GROUP-2-task",
+      "node_results": [
+        {
+          "node_id": "B1-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/memory.py: InMemoryVectorContextStore.retrieve and PersistentNarrationMemoryStore.retrieve both call _matches_packet_scope, allowing exact session/module or explicit global seed only.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B1-D2-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/memory.py: _matches_search_scope now requires both session_id and module_id for ordinary scoped memories; tests/scene/test_narration_memory_persistence.py proves partial scope returns no scoped record.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B2-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/memory.py: forget/redact/stale states stay out of default retrieve/search and remain visible through audit/include_inactive.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B2-D2-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/memory.py: _supersede_patch_memories stales prior same-scope same-path patch memories and records supersedes on the new memory.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B3-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/memory.py: _load parses valid JSONL rows and _persist writes deterministic JSONL through a temp file.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B3-D2-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/memory.py: _load records bad JSONL rows in load_errors and store methods use RLock for in-process mutation/persist protection.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B4-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/memory.py: _patch_memory preserves patch.source_event_ids and falls back to record.source_event_ids only when patch ids are empty.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B4-D2-01",
+          "raw_score": 1,
+          "evidence": "tests/scene/test_narration_memory.py and tests/scene/test_narration_memory_persistence.py: tests cover in-memory scope, persistent session/module scope, global seed, patch provenance, supersession, redact, bad JSONL, search, and audit.",
+          "failure_reason": null,
+          "suggestion": null
+        }
+      ]
+    }
+  }
+}

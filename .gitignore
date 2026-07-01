@@ -157,6 +157,12 @@ venv.bak/
 # mypy
 .mypy_cache/
 
+# macOS
+.DS_Store
+
+# Local pipeline scratch workspace
+.pipeline-workspace/
+
 # Test runtime logs
 log/
 .dmypy.json

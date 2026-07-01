@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "status": "implemented",
+  "summary": "Aligned memory valid_to_turn with graph half-open validity and made InMemoryVectorContextStore respect active/status/validity filters.",
+  "changed_files": [
+    "src/scenario/narration/memory.py",
+    "tests/scene/test_narration_memory.py",
+    "tests/scene/test_narration_memory_persistence.py",
+    "docs/codex/adr/2026-06-06-narration-memory-boundary.md"
+  ],
+  "validation": [
+    "memory tests -> 11 passed",
+    "focused narration -> 26 passed",
+    "offline scene -> 117 passed, 1 deselected",
+    "compileall/ruff/diff -> passed"
+  ]
+}

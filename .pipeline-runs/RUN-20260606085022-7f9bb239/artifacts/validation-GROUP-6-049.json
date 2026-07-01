@@ -1,0 +1,121 @@
+{
+  "validationReport": {
+    "version": "1.0",
+    "group_id": "GROUP-6",
+    "iteration": 1,
+    "detected_language": "python",
+    "status": "passed",
+    "commands_run": [
+      {
+        "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py tests/scene/test_narration_graph_memory.py tests/scene/test_narration_pipeline.py tests/scene/test_narration_prompt.py tests/scene/test_narration_validator.py -q",
+        "type": "check",
+        "exit_code": 0,
+        "output": "24 passed in 0.28s"
+      },
+      {
+        "command": "pytest tests/scene/test_narration_*.py tests/scene/test_keeper_render_agent.py -q",
+        "type": "check",
+        "exit_code": 0,
+        "output": "40 passed in 0.36s"
+      },
+      {
+        "command": "pytest tests/scene -q -k 'not online'",
+        "type": "check",
+        "exit_code": 0,
+        "output": "115 passed, 1 deselected in 7.69s"
+      },
+      {
+        "command": "pytest tests/scene -q",
+        "type": "check",
+        "exit_code": 1,
+        "output": "1 failed, 115 passed in 58.51s. Only failure: tests/scene/test_runtime_online_agents.py::test_generic_mvp_runtime_online_agents_happy_path. Captured warnings show OpenAI API 429 insufficient_quota, causing fallback_used=True; this is external online provider quota, not an implementation regression in narration memory/graph."
+      },
+      {
+        "command": "python -m compileall -q src/scenario/narration",
+        "type": "check",
+        "exit_code": 0,
+        "output": "passed with no output"
+      },
+      {
+        "command": "git diff --check -- src/scenario/narration tests/scene docs/codex .pipeline-runs/RUN-20260606085022-7f9bb239",
+        "type": "check",
+        "exit_code": 0,
+        "output": "passed with no whitespace errors"
+      },
+      {
+        "command": "python -m ruff check src/scenario/narration tests/scene/test_narration_memory_persistence.py tests/scene/test_narration_graph_memory.py tests/scene/test_narration_pipeline.py",
+        "type": "check",
+        "exit_code": 0,
+        "output": "All checks passed!"
+      }
+    ],
+    "test_summary": {
+      "total": 116,
+      "passed": 115,
+      "failed": 1,
+      "skipped": 1
+    },
+    "blocking_failures": []
+  },
+  "validation": {
+    "artifactType": "validation-report",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-6",
+      "iteration": 1,
+      "detected_language": "python",
+      "status": "passed",
+      "commands_run": [
+        {
+          "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py tests/scene/test_narration_graph_memory.py tests/scene/test_narration_pipeline.py tests/scene/test_narration_prompt.py tests/scene/test_narration_validator.py -q",
+          "type": "check",
+          "exit_code": 0,
+          "output": "24 passed in 0.28s"
+        },
+        {
+          "command": "pytest tests/scene/test_narration_*.py tests/scene/test_keeper_render_agent.py -q",
+          "type": "check",
+          "exit_code": 0,
+          "output": "40 passed in 0.36s"
+        },
+        {
+          "command": "pytest tests/scene -q -k 'not online'",
+          "type": "check",
+          "exit_code": 0,
+          "output": "115 passed, 1 deselected in 7.69s"
+        },
+        {
+          "command": "pytest tests/scene -q",
+          "type": "check",
+          "exit_code": 1,
+          "output": "1 failed, 115 passed in 58.51s. Only failure: tests/scene/test_runtime_online_agents.py::test_generic_mvp_runtime_online_agents_happy_path. Captured warnings show OpenAI API 429 insufficient_quota, causing fallback_used=True; this is external online provider quota, not an implementation regression in narration memory/graph."
+        },
+        {
+          "command": "python -m compileall -q src/scenario/narration",
+          "type": "check",
+          "exit_code": 0,
+          "output": "passed with no output"
+        },
+        {
+          "command": "git diff --check -- src/scenario/narration tests/scene docs/codex .pipeline-runs/RUN-20260606085022-7f9bb239",
+          "type": "check",
+          "exit_code": 0,
+          "output": "passed with no whitespace errors"
+        },
+        {
+          "command": "python -m ruff check src/scenario/narration tests/scene/test_narration_memory_persistence.py tests/scene/test_narration_graph_memory.py tests/scene/test_narration_pipeline.py",
+          "type": "check",
+          "exit_code": 0,
+          "output": "All checks passed!"
+        }
+      ],
+      "test_summary": {
+        "total": 116,
+        "passed": 115,
+        "failed": 1,
+        "skipped": 1
+      },
+      "blocking_failures": []
+    }
+  }
+}

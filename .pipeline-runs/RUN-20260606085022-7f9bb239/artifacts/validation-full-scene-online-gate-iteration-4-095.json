@@ -1,0 +1,7 @@
+{
+  "command": "pytest tests/scene -q",
+  "result": "1 failed, 119 passed in 57.36s",
+  "failure": "tests/scene/test_runtime_online_agents.py::test_generic_mvp_runtime_online_agents_happy_path",
+  "external_error": "OpenAI API 429 insufficient_quota caused agent fallbacks; assertion expected no fallback_used events",
+  "assessment": "non-blocking for narration memory persistence/graph changes; offline and focused gates passed"
+}

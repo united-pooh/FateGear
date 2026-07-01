@@ -6,6 +6,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from cards.domain.card import InvestigatorCard
@@ -18,7 +19,12 @@ from ..io.module_loader import MODULE_ROOT, load_module_by_id
 from ..module.models import ModuleAction, ModuleDefinition
 from ..scene.models import SceneLink
 from ..scene.rules import SceneMovementRules
-from ..session.state import SceneInstanceState, SessionMapState, SessionPlayerState
+from ..session.state import (
+    IllegalMoveRiskState,
+    SceneInstanceState,
+    SessionMapState,
+    SessionPlayerState,
+)
 from ..story.models import StorySignal, StoryState
 from ..story.services import StoryStateService, TransitionValidator
 from .contracts import (
@@ -30,9 +36,18 @@ from .contracts import (
     SceneIntent,
     TurnResolution,
 )
+from .movement_risk import (
+    OFF_MAP_DECAY_PER_SAFE_TURN,
+    off_map_penalty_tier,
+    off_map_threshold_value,
+    preview_off_map_risk_update,
+)
 from .rule_engine import RollProvider, RuleEngine
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from scenario.narration import KeeperNarrationRecord, NarrationPipeline
 
 
 class SceneRuntime:
@@ -252,6 +267,11 @@ class SceneRuntime:
         scene_clears: set[str] = set()
         scene_action_history: dict[str, set[str]] = defaultdict(set)
         pending_moves: dict[str, str] = {}
+        movement_risk_states: dict[str, IllegalMoveRiskState] = {
+            player_id: player_state.illegal_move_risk.model_copy(deep=True)
+            for player_id, player_state in session.player_states.items()
+        }
+        players_with_off_map_move: set[str] = set()
         scene_batches: list[SceneBatchResolution] = []
 
         # 先按玩家当前位置分组，形成场景批次结算。
@@ -385,6 +405,15 @@ class SceneRuntime:
                         pending_moves[player_id] = intent.target_scene_id
                     from_scene_name = scene_by_id[player_state.current_scene_id].name
                     target_scene_name = scene_by_id[intent.target_scene_id].name
+                    violation_kind = (
+                        "off_map_move"
+                        if not decision.allowed and decision.reason_code == "no_link"
+                        else ""
+                    )
+                    reason_code = decision.reason_code
+                    penalty_tier = ""
+                    illegal_value: int | None = None
+                    effects_applied: list[str] = []
                     event_log.append(
                         RuntimeEvent(
                             type="movement_attempted",
@@ -396,6 +425,8 @@ class SceneRuntime:
                             to_scene_name=target_scene_name,
                             success=decision.allowed,
                             reason=decision.reason,
+                            reason_code=reason_code,
+                            violation_kind=violation_kind,
                             message=(
                                 f"玩家 {player_id} 尝试移动："
                                 f"{from_scene_name}（{player_state.current_scene_id}） -> "
@@ -409,6 +440,23 @@ class SceneRuntime:
                             ),
                         )
                     )
+                    if violation_kind == "off_map_move":
+                        players_with_off_map_move.add(player_id)
+                        risk_update, penalty_event = self._record_off_map_move_risk(
+                            risk=movement_risk_states[player_id],
+                            player_id=player_id,
+                            turn_no=snapshot.current_turn,
+                            from_scene_id=player_state.current_scene_id,
+                            from_scene_name=from_scene_name,
+                            to_scene_id=intent.target_scene_id,
+                            to_scene_name=target_scene_name,
+                        )
+                        event_log.append(risk_update)
+                        penalty_tier = risk_update.penalty_tier
+                        illegal_value = risk_update.score_after
+                        if penalty_event is not None:
+                            event_log.append(penalty_event)
+                            effects_applied = list(penalty_event.effects_applied)
                     outcomes.append(
                         IntentResolution(
                             player_id=player_id,
@@ -416,7 +464,12 @@ class SceneRuntime:
                             intent_type="move",
                             success=decision.allowed,
                             reason=decision.reason,
+                            reason_code=reason_code,
+                            violation_kind=violation_kind,
+                            penalty_tier=penalty_tier,
+                            illegal_value=illegal_value,
                             target_scene_id=intent.target_scene_id,
+                            effects_applied=effects_applied,
                         )
                     )
                     continue
@@ -642,8 +695,21 @@ class SceneRuntime:
                 )
             )
 
+        for player_id, risk in movement_risk_states.items():
+            if player_id in players_with_off_map_move:
+                continue
+            decay_event = self._decay_off_map_move_risk(
+                risk=risk,
+                player_id=player_id,
+                turn_no=snapshot.current_turn,
+            )
+            if decay_event is not None:
+                event_log.append(decay_event)
+
         # 批次处理结束后统一提交状态，先清空待结算意图。
         session.pending_intents = {}
+        for player_id, risk in movement_risk_states.items():
+            session.player_states[player_id].illegal_move_risk = risk
         for player_id, target_scene_id in pending_moves.items():
             player_state = session.player_states[player_id]
             previous_scene_id = player_state.current_scene_id
@@ -863,6 +929,144 @@ class SceneRuntime:
             ending_result=ending_result,
         )
 
+    def _record_off_map_move_risk(
+        self,
+        *,
+        risk: IllegalMoveRiskState,
+        player_id: str,
+        turn_no: int,
+        from_scene_id: str,
+        from_scene_name: str,
+        to_scene_id: str,
+        to_scene_name: str,
+    ) -> tuple[RuntimeEvent, RuntimeEvent | None]:
+        score_before = risk.illegal_value
+        previous_tier = risk.last_penalty_tier
+        preview = preview_off_map_risk_update(risk, turn_no=turn_no)
+        consecutive_count = int(preview["consecutive_count"])
+        increment = int(preview["delta"])
+        score_after = int(preview["score_after"])
+        risk.illegal_value = score_after
+        risk.consecutive_count = consecutive_count
+        risk.total_count += 1
+        risk.recent_window_count += 1
+        risk.last_violation_turn = turn_no
+        risk.last_penalty_tier = str(preview["penalty_tier"])
+        if risk.last_penalty_tier == "severe_penalty":
+            risk.severe_triggered = True
+
+        threshold_crossed = str(preview["threshold_crossed"])
+        threshold_value = off_map_threshold_value(threshold_crossed)
+        risk_event_id = (
+            f"movement_risk:{player_id}:{turn_no}:"
+            f"{from_scene_id}->{to_scene_id}:{risk.total_count}"
+        )
+        risk_event = RuntimeEvent(
+            type="movement_risk_updated",
+            turn_no=turn_no,
+            player_id=player_id,
+            from_scene_id=from_scene_id,
+            from_scene_name=from_scene_name,
+            to_scene_id=to_scene_id,
+            to_scene_name=to_scene_name,
+            reason="场景之间不存在可通行连线，记录越界移动风险。",
+            reason_code="no_link",
+            violation_kind="off_map_move",
+            score_before=score_before,
+            score_after=score_after,
+            delta=increment,
+            threshold_crossed=threshold_crossed,
+            penalty_tier=risk.last_penalty_tier,
+            consecutive_count=risk.consecutive_count,
+            recent_window_count=risk.recent_window_count,
+            required_threshold=threshold_value,
+            source_event_id=risk_event_id,
+            message=(
+                f"越界移动风险更新：玩家 {player_id} "
+                f"{from_scene_name}（{from_scene_id}） -> "
+                f"{to_scene_name}（{to_scene_id}），"
+                f"分数 {score_before} + {increment} = {score_after}，"
+                f"等级={risk.last_penalty_tier}"
+            ),
+        )
+
+        if risk.last_penalty_tier not in {"major_penalty", "severe_penalty"}:
+            return risk_event, None
+        if threshold_crossed not in {"major_penalty", "severe_penalty"} and (
+            previous_tier in {"major_penalty", "severe_penalty"}
+        ):
+            return risk_event, None
+
+        required_threshold = off_map_threshold_value(risk.last_penalty_tier)
+        penalty_event = RuntimeEvent(
+            type="movement_penalty_triggered",
+            turn_no=turn_no,
+            player_id=player_id,
+            from_scene_id=from_scene_id,
+            from_scene_name=from_scene_name,
+            to_scene_id=to_scene_id,
+            to_scene_name=to_scene_name,
+            reason="越界移动风险达到重度惩罚阈值。",
+            reason_code="no_link",
+            violation_kind="off_map_move",
+            score_before=score_before,
+            score_after=score_after,
+            delta=increment,
+            threshold_crossed=threshold_crossed or risk.last_penalty_tier,
+            penalty_tier=risk.last_penalty_tier,
+            consecutive_count=risk.consecutive_count,
+            recent_window_count=risk.recent_window_count,
+            required_threshold=required_threshold,
+            actual_score=score_after,
+            source_event_id=risk_event_id,
+            effects_applied=[f"off_map_{risk.last_penalty_tier}"],
+            message=(
+                f"触发越界移动惩罚：玩家 {player_id} "
+                f"风险={score_after}/{required_threshold}，"
+                f"等级={risk.last_penalty_tier}"
+            ),
+        )
+        return risk_event, penalty_event
+
+    def _decay_off_map_move_risk(
+        self,
+        *,
+        risk: IllegalMoveRiskState,
+        player_id: str,
+        turn_no: int,
+    ) -> RuntimeEvent | None:
+        if risk.illegal_value <= 0:
+            risk.consecutive_count = 0
+            return None
+
+        score_before = risk.illegal_value
+        score_after = max(0, score_before - OFF_MAP_DECAY_PER_SAFE_TURN)
+        risk.illegal_value = score_after
+        risk.consecutive_count = 0
+        risk.last_penalty_tier = off_map_penalty_tier(score_after)
+        if score_after == 0:
+            risk.recent_window_count = 0
+
+        return RuntimeEvent(
+            type="movement_risk_updated",
+            turn_no=turn_no,
+            player_id=player_id,
+            reason="本回合未发生越界移动，越界移动风险缓慢衰减。",
+            reason_code="risk_decay",
+            score_before=score_before,
+            score_after=score_after,
+            delta=score_after - score_before,
+            decay_applied=OFF_MAP_DECAY_PER_SAFE_TURN,
+            penalty_tier=risk.last_penalty_tier,
+            consecutive_count=risk.consecutive_count,
+            recent_window_count=risk.recent_window_count,
+            message=(
+                f"越界移动风险衰减：玩家 {player_id} "
+                f"分数 {score_before} -> {score_after}，"
+                f"等级={risk.last_penalty_tier}"
+            ),
+        )
+
     def list_reachable_scenes(
         self,
         session_state: SessionMapState,
@@ -879,6 +1083,33 @@ class SceneRuntime:
         )
         return movement_rules.list_reachable_scenes(
             from_scene_id=player_state.current_scene_id
+        )
+
+    def render_narration_after_turn(
+        self,
+        resolution: TurnResolution,
+        pipeline: "NarrationPipeline",
+        *,
+        forbidden_facts: list[str] | None = None,
+        max_prompt_chars: int | None = None,
+    ) -> "KeeperNarrationRecord":
+        """Run an explicit post-resolution narration hook.
+
+        The helper deep-copies committed session state and passes it to the
+        narration layer. It does not change resolve_turn() semantics and does
+        not mutate authoritative session fields.
+        """
+
+        session_snapshot = self._get_session(resolution.session_id).model_copy(
+            deep=True
+        )
+        module = self._load_module(session_snapshot.module_id)
+        return pipeline.render_after_turn(
+            resolution=resolution,
+            session_snapshot=session_snapshot,
+            module=module,
+            forbidden_facts=forbidden_facts or [],
+            max_prompt_chars=max_prompt_chars,
         )
 
     def list_available_actions(

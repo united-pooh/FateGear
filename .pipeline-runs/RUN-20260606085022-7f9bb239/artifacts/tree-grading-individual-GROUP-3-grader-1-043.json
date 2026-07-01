@@ -1,0 +1,135 @@
+{
+  "grading": {
+    "version": "1.0",
+    "group_id": "GROUP-3",
+    "iteration": 1,
+    "grader_id": 1,
+    "task_id": "GROUP-3-task",
+    "node_results": [
+      {
+        "node_id": "B1-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/graph_memory.py: entities/facts/edges schema includes session_id and module_id and facts_for_entity/search_facts require explicit scope parameters.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B1-D2-01",
+        "raw_score": 1,
+        "evidence": "tests/scene/test_narration_graph_memory.py: test_graph_memory_supersedes_only_within_same_session_and_module asserts same path in other sessions/modules remains active.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B2-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/graph_memory.py: ingest_record calls _ensure_ingestable_patch_path, which uses is_authoritative_path and is_allowed_narrative_path.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B2-D2-01",
+        "raw_score": 1,
+        "evidence": "tests/scene/test_narration_graph_memory.py: parametrized rejection test constructs story_state.current_stage_id and private_notes.foyer records and verifies no facts are written.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B3-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/graph_memory.py: facts_for_entity supports as_of_turn using valid_from_turn <= turn and turn < valid_to_turn half-open logic; facts_as_of delegates to it.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B3-D2-01",
+        "raw_score": 1,
+        "evidence": "tests/scene/test_narration_graph_memory.py: as-of tests cover turns 1, 2, and replacement at turn 3; include_inactive/search tests expose superseded history.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B4-D1-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/graph_memory.py: _initialize creates schema_meta/schema_version plus CHECK, FOREIGN KEY, and scope indexes with PRAGMA foreign_keys enabled.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B4-D2-01",
+        "raw_score": 1,
+        "evidence": "src/scenario/narration/graph_memory.py: close, __enter__/__exit__, export_audit, and source_event_ids decoding expose lifecycle and scoped audit state; tests cover close/reopen.",
+        "failure_reason": null,
+        "suggestion": null
+      }
+    ]
+  },
+  "validation": {
+    "artifactType": "tree-grading-individual",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-3",
+      "iteration": 1,
+      "grader_id": 1,
+      "task_id": "GROUP-3-task",
+      "node_results": [
+        {
+          "node_id": "B1-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/graph_memory.py: entities/facts/edges schema includes session_id and module_id and facts_for_entity/search_facts require explicit scope parameters.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B1-D2-01",
+          "raw_score": 1,
+          "evidence": "tests/scene/test_narration_graph_memory.py: test_graph_memory_supersedes_only_within_same_session_and_module asserts same path in other sessions/modules remains active.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B2-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/graph_memory.py: ingest_record calls _ensure_ingestable_patch_path, which uses is_authoritative_path and is_allowed_narrative_path.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B2-D2-01",
+          "raw_score": 1,
+          "evidence": "tests/scene/test_narration_graph_memory.py: parametrized rejection test constructs story_state.current_stage_id and private_notes.foyer records and verifies no facts are written.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B3-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/graph_memory.py: facts_for_entity supports as_of_turn using valid_from_turn <= turn and turn < valid_to_turn half-open logic; facts_as_of delegates to it.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B3-D2-01",
+          "raw_score": 1,
+          "evidence": "tests/scene/test_narration_graph_memory.py: as-of tests cover turns 1, 2, and replacement at turn 3; include_inactive/search tests expose superseded history.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B4-D1-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/graph_memory.py: _initialize creates schema_meta/schema_version plus CHECK, FOREIGN KEY, and scope indexes with PRAGMA foreign_keys enabled.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B4-D2-01",
+          "raw_score": 1,
+          "evidence": "src/scenario/narration/graph_memory.py: close, __enter__/__exit__, export_audit, and source_event_ids decoding expose lifecycle and scoped audit state; tests cover close/reopen.",
+          "failure_reason": null,
+          "suggestion": null
+        }
+      ]
+    }
+  }
+}

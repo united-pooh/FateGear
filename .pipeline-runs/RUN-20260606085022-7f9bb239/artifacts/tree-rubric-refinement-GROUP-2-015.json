@@ -1,0 +1,277 @@
+{
+  "rubric": {
+    "version": "1.0",
+    "task_id": "GROUP-2-task",
+    "group_id": "GROUP-2",
+    "task_type": "code_implementation",
+    "branches": [
+      {
+        "name": "作用域隔离",
+        "name_en": "Scope Isolation",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B1-D1-01",
+            "content": "retrieve 只返回同 session_id/module_id 的 active public record memory，空 scope seed 除外。 评分必须只引用 final-output-files 中的路径。",
+            "source": "KEEP_01",
+            "requirement_ids": [
+              "REQ-003",
+              "REQ-004"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/memory.py",
+              "tests/scene/test_narration_memory_persistence.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B1-D2-01",
+            "content": "search 提供 session_id/module_id 过滤，并用显式空 scope 表达 global seed，而非默认跨团检索。 评分必须只引用 final-output-files 中的路径。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-003",
+              "REQ-004"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/memory.py",
+              "tests/scene/test_narration_memory_persistence.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "生命周期与失效",
+        "name_en": "Lifecycle And Invalidation",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B2-D1-01",
+            "content": "forget/redact/stale 状态在 retrieve/search 默认路径中不可见，但 audit/include_inactive 可见。 评分必须只引用 final-output-files 中的路径。",
+            "source": "KEEP_02",
+            "requirement_ids": [
+              "REQ-002"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/memory.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B2-D2-01",
+            "content": "同 scope 同 NarrativeState path 的新 patch 会 supersede 旧 patch memory，旧项 valid_to_turn 半开截止，新项记录 supersedes。 评分必须只引用 final-output-files 中的路径。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-002",
+              "REQ-004"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/memory.py",
+              "tests/scene/test_narration_memory_persistence.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "持久化与恢复",
+        "name_en": "Persistence And Recovery",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B3-D1-01",
+            "content": "JSONL 写入后重建 store 能加载所有有效 memory，并保持 metadata。 评分必须只引用 final-output-files 中的路径。",
+            "source": "KEEP_03",
+            "requirement_ids": [
+              "REQ-001"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/memory.py",
+              "tests/scene/test_narration_memory_persistence.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B3-D2-01",
+            "content": "坏 JSONL 行不阻断 store 启动，load_errors 进入 audit，持久化操作有本进程锁保护。 评分必须只引用 final-output-files 中的路径。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-001",
+              "REQ-002"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/memory.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "来源与测试",
+        "name_en": "Provenance And Tests",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B4-D1-01",
+            "content": "patch memory 使用 patch.source_event_ids，缺省时才回退到 record.source_event_ids。 评分必须只引用 final-output-files 中的路径。",
+            "source": "KEEP_04",
+            "requirement_ids": [
+              "REQ-004"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/memory.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B4-D2-01",
+            "content": "测试覆盖 cross-session/module、global seed、patch provenance、supersession、redaction、bad JSONL 和 audit。 评分必须只引用 final-output-files 中的路径。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-008"
+            ],
+            "output_file_hints": [
+              "tests/scene/test_narration_memory_persistence.py"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "validation": {
+    "artifactType": "tree-rubrics-refined",
+    "artifact": {
+      "version": "1.0",
+      "task_id": "GROUP-2-task",
+      "group_id": "GROUP-2",
+      "task_type": "code_implementation",
+      "branches": [
+        {
+          "name": "作用域隔离",
+          "name_en": "Scope Isolation",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B1-D1-01",
+              "content": "retrieve 只返回同 session_id/module_id 的 active public record memory，空 scope seed 除外。 评分必须只引用 final-output-files 中的路径。",
+              "source": "KEEP_01",
+              "requirement_ids": [
+                "REQ-003",
+                "REQ-004"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/memory.py",
+                "tests/scene/test_narration_memory_persistence.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B1-D2-01",
+              "content": "search 提供 session_id/module_id 过滤，并用显式空 scope 表达 global seed，而非默认跨团检索。 评分必须只引用 final-output-files 中的路径。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-003",
+                "REQ-004"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/memory.py",
+                "tests/scene/test_narration_memory_persistence.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "生命周期与失效",
+          "name_en": "Lifecycle And Invalidation",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B2-D1-01",
+              "content": "forget/redact/stale 状态在 retrieve/search 默认路径中不可见，但 audit/include_inactive 可见。 评分必须只引用 final-output-files 中的路径。",
+              "source": "KEEP_02",
+              "requirement_ids": [
+                "REQ-002"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/memory.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B2-D2-01",
+              "content": "同 scope 同 NarrativeState path 的新 patch 会 supersede 旧 patch memory，旧项 valid_to_turn 半开截止，新项记录 supersedes。 评分必须只引用 final-output-files 中的路径。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-002",
+                "REQ-004"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/memory.py",
+                "tests/scene/test_narration_memory_persistence.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "持久化与恢复",
+          "name_en": "Persistence And Recovery",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B3-D1-01",
+              "content": "JSONL 写入后重建 store 能加载所有有效 memory，并保持 metadata。 评分必须只引用 final-output-files 中的路径。",
+              "source": "KEEP_03",
+              "requirement_ids": [
+                "REQ-001"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/memory.py",
+                "tests/scene/test_narration_memory_persistence.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B3-D2-01",
+              "content": "坏 JSONL 行不阻断 store 启动，load_errors 进入 audit，持久化操作有本进程锁保护。 评分必须只引用 final-output-files 中的路径。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-001",
+                "REQ-002"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/memory.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "来源与测试",
+          "name_en": "Provenance And Tests",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B4-D1-01",
+              "content": "patch memory 使用 patch.source_event_ids，缺省时才回退到 record.source_event_ids。 评分必须只引用 final-output-files 中的路径。",
+              "source": "KEEP_04",
+              "requirement_ids": [
+                "REQ-004"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/memory.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B4-D2-01",
+              "content": "测试覆盖 cross-session/module、global seed、patch provenance、supersession、redaction、bad JSONL 和 audit。 评分必须只引用 final-output-files 中的路径。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-008"
+              ],
+              "output_file_hints": [
+                "tests/scene/test_narration_memory_persistence.py"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "execution": {
+    "version": "1.0",
+    "group_id": "GROUP-5",
+    "iteration": 3,
+    "base_ref": "workspace://iteration-3-GROUP-5-base",
+    "proposal_ref": "orchestrator://memory-validity-hardening",
+    "applied_skills": [],
+    "status": "implemented",
+    "changed_files": [
+      "docs/codex/adr/2026-06-06-narration-memory-boundary.md"
+    ],
+    "requirements_covered": [
+      "REQ-002",
+      "REQ-003",
+      "REQ-004",
+      "REQ-006",
+      "REQ-007"
+    ],
+    "frontend_design_summary": null,
+    "tests_run": [
+      {
+        "command": "Markdown boundary self-review",
+        "status": "passed",
+        "details": "ADR now explicitly documents half-open valid_from_turn/valid_to_turn semantics."
+      }
+    ],
+    "follow_up_notes": [],
+    "blockers": []
+  },
+  "validation": {
+    "artifactType": "execution-report",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-5",
+      "iteration": 3,
+      "base_ref": "workspace://iteration-3-GROUP-5-base",
+      "proposal_ref": "orchestrator://memory-validity-hardening",
+      "applied_skills": [],
+      "status": "implemented",
+      "changed_files": [
+        "docs/codex/adr/2026-06-06-narration-memory-boundary.md"
+      ],
+      "requirements_covered": [
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-006",
+        "REQ-007"
+      ],
+      "frontend_design_summary": null,
+      "tests_run": [
+        {
+          "command": "Markdown boundary self-review",
+          "status": "passed",
+          "details": "ADR now explicitly documents half-open valid_from_turn/valid_to_turn semantics."
+        }
+      ],
+      "follow_up_notes": [],
+      "blockers": []
+    }
+  }
+}

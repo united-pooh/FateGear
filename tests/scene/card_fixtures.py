@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Iterable
 
 from cards import build_investigator_from_mapping, load_skill_template_mapping
 from cards.domain.card import InvestigatorCard
+from scenario.runtime import SceneRuntime, TurnResolution
 
 _FIXTURE_PATH = (
     Path(__file__).resolve().parents[1]
@@ -53,3 +55,7 @@ def build_test_card(
 
 def build_player_cards(player_ids: Iterable[str]) -> dict[str, InvestigatorCard]:
     return {player_id: build_test_card(player_id) for player_id in player_ids}
+
+
+def resolve_turn_sync(runtime: SceneRuntime, session_id: str) -> TurnResolution:
+    return asyncio.run(runtime.resolve_turn(session_id))

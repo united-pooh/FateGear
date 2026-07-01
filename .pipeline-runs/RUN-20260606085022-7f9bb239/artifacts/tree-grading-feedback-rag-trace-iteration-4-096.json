@@ -1,0 +1,36 @@
+{
+  "agent": "Erdos tree-rubric grader via orchestrator",
+  "score": 0.91,
+  "rubric": {
+    "boundary_correctness": {
+      "score": 1,
+      "evidence": "No runtime/StoryState/SessionMapState writes added; trace is inside PersistentNarrationMemoryStore only."
+    },
+    "traceability": {
+      "score": 0.95,
+      "evidence": "Trace includes memory_id, status, kind, scope, session/module, source_turn, source_record_id, created_from, validity window, reason and rank."
+    },
+    "isolation": {
+      "score": 1,
+      "evidence": "Unit and real pipeline tests cover other session/module exclusion and global seed allowance."
+    },
+    "invalidation": {
+      "score": 0.9,
+      "evidence": "Trace exposes stale/expired/rank_limit reasons; existing half-open validity tests still pass."
+    },
+    "audit_privacy": {
+      "score": 0.9,
+      "evidence": "Trace omits source_text and summary_text; export_audit includes trace for debug."
+    },
+    "retrieval_quality": {
+      "score": 0.7,
+      "evidence": "Ranking remains deterministic metadata rank; hybrid retrieval deferred intentionally."
+    }
+  },
+  "blocking_issues": [],
+  "followups": [
+    "Add append-only retrieval analytics if product needs recall frequency/dreaming promotion later.",
+    "Design hybrid BM25/vector route only after corpus and query classes are stable."
+  ],
+  "verdict": "pass"
+}

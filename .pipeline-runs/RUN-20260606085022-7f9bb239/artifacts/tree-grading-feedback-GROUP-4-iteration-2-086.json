@@ -1,0 +1,287 @@
+{
+  "feedback": {
+    "version": "1.0",
+    "group_id": "GROUP-4",
+    "iteration": 2,
+    "task_id": "GROUP-4-task",
+    "threshold": 0.8,
+    "require_depth_one_pass": true,
+    "verdict": "pass",
+    "weighted_score": 1,
+    "pass_rate": 1,
+    "num_branches": 3,
+    "max_depth": 2,
+    "nodes_passed": [
+      "B1-D1-01",
+      "B1-D2-01",
+      "B2-D1-01",
+      "B2-D2-01",
+      "B3-D1-01",
+      "B3-D2-01"
+    ],
+    "nodes_failed": [],
+    "blocking_nodes": [],
+    "non_blocking_nodes": [],
+    "node_results": [
+      {
+        "node_id": "B1-D1-01",
+        "branch": "Pipeline Integration Point",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/pipeline.py: NarrationPipeline accepts optional graph_store: NarrationGraphStore | None = None.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B1-D2-01",
+        "branch": "Pipeline Integration Point",
+        "depth": 2,
+        "weight": 2,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/pipeline.py: render_after_turn writes repository and vector memory before graph_store.ingest_record(record).",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B2-D1-01",
+        "branch": "Runtime Boundary",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/pipeline.py: graph_store is a sink for accepted records and has no runtime mutation path.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B2-D2-01",
+        "branch": "Runtime Boundary",
+        "depth": 2,
+        "weight": 2,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "tests/scene/test_narration_pipeline.py: asserts SessionMapState dump is unchanged and graph fact value is written.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B3-D1-01",
+        "branch": "API And Regression",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/__init__.py: exports NarrationGraphStore, PersistentNarrationMemoryStore, and SQLiteNarrationGraphMemory.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B3-D2-01",
+        "branch": "API And Regression",
+        "depth": 2,
+        "weight": 2,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "tests/scene/test_narration_pipeline.py: asserts record, repository, memory_store, and graph_store agree on accepted patch.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      }
+    ],
+    "summary": "GROUP-4 iteration 2 passes after exporting NarrationGraphStore."
+  },
+  "validation": {
+    "artifactType": "tree-grading-feedback",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-4",
+      "iteration": 2,
+      "task_id": "GROUP-4-task",
+      "threshold": 0.8,
+      "require_depth_one_pass": true,
+      "verdict": "pass",
+      "weighted_score": 1,
+      "pass_rate": 1,
+      "num_branches": 3,
+      "max_depth": 2,
+      "nodes_passed": [
+        "B1-D1-01",
+        "B1-D2-01",
+        "B2-D1-01",
+        "B2-D2-01",
+        "B3-D1-01",
+        "B3-D2-01"
+      ],
+      "nodes_failed": [],
+      "blocking_nodes": [],
+      "non_blocking_nodes": [],
+      "node_results": [
+        {
+          "node_id": "B1-D1-01",
+          "branch": "Pipeline Integration Point",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/pipeline.py: NarrationPipeline accepts optional graph_store: NarrationGraphStore | None = None.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B1-D2-01",
+          "branch": "Pipeline Integration Point",
+          "depth": 2,
+          "weight": 2,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/pipeline.py: render_after_turn writes repository and vector memory before graph_store.ingest_record(record).",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B2-D1-01",
+          "branch": "Runtime Boundary",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/pipeline.py: graph_store is a sink for accepted records and has no runtime mutation path.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B2-D2-01",
+          "branch": "Runtime Boundary",
+          "depth": 2,
+          "weight": 2,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "tests/scene/test_narration_pipeline.py: asserts SessionMapState dump is unchanged and graph fact value is written.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B3-D1-01",
+          "branch": "API And Regression",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/__init__.py: exports NarrationGraphStore, PersistentNarrationMemoryStore, and SQLiteNarrationGraphMemory.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B3-D2-01",
+          "branch": "API And Regression",
+          "depth": 2,
+          "weight": 2,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "tests/scene/test_narration_pipeline.py: asserts record, repository, memory_store, and graph_store agree on accepted patch.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        }
+      ],
+      "summary": "GROUP-4 iteration 2 passes after exporting NarrationGraphStore."
+    }
+  }
+}

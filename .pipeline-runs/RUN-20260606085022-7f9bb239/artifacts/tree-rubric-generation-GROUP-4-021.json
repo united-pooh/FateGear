@@ -1,0 +1,203 @@
+{
+  "rubric": {
+    "version": "1.0",
+    "task_id": "GROUP-4-task",
+    "group_id": "GROUP-4",
+    "task_type": "code_implementation",
+    "branches": [
+      {
+        "name": "Pipeline 接入点",
+        "name_en": "Pipeline Integration Point",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B1-D1-01",
+            "content": "NarrationPipeline 接受可选 graph_store，不改变未传 graph_store 时的默认行为。",
+            "source": "KEEP_01",
+            "requirement_ids": [
+              "REQ-005"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/pipeline.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B1-D2-01",
+            "content": "graph_store.ingest_record 在 validation/repository/vector memory 写入后调用，输入为已接受 KeeperNarrationRecord。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-005"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/pipeline.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "非权威运行时边界",
+        "name_en": "Runtime Boundary",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B2-D1-01",
+            "content": "pipeline 集成后仍只改 NarrativeState/repository/memory/graph，不写 SessionMapState/StoryState。",
+            "source": "KEEP_02",
+            "requirement_ids": [
+              "REQ-003"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/pipeline.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B2-D2-01",
+            "content": "测试比较 render 前后 SessionMapState dump，并确认 graph fact 只是 non-authoritative narrative fact。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-003",
+              "REQ-008"
+            ],
+            "output_file_hints": [
+              "tests/scene/test_narration_pipeline.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "API 与回归",
+        "name_en": "API And Regression",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B3-D1-01",
+            "content": "__init__.py 对 PersistentNarrationMemoryStore/SQLiteNarrationGraphMemory 的导出保持可用。",
+            "source": "KEEP_03",
+            "requirement_ids": [
+              "REQ-006"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/__init__.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B3-D2-01",
+            "content": "pipeline 测试证明 record、repository、memory_store、graph_store 四者一致记录 accepted patch。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-008"
+            ],
+            "output_file_hints": [
+              "tests/scene/test_narration_pipeline.py"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "validation": {
+    "artifactType": "tree-rubrics",
+    "artifact": {
+      "version": "1.0",
+      "task_id": "GROUP-4-task",
+      "group_id": "GROUP-4",
+      "task_type": "code_implementation",
+      "branches": [
+        {
+          "name": "Pipeline 接入点",
+          "name_en": "Pipeline Integration Point",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B1-D1-01",
+              "content": "NarrationPipeline 接受可选 graph_store，不改变未传 graph_store 时的默认行为。",
+              "source": "KEEP_01",
+              "requirement_ids": [
+                "REQ-005"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/pipeline.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B1-D2-01",
+              "content": "graph_store.ingest_record 在 validation/repository/vector memory 写入后调用，输入为已接受 KeeperNarrationRecord。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-005"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/pipeline.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "非权威运行时边界",
+          "name_en": "Runtime Boundary",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B2-D1-01",
+              "content": "pipeline 集成后仍只改 NarrativeState/repository/memory/graph，不写 SessionMapState/StoryState。",
+              "source": "KEEP_02",
+              "requirement_ids": [
+                "REQ-003"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/pipeline.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B2-D2-01",
+              "content": "测试比较 render 前后 SessionMapState dump，并确认 graph fact 只是 non-authoritative narrative fact。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-003",
+                "REQ-008"
+              ],
+              "output_file_hints": [
+                "tests/scene/test_narration_pipeline.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "API 与回归",
+          "name_en": "API And Regression",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B3-D1-01",
+              "content": "__init__.py 对 PersistentNarrationMemoryStore/SQLiteNarrationGraphMemory 的导出保持可用。",
+              "source": "KEEP_03",
+              "requirement_ids": [
+                "REQ-006"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/__init__.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B3-D2-01",
+              "content": "pipeline 测试证明 record、repository、memory_store、graph_store 四者一致记录 accepted patch。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-008"
+              ],
+              "output_file_hints": [
+                "tests/scene/test_narration_pipeline.py"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

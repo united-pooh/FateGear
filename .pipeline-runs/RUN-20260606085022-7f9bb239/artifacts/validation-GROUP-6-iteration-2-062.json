@@ -1,0 +1,133 @@
+{
+  "validationReport": {
+    "version": "1.0",
+    "group_id": "GROUP-6",
+    "iteration": 2,
+    "detected_language": "python",
+    "status": "passed",
+    "commands_run": [
+      {
+        "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py -q",
+        "type": "check",
+        "exit_code": 0,
+        "output": "10 passed in 0.22s"
+      },
+      {
+        "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py tests/scene/test_narration_graph_memory.py tests/scene/test_narration_pipeline.py tests/scene/test_narration_prompt.py tests/scene/test_narration_validator.py -q",
+        "type": "check",
+        "exit_code": 0,
+        "output": "25 passed in 0.29s"
+      },
+      {
+        "command": "pytest tests/scene/test_narration_*.py tests/scene/test_keeper_render_agent.py -q",
+        "type": "check",
+        "exit_code": 0,
+        "output": "41 passed in 0.38s"
+      },
+      {
+        "command": "pytest tests/scene -q -k 'not online'",
+        "type": "check",
+        "exit_code": 0,
+        "output": "116 passed, 1 deselected in 7.81s"
+      },
+      {
+        "command": "pytest tests/scene -q",
+        "type": "check",
+        "exit_code": 1,
+        "output": "1 failed, 116 passed in 60.27s. Only failure: tests/scene/test_runtime_online_agents.py::test_generic_mvp_runtime_online_agents_happy_path. Captured warnings show OpenAI API 429 insufficient_quota, causing fallback_used=True; external online provider quota, not narration memory/graph regression."
+      },
+      {
+        "command": "python -m compileall -q src/scenario/narration",
+        "type": "check",
+        "exit_code": 0,
+        "output": "passed with no output"
+      },
+      {
+        "command": "python -m ruff check .",
+        "type": "check",
+        "exit_code": 0,
+        "output": "All checks passed!"
+      },
+      {
+        "command": "git diff --check -- src/scenario/narration tests/scene docs/codex .pipeline-runs/RUN-20260606085022-7f9bb239",
+        "type": "check",
+        "exit_code": 0,
+        "output": "passed with no whitespace errors"
+      }
+    ],
+    "test_summary": {
+      "total": 117,
+      "passed": 116,
+      "failed": 1,
+      "skipped": 1
+    },
+    "blocking_failures": []
+  },
+  "validation": {
+    "artifactType": "validation-report",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-6",
+      "iteration": 2,
+      "detected_language": "python",
+      "status": "passed",
+      "commands_run": [
+        {
+          "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py -q",
+          "type": "check",
+          "exit_code": 0,
+          "output": "10 passed in 0.22s"
+        },
+        {
+          "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py tests/scene/test_narration_graph_memory.py tests/scene/test_narration_pipeline.py tests/scene/test_narration_prompt.py tests/scene/test_narration_validator.py -q",
+          "type": "check",
+          "exit_code": 0,
+          "output": "25 passed in 0.29s"
+        },
+        {
+          "command": "pytest tests/scene/test_narration_*.py tests/scene/test_keeper_render_agent.py -q",
+          "type": "check",
+          "exit_code": 0,
+          "output": "41 passed in 0.38s"
+        },
+        {
+          "command": "pytest tests/scene -q -k 'not online'",
+          "type": "check",
+          "exit_code": 0,
+          "output": "116 passed, 1 deselected in 7.81s"
+        },
+        {
+          "command": "pytest tests/scene -q",
+          "type": "check",
+          "exit_code": 1,
+          "output": "1 failed, 116 passed in 60.27s. Only failure: tests/scene/test_runtime_online_agents.py::test_generic_mvp_runtime_online_agents_happy_path. Captured warnings show OpenAI API 429 insufficient_quota, causing fallback_used=True; external online provider quota, not narration memory/graph regression."
+        },
+        {
+          "command": "python -m compileall -q src/scenario/narration",
+          "type": "check",
+          "exit_code": 0,
+          "output": "passed with no output"
+        },
+        {
+          "command": "python -m ruff check .",
+          "type": "check",
+          "exit_code": 0,
+          "output": "All checks passed!"
+        },
+        {
+          "command": "git diff --check -- src/scenario/narration tests/scene docs/codex .pipeline-runs/RUN-20260606085022-7f9bb239",
+          "type": "check",
+          "exit_code": 0,
+          "output": "passed with no whitespace errors"
+        }
+      ],
+      "test_summary": {
+        "total": 117,
+        "passed": 116,
+        "failed": 1,
+        "skipped": 1
+      },
+      "blocking_failures": []
+    }
+  }
+}

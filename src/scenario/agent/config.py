@@ -57,10 +57,14 @@ class AgentSettings:
     """
 
     default_provider: OpenAIProviderConfig
+    deepseek_provider: OpenAIProviderConfig
     planner_provider: OpenAIProviderConfig
     narrator_provider: OpenAIProviderConfig
     planner: AgentModelConfig
     narrator: AgentModelConfig
+
+
+_DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com"
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -241,6 +245,18 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
             aliases=("OPENAI_PROJECT",),
         ),
     )
+    deepseek_provider = OpenAIProviderConfig(
+        api_key=_read_str(
+            "DEEPSEEK_API_KEY",
+            env_file_values=env_file_values,
+        ),
+        base_url=_read_str(
+            "DEEPSEEK_BASE_URL",
+            env_file_values=env_file_values,
+            default=_DEEPSEEK_DEFAULT_BASE_URL,
+            aliases=("DEEPSEEK_API_BASE",),
+        ),
+    )
     planner_provider = _resolve_agent_provider(
         agent_prefix="PLANNER_AGENT",
         env_file_values=env_file_values,
@@ -308,10 +324,35 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
 
     return AgentSettings(
         default_provider=default_provider,
+        deepseek_provider=deepseek_provider,
         planner_provider=planner_provider,
         narrator_provider=narrator_provider,
         planner=planner,
         narrator=narrator,
+    )
+
+
+def select_provider_for_model(
+    *,
+    model_id: str,
+    default_provider: OpenAIProviderConfig,
+    deepseek_provider: OpenAIProviderConfig,
+) -> OpenAIProviderConfig:
+    """根据模型名选择实际 Provider。
+
+    DeepSeek 模型优先读取 `DEEPSEEK_API_KEY`，避免误用 `OPENAI_API_KEY`
+    去请求 `deepseek-*` 模型。
+    """
+
+    if detect_provider_kind(model_id=model_id) != "deepseek":
+        return default_provider
+    if not deepseek_provider.api_key:
+        return default_provider
+    return OpenAIProviderConfig(
+        api_key=deepseek_provider.api_key,
+        base_url=deepseek_provider.base_url or _DEEPSEEK_DEFAULT_BASE_URL,
+        organization=deepseek_provider.organization,
+        project=deepseek_provider.project,
     )
 
 
