@@ -95,6 +95,10 @@ class SpatialLayer(BaseModel):
             "Agent 在 proposed_checks 中使用的 skill_key 必须来自此列表。"
         ),
     )
+    illegal_move_risk: dict[str, dict[str, object]] = Field(
+        default_factory=dict,
+        description="在场玩家的越界移动风险只读事实，供 Agent 参考但不得覆盖运行时裁定。",
+    )
 
 
 class HistoryLayer(BaseModel):

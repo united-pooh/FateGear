@@ -1,0 +1,367 @@
+{
+  "feedback": {
+    "version": "1.0",
+    "group_id": "GROUP-6",
+    "iteration": 2,
+    "task_id": "GROUP-6-task",
+    "threshold": 0.8,
+    "require_depth_one_pass": true,
+    "verdict": "pass",
+    "weighted_score": 1,
+    "pass_rate": 1,
+    "num_branches": 8,
+    "max_depth": 1,
+    "nodes_passed": [
+      "B1-D1-01",
+      "B2-D1-01",
+      "B3-D1-01",
+      "B4-D1-01",
+      "B5-D1-01",
+      "B6-D1-01",
+      "B7-D1-01",
+      "B8-D1-01"
+    ],
+    "nodes_failed": [],
+    "blocking_nodes": [],
+    "non_blocking_nodes": [],
+    "node_results": [
+      {
+        "node_id": "B1-D1-01",
+        "branch": "Non Authority Boundary",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/pipeline.py and docs/codex/adr/2026-06-06-narration-memory-boundary.md: graph/memory are post-resolution non-authoritative sinks; runtime authority remains SceneRuntime/SessionMapState/StoryState.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B2-D1-01",
+        "branch": "Persistence Reliability",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/memory.py and tests/scene/test_narration_memory_persistence.py: JSONL reload, bad-line load_errors, and RLock-protected persistence are implemented and tested.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B3-D1-01",
+        "branch": "Audit And Invalidation",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/memory.py and tests/scene/test_narration_memory_persistence.py: audit, forget, redact, stale, valid_to_turn, and supersedes are implemented and tested.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B4-D1-01",
+        "branch": "Retrieval Correctness",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/memory.py and tests/scene/test_narration_memory.py: retrieve/search filter by session+module+status+scope and explicit global seed; partial search leakage regression is covered.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B5-D1-01",
+        "branch": "Temporal Graph Facts",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/graph_memory.py and tests/scene/test_narration_graph_memory.py: graph supersedes only within scope and as_of_turn uses half-open validity.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B6-D1-01",
+        "branch": "Graph Query And Schema",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/graph_memory.py: entities/facts/edges/schema_meta with FK/CHECK/index, scoped search/audit, and close lifecycle are implemented.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B7-D1-01",
+        "branch": "Pipeline Integration",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": "src/scenario/narration/pipeline.py and tests/scene/test_narration_pipeline.py: optional graph_store ingest happens after record/memory write and SessionMapState stays unchanged.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      },
+      {
+        "node_id": "B8-D1-01",
+        "branch": "Validation And QA Evidence",
+        "depth": 1,
+        "weight": 1,
+        "raw_score": 1,
+        "effective_score": 1,
+        "dependency_blocked_by": null,
+        "consensus": "unanimous",
+        "grader_scores": [
+          {
+            "grader_id": 1,
+            "raw_score": 1,
+            "evidence": ".pipeline-runs/RUN-20260606085022-7f9bb239/artifacts/validation-GROUP-6-iteration-2-062.json and .pipeline-runs/RUN-20260606085022-7f9bb239/artifacts/qa-GROUP-6-063.json: focused/offline/compile/diff/ruff checks, online quota attribution, QA notes, and recheck evidence are recorded.",
+            "failure_reason": null,
+            "suggestion": null
+          }
+        ]
+      }
+    ],
+    "summary": "GROUP-6 final validation and QA output passes all final acceptance tree rubric nodes."
+  },
+  "validation": {
+    "artifactType": "tree-grading-feedback",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-6",
+      "iteration": 2,
+      "task_id": "GROUP-6-task",
+      "threshold": 0.8,
+      "require_depth_one_pass": true,
+      "verdict": "pass",
+      "weighted_score": 1,
+      "pass_rate": 1,
+      "num_branches": 8,
+      "max_depth": 1,
+      "nodes_passed": [
+        "B1-D1-01",
+        "B2-D1-01",
+        "B3-D1-01",
+        "B4-D1-01",
+        "B5-D1-01",
+        "B6-D1-01",
+        "B7-D1-01",
+        "B8-D1-01"
+      ],
+      "nodes_failed": [],
+      "blocking_nodes": [],
+      "non_blocking_nodes": [],
+      "node_results": [
+        {
+          "node_id": "B1-D1-01",
+          "branch": "Non Authority Boundary",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/pipeline.py and docs/codex/adr/2026-06-06-narration-memory-boundary.md: graph/memory are post-resolution non-authoritative sinks; runtime authority remains SceneRuntime/SessionMapState/StoryState.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B2-D1-01",
+          "branch": "Persistence Reliability",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/memory.py and tests/scene/test_narration_memory_persistence.py: JSONL reload, bad-line load_errors, and RLock-protected persistence are implemented and tested.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B3-D1-01",
+          "branch": "Audit And Invalidation",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/memory.py and tests/scene/test_narration_memory_persistence.py: audit, forget, redact, stale, valid_to_turn, and supersedes are implemented and tested.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B4-D1-01",
+          "branch": "Retrieval Correctness",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/memory.py and tests/scene/test_narration_memory.py: retrieve/search filter by session+module+status+scope and explicit global seed; partial search leakage regression is covered.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B5-D1-01",
+          "branch": "Temporal Graph Facts",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/graph_memory.py and tests/scene/test_narration_graph_memory.py: graph supersedes only within scope and as_of_turn uses half-open validity.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B6-D1-01",
+          "branch": "Graph Query And Schema",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/graph_memory.py: entities/facts/edges/schema_meta with FK/CHECK/index, scoped search/audit, and close lifecycle are implemented.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B7-D1-01",
+          "branch": "Pipeline Integration",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": "src/scenario/narration/pipeline.py and tests/scene/test_narration_pipeline.py: optional graph_store ingest happens after record/memory write and SessionMapState stays unchanged.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        },
+        {
+          "node_id": "B8-D1-01",
+          "branch": "Validation And QA Evidence",
+          "depth": 1,
+          "weight": 1,
+          "raw_score": 1,
+          "effective_score": 1,
+          "dependency_blocked_by": null,
+          "consensus": "unanimous",
+          "grader_scores": [
+            {
+              "grader_id": 1,
+              "raw_score": 1,
+              "evidence": ".pipeline-runs/RUN-20260606085022-7f9bb239/artifacts/validation-GROUP-6-iteration-2-062.json and .pipeline-runs/RUN-20260606085022-7f9bb239/artifacts/qa-GROUP-6-063.json: focused/offline/compile/diff/ruff checks, online quota attribution, QA notes, and recheck evidence are recorded.",
+              "failure_reason": null,
+              "suggestion": null
+            }
+          ]
+        }
+      ],
+      "summary": "GROUP-6 final validation and QA output passes all final acceptance tree rubric nodes."
+    }
+  }
+}

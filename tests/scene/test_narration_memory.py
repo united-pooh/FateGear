@@ -67,6 +67,73 @@ def test_in_memory_retrieval_filters_conflicts_and_categories() -> None:
     assert store.retrieve(packet, kinds={"npc"}) == []
 
 
+def test_in_memory_retrieval_isolates_scope_and_allows_global_seed() -> None:
+    packet = _packet_with_failed_check()
+    same_scope = VectorMemory(
+        metadata=VectorMemoryMetadata(
+            memory_id="m-same",
+            source_turn=1,
+            session_id=packet.session_id,
+            module_id=packet.module_id,
+            kind="scene",
+            confidence=0.9,
+            source_text="同一团的门厅记忆。",
+            created_from="record",
+        ),
+        summary_text="同一团的门厅记忆。",
+    )
+    other_scope = same_scope.model_copy(
+        update={
+            "metadata": same_scope.metadata.model_copy(
+                update={
+                    "memory_id": "m-other",
+                    "session_id": "other-session",
+                    "source_text": "别的团的门厅记忆。",
+                }
+            ),
+            "summary_text": "别的团的门厅记忆。",
+        },
+        deep=True,
+    )
+    global_seed = VectorMemory(
+        metadata=VectorMemoryMetadata(
+            memory_id="m-seed",
+            source_turn=1,
+            kind="scene",
+            confidence=0.1,
+            source_text="全局叙事风格种子。",
+            created_from="seed",
+        ),
+        summary_text="全局叙事风格种子。",
+    )
+    stale = same_scope.model_copy(
+        update={
+            "metadata": same_scope.metadata.model_copy(
+                update={"memory_id": "m-stale", "status": "stale"}
+            ),
+            "summary_text": "已经过期的同团记忆。",
+        },
+        deep=True,
+    )
+    expired = same_scope.model_copy(
+        update={
+            "metadata": same_scope.metadata.model_copy(
+                update={"memory_id": "m-expired", "valid_to_turn": packet.turn_no}
+            ),
+            "summary_text": "边界回合已经失效的同团记忆。",
+        },
+        deep=True,
+    )
+    store = InMemoryVectorContextStore(
+        [other_scope, same_scope, global_seed, stale, expired]
+    )
+
+    assert [memory.memory_id for memory in store.retrieve(packet)] == [
+        "m-same",
+        "m-seed",
+    ]
+
+
 def test_writeback_records_accepted_output_and_excludes_rejected_patch_text() -> None:
     event = RuntimeEvent(type="turn_started", turn_no=1, message="开始")
     resolution = TurnResolution(session_id="s1", turn_no=1, next_turn=2, event_log=[event])

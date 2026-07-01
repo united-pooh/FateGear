@@ -22,10 +22,15 @@ from .contracts import (
     VectorMemoryMetadata,
 )
 from .events import build_event_refs, event_ref_map, synthesize_event_id
+from .graph_memory import SQLiteNarrationGraphMemory
 from .input import build_narration_input_packet
-from .memory import InMemoryVectorContextStore, VectorContextStore
+from .memory import (
+    InMemoryVectorContextStore,
+    PersistentNarrationMemoryStore,
+    VectorContextStore,
+)
 from .patches import validate_and_apply_patches, validate_patch
-from .pipeline import NarrationPipeline
+from .pipeline import NarrationGraphStore, NarrationPipeline
 from .prompt import NarrationPromptBuilder
 from .records import InMemoryNarrationRepository, build_narration_record
 from .replay import replay_narration_record
@@ -41,6 +46,7 @@ __all__ = [
     "KeeperRenderAgent",
     "ModelMetadata",
     "NarrationEventRef",
+    "NarrationGraphStore",
     "NarrationInputPacket",
     "NarrationPatchProposal",
     "NarrationPipeline",
@@ -50,11 +56,13 @@ __all__ = [
     "NarrativeState",
     "NpcLine",
     "PatchApplicationResult",
+    "PersistentNarrationMemoryStore",
     "PromptBuildResult",
     "PromptLayerSummary",
     "RejectedPatchAudit",
     "RuleFact",
     "StateDiff",
+    "SQLiteNarrationGraphMemory",
     "StaticKeeperRenderAgent",
     "VectorContextStore",
     "VectorMemory",

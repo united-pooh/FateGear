@@ -1,0 +1,107 @@
+{
+  "grading": {
+    "version": "1.0",
+    "group_id": "GROUP-5",
+    "iteration": 3,
+    "grader_id": 1,
+    "task_id": "GROUP-5-task",
+    "node_results": [
+      {
+        "node_id": "B1-D1-01",
+        "raw_score": 1,
+        "evidence": "docs/codex/adr/2026-06-06-narration-memory-boundary.md: memory and graph are non-authoritative; runtime, StoryState, SessionMapState, TurnResolution, and RuntimeEvent remain authoritative.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B1-D2-01",
+        "raw_score": 1,
+        "evidence": "docs/codex/adr/2026-06-06-narration-memory-boundary.md: records session/module scope, explicit global seed, post-validation graph ingest, and forbidden runtime mutation.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B2-D1-01",
+        "raw_score": 1,
+        "evidence": "docs/codex/plans/2026-06-06-narration-memory-persistence-and-graph.md: formal MCP run RUN-20260606085022-7f9bb239 is the evidence source.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B2-D2-01",
+        "raw_score": 1,
+        "evidence": "docs/codex/plans/2026-06-06-narration-memory-persistence-and-graph.md: checklist covers implementation, validation, QA, final assessment, dispatch, focused tests, scope QA, and tree rubric review.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B3-D1-01",
+        "raw_score": 1,
+        "evidence": "docs/codex/adr/2026-06-06-narration-memory-boundary.md: defines active, stale, forgotten, graph superseded, and half-open validity semantics matching code.",
+        "failure_reason": null,
+        "suggestion": null
+      },
+      {
+        "node_id": "B3-D2-01",
+        "raw_score": 1,
+        "evidence": "docs/codex/adr/2026-06-06-narration-memory-boundary.md: documents default exclusion, explicit include_inactive, provenance audit, and expiry boundaries.",
+        "failure_reason": null,
+        "suggestion": null
+      }
+    ]
+  },
+  "validation": {
+    "artifactType": "tree-grading-individual",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-5",
+      "iteration": 3,
+      "grader_id": 1,
+      "task_id": "GROUP-5-task",
+      "node_results": [
+        {
+          "node_id": "B1-D1-01",
+          "raw_score": 1,
+          "evidence": "docs/codex/adr/2026-06-06-narration-memory-boundary.md: memory and graph are non-authoritative; runtime, StoryState, SessionMapState, TurnResolution, and RuntimeEvent remain authoritative.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B1-D2-01",
+          "raw_score": 1,
+          "evidence": "docs/codex/adr/2026-06-06-narration-memory-boundary.md: records session/module scope, explicit global seed, post-validation graph ingest, and forbidden runtime mutation.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B2-D1-01",
+          "raw_score": 1,
+          "evidence": "docs/codex/plans/2026-06-06-narration-memory-persistence-and-graph.md: formal MCP run RUN-20260606085022-7f9bb239 is the evidence source.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B2-D2-01",
+          "raw_score": 1,
+          "evidence": "docs/codex/plans/2026-06-06-narration-memory-persistence-and-graph.md: checklist covers implementation, validation, QA, final assessment, dispatch, focused tests, scope QA, and tree rubric review.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B3-D1-01",
+          "raw_score": 1,
+          "evidence": "docs/codex/adr/2026-06-06-narration-memory-boundary.md: defines active, stale, forgotten, graph superseded, and half-open validity semantics matching code.",
+          "failure_reason": null,
+          "suggestion": null
+        },
+        {
+          "node_id": "B3-D2-01",
+          "raw_score": 1,
+          "evidence": "docs/codex/adr/2026-06-06-narration-memory-boundary.md: documents default exclusion, explicit include_inactive, provenance audit, and expiry boundaries.",
+          "failure_reason": null,
+          "suggestion": null
+        }
+      ]
+    }
+  }
+}

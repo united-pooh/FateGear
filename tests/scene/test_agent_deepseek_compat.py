@@ -31,6 +31,7 @@ class _RecordingLiveClient:
 
 
 _LOG_DIR = Path(__file__).resolve().parents[2] / "log" / "scene"
+_DEEPSEEK_COMPAT_MODEL = "deepseek-v4-flash"
 
 
 def _write_trace_log(
@@ -62,7 +63,10 @@ def _build_live_deepseek_client(agent_factory) -> _RecordingLiveClient:
             "openai SDK 未安装；请先用项目 .venv 安装 requirements.txt。"
         )
 
-    bootstrap_agent = agent_factory(model_id="deepseek-chat", timeout_seconds=20.0)
+    bootstrap_agent = agent_factory(
+        model_id=_DEEPSEEK_COMPAT_MODEL,
+        timeout_seconds=20.0,
+    )
     if bootstrap_agent._client is None:
         pytest.skip(
             "未检测到可用的 DeepSeek Agent 配置；请检查 .env 中的 AGENT_API_KEY / AGENT_BASE_URL。"
@@ -125,7 +129,7 @@ def test_plan_agent_uses_json_object_for_deepseek() -> None:
     client = _build_live_deepseek_client(KeeperPlanAgent)
     agent = KeeperPlanAgent(
         openai_client=client,
-        model_id="deepseek-chat",
+        model_id=_DEEPSEEK_COMPAT_MODEL,
         timeout_seconds=20.0,
     )
     agent.max_retries = 0
@@ -152,7 +156,7 @@ def test_render_agent_uses_json_object_for_deepseek() -> None:
     client = _build_live_deepseek_client(KeeperRenderAgent)
     agent = KeeperRenderAgent(
         openai_client=client,
-        model_id="deepseek-chat",
+        model_id=_DEEPSEEK_COMPAT_MODEL,
         timeout_seconds=20.0,
     )
     agent.max_retries = 0

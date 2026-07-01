@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "id": "research-20260606073128-4f6c562a",
+  "runId": "RUN-20260606072946-9fd4c1ce",
+  "query": "Recover prior RAG/long-term-memory survey and map the first four archetypes onto FateGear",
+  "sources": [
+    {
+      "title": "Codex thread: 调研主流RAG记忆系统",
+      "threadId": "019e9342-316b-73d3-bf1a-dd40dab9c52c"
+    },
+    {
+      "title": "RAG 与长期记忆系统调研报告",
+      "path": "/Users/united_pooh/wiki/research-reports/2026-W23/2026-06-04-rag-memory-systems-survey.md"
+    },
+    {
+      "title": "FateGear narration memory contracts",
+      "path": "/Users/united_pooh/PycharmProjects/FateGear/src/scenario/narration/memory.py"
+    }
+  ],
+  "fetchedSources": [],
+  "notes": [
+    "The first four archetypes are chat-plugin long-term memory, local file/workspace memory, production Memory API / Memory-as-a-Service, and temporal knowledge graph memory.",
+    "FateGear already has a render-stage non-authoritative VectorContextStore, InMemoryVectorContextStore, VectorMemory, KeeperNarrationRecord, NarrationPipeline, and validation that prevents vector memory from overriding committed runtime facts.",
+    "Recommended initial slice: upgrade current in-memory narration vector memory into a persisted, auditable, session/module-scoped memory repository before adding external API or temporal graph adapters.",
+    "Existing dirty worktree changes must be preserved; pipeline artifacts should be additive and scoped."
+  ],
+  "createdAt": "2026-06-06T07:31:28.430Z"
+}

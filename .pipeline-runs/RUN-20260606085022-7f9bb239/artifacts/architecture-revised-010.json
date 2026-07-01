@@ -1,0 +1,214 @@
+{
+  "architecture": {
+    "version": "1.0",
+    "spec_ref": "spec.json",
+    "plan_ref": "plan.json",
+    "codebase_analysis": {
+      "relevant_modules": [
+        "src/scenario/narration/contracts.py",
+        "src/scenario/narration/memory.py",
+        "src/scenario/narration/graph_memory.py",
+        "src/scenario/narration/pipeline.py",
+        "src/scenario/narration/patches.py",
+        "src/scenario/narration/validator.py",
+        "tests/scene/test_narration_memory_persistence.py",
+        "tests/scene/test_narration_graph_memory.py",
+        "tests/scene/test_narration_pipeline.py"
+      ],
+      "current_patterns": [
+        "Narration is a post-resolution render layer; committed runtime state remains owned by SceneRuntime and SessionMapState.",
+        "NarrativeState patches already centralize allowed public paths and authoritative-path rejection in patches.py.",
+        "VectorContextStore is a small Protocol consumed by NarrationPipeline, allowing persistent and in-memory stores to share retrieval/write boundaries.",
+        "Tests under tests/scene build real SceneRuntime sessions and assert narration does not mutate runtime snapshots."
+      ],
+      "tech_debt": [
+        "Candidate PersistentNarrationMemoryStore lacks default session/module isolation and patch-level provenance preservation.",
+        "Candidate graph_memory.py scopes entities by path only, so cross-session facts can supersede each other.",
+        "Candidate graph store is manually ingested and lacks pipeline integration, close lifecycle, and defensive path validation.",
+        "Formal MCP run initially recorded candidate implementation before tree-rubric artifacts and must be corrected with validated artifacts."
+      ]
+    },
+    "decision": "incremental",
+    "decision_rationale": "The narration package already has clean seams for memory retrieval, record writing, patch validation, and post-resolution pipeline rendering. Incremental hardening satisfies the requested persistence/audit/search/invalidation and graph skeleton without changing authoritative runtime ownership.",
+    "proposed_changes": [
+      {
+        "target": ".pipeline-runs/RUN-20260606085022-7f9bb239/artifacts/*",
+        "change_type": "create",
+        "description": "Record revised plan, architecture, dispatch, per-group tree rubrics, execution, validation, QA, and final assessment artifacts through the MCP server.",
+        "concerns": []
+      },
+      {
+        "target": "src/scenario/narration/contracts.py",
+        "change_type": "modify",
+        "description": "Keep VectorMemoryMetadata lifecycle/scope/provenance fields as the contract surface for persistent memory and graph citations.",
+        "concerns": []
+      },
+      {
+        "target": "src/scenario/narration/memory.py",
+        "change_type": "modify",
+        "description": "Add scoped retrieval/search, explicit global seed handling, patch tags/provenance, stale supersession, redaction, tolerant JSONL load audit, and local locking around persistence.",
+        "concerns": []
+      },
+      {
+        "target": "tests/scene/test_narration_memory_persistence.py",
+        "change_type": "modify",
+        "description": "Cover reload, cross-session/module isolation, global seed retrieval, per-patch event ids, path supersession, redaction, invalid JSONL recovery, search, forget, and audit.",
+        "concerns": []
+      },
+      {
+        "target": "src/scenario/narration/graph_memory.py",
+        "change_type": "modify",
+        "description": "Scope graph entities/facts by session/module, reject non-narrative paths via existing patch rules, expose as-of-turn queries, add schema metadata/FKs/indexes, and provide close/context-manager lifecycle.",
+        "concerns": []
+      },
+      {
+        "target": "tests/scene/test_narration_graph_memory.py",
+        "change_type": "modify",
+        "description": "Cover scoped graph supersession, cross-session isolation, authoritative-path rejection, temporal as-of query, source-event provenance, audit, and lifecycle close.",
+        "concerns": []
+      },
+      {
+        "target": "src/scenario/narration/pipeline.py",
+        "change_type": "modify",
+        "description": "Accept an optional graph store and ingest accepted records after repository and vector memory writes without making graph facts authoritative.",
+        "concerns": []
+      },
+      {
+        "target": "src/scenario/narration/__init__.py",
+        "change_type": "modify",
+        "description": "Keep public exports aligned with PersistentNarrationMemoryStore and SQLiteNarrationGraphMemory surfaces used by tests and downstream callers.",
+        "concerns": []
+      },
+      {
+        "target": "tests/scene/test_narration_pipeline.py",
+        "change_type": "modify",
+        "description": "Assert pipeline graph ingestion occurs and committed SessionMapState remains unchanged after rendering.",
+        "concerns": []
+      },
+      {
+        "target": "docs/codex/plans/2026-06-06-narration-memory-persistence-and-graph.md",
+        "change_type": "modify",
+        "description": "Update the user-facing implementation plan to point at the formal MCP redo run and remaining validation evidence.",
+        "concerns": []
+      },
+      {
+        "target": "docs/codex/adr/2026-06-06-narration-memory-boundary.md",
+        "change_type": "create",
+        "description": "Document the ADR for non-authoritative narration memory, scope isolation, auditability, invalidation, and graph integration.",
+        "concerns": []
+      }
+    ],
+    "dependency_changes": [],
+    "feasibility": "feasible",
+    "infeasibility_reason": null,
+    "rollback_notes": null
+  },
+  "validation": {
+    "artifactType": "architecture",
+    "artifact": {
+      "version": "1.0",
+      "spec_ref": "spec.json",
+      "plan_ref": "plan.json",
+      "codebase_analysis": {
+        "relevant_modules": [
+          "src/scenario/narration/contracts.py",
+          "src/scenario/narration/memory.py",
+          "src/scenario/narration/graph_memory.py",
+          "src/scenario/narration/pipeline.py",
+          "src/scenario/narration/patches.py",
+          "src/scenario/narration/validator.py",
+          "tests/scene/test_narration_memory_persistence.py",
+          "tests/scene/test_narration_graph_memory.py",
+          "tests/scene/test_narration_pipeline.py"
+        ],
+        "current_patterns": [
+          "Narration is a post-resolution render layer; committed runtime state remains owned by SceneRuntime and SessionMapState.",
+          "NarrativeState patches already centralize allowed public paths and authoritative-path rejection in patches.py.",
+          "VectorContextStore is a small Protocol consumed by NarrationPipeline, allowing persistent and in-memory stores to share retrieval/write boundaries.",
+          "Tests under tests/scene build real SceneRuntime sessions and assert narration does not mutate runtime snapshots."
+        ],
+        "tech_debt": [
+          "Candidate PersistentNarrationMemoryStore lacks default session/module isolation and patch-level provenance preservation.",
+          "Candidate graph_memory.py scopes entities by path only, so cross-session facts can supersede each other.",
+          "Candidate graph store is manually ingested and lacks pipeline integration, close lifecycle, and defensive path validation.",
+          "Formal MCP run initially recorded candidate implementation before tree-rubric artifacts and must be corrected with validated artifacts."
+        ]
+      },
+      "decision": "incremental",
+      "decision_rationale": "The narration package already has clean seams for memory retrieval, record writing, patch validation, and post-resolution pipeline rendering. Incremental hardening satisfies the requested persistence/audit/search/invalidation and graph skeleton without changing authoritative runtime ownership.",
+      "proposed_changes": [
+        {
+          "target": ".pipeline-runs/RUN-20260606085022-7f9bb239/artifacts/*",
+          "change_type": "create",
+          "description": "Record revised plan, architecture, dispatch, per-group tree rubrics, execution, validation, QA, and final assessment artifacts through the MCP server.",
+          "concerns": []
+        },
+        {
+          "target": "src/scenario/narration/contracts.py",
+          "change_type": "modify",
+          "description": "Keep VectorMemoryMetadata lifecycle/scope/provenance fields as the contract surface for persistent memory and graph citations.",
+          "concerns": []
+        },
+        {
+          "target": "src/scenario/narration/memory.py",
+          "change_type": "modify",
+          "description": "Add scoped retrieval/search, explicit global seed handling, patch tags/provenance, stale supersession, redaction, tolerant JSONL load audit, and local locking around persistence.",
+          "concerns": []
+        },
+        {
+          "target": "tests/scene/test_narration_memory_persistence.py",
+          "change_type": "modify",
+          "description": "Cover reload, cross-session/module isolation, global seed retrieval, per-patch event ids, path supersession, redaction, invalid JSONL recovery, search, forget, and audit.",
+          "concerns": []
+        },
+        {
+          "target": "src/scenario/narration/graph_memory.py",
+          "change_type": "modify",
+          "description": "Scope graph entities/facts by session/module, reject non-narrative paths via existing patch rules, expose as-of-turn queries, add schema metadata/FKs/indexes, and provide close/context-manager lifecycle.",
+          "concerns": []
+        },
+        {
+          "target": "tests/scene/test_narration_graph_memory.py",
+          "change_type": "modify",
+          "description": "Cover scoped graph supersession, cross-session isolation, authoritative-path rejection, temporal as-of query, source-event provenance, audit, and lifecycle close.",
+          "concerns": []
+        },
+        {
+          "target": "src/scenario/narration/pipeline.py",
+          "change_type": "modify",
+          "description": "Accept an optional graph store and ingest accepted records after repository and vector memory writes without making graph facts authoritative.",
+          "concerns": []
+        },
+        {
+          "target": "src/scenario/narration/__init__.py",
+          "change_type": "modify",
+          "description": "Keep public exports aligned with PersistentNarrationMemoryStore and SQLiteNarrationGraphMemory surfaces used by tests and downstream callers.",
+          "concerns": []
+        },
+        {
+          "target": "tests/scene/test_narration_pipeline.py",
+          "change_type": "modify",
+          "description": "Assert pipeline graph ingestion occurs and committed SessionMapState remains unchanged after rendering.",
+          "concerns": []
+        },
+        {
+          "target": "docs/codex/plans/2026-06-06-narration-memory-persistence-and-graph.md",
+          "change_type": "modify",
+          "description": "Update the user-facing implementation plan to point at the formal MCP redo run and remaining validation evidence.",
+          "concerns": []
+        },
+        {
+          "target": "docs/codex/adr/2026-06-06-narration-memory-boundary.md",
+          "change_type": "create",
+          "description": "Document the ADR for non-authoritative narration memory, scope isolation, auditability, invalidation, and graph integration.",
+          "concerns": []
+        }
+      ],
+      "dependency_changes": [],
+      "feasibility": "feasible",
+      "infeasibility_reason": null,
+      "rollback_notes": null
+    }
+  },
+  "revision_reason": "Architecture now owns pipeline integration, scope hardening, docs ADR, and MCP artifact work explicitly."
+}

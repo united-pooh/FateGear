@@ -1,0 +1,33 @@
+{
+  "agent": "Kant",
+  "agentPath": "019e9c21-0b82-7a41-baba-ac30f19bec1c",
+  "role": "QA baseline subagent",
+  "status": "completed",
+  "commands": [
+    {
+      "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py tests/scene/test_narration_graph_memory.py tests/scene/test_narration_pipeline.py tests/scene/test_narration_prompt.py tests/scene/test_narration_validator.py -q",
+      "result": "15 passed in 0.28s"
+    },
+    {
+      "command": "pytest tests/scene -q -k 'not online'",
+      "result": "106 passed, 1 deselected in 7.92s"
+    },
+    {
+      "command": "python -m compileall -q src/scenario/narration",
+      "result": "passed, exit code 0, no output"
+    },
+    {
+      "command": "git diff --check -- src/scenario/narration tests/scene",
+      "result": "passed, exit code 0, no output"
+    }
+  ],
+  "failures": [],
+  "qaGaps": [
+    "Scoped git diff --check does not cover untracked files.",
+    "Need MCP real entry/tool-call E2E coverage.",
+    "Need online/real provider path validation if quota allows.",
+    "Need corrupted persistence data recovery tests.",
+    "Need concurrent narration memory write tests.",
+    "Need full repo pytest/type-check baseline beyond scoped commands."
+  ]
+}

@@ -1,0 +1,183 @@
+{
+  "architecture": {
+    "version": "1.0",
+    "spec_ref": "spec.json",
+    "plan_ref": "plan.json",
+    "codebase_analysis": {
+      "relevant_modules": [
+        "src/scenario/narration/contracts.py",
+        "src/scenario/narration/memory.py",
+        "src/scenario/narration/graph_memory.py",
+        "src/scenario/narration/pipeline.py",
+        "src/scenario/narration/prompt.py",
+        "src/scenario/narration/validator.py",
+        "tests/scene/test_narration_memory.py",
+        "tests/scene/test_narration_memory_persistence.py",
+        "tests/scene/test_narration_graph_memory.py",
+        "tests/scene/test_narration_pipeline.py"
+      ],
+      "current_patterns": [
+        "NarrationPipeline runs only after SceneRuntime commits TurnResolution and receives a deep-copied session snapshot.",
+        "VectorContextStore is a protocol with retrieve and write_from_record, making storage implementations swappable.",
+        "NarrationValidator rejects invalid memory citations and prevents vector memory from being used as authoritative facts.",
+        "NarrationPromptBuilder labels vector memory and NarrativeState as non-authoritative auxiliary context.",
+        "Existing tests use small deterministic runtime fixtures and in-memory stores."
+      ],
+      "tech_debt": [
+        "Persistent store currently has no corrupted JSONL recovery policy.",
+        "JSONL writes use whole-file rewrite and are not protected for concurrent writers.",
+        "SQLite graph memory is a local skeleton with no advanced traversal, ontology, migration versioning, or integration into NarrationPipeline.",
+        "ScenarioService still does not expose official memory search/list/forget endpoints.",
+        "Full online runtime smoke depends on external quota and can fail independently of local correctness."
+      ]
+    },
+    "decision": "incremental",
+    "decision_rationale": "The feature fits the existing narration package seams: VectorContextStore already isolates non-authoritative memory retrieval/writeback, and the graph database can live beside it without touching runtime authority. Incremental changes minimize risk in a dirty worktree and preserve existing SceneRuntime behavior.",
+    "proposed_changes": [
+      {
+        "target": "src/scenario/narration/contracts.py",
+        "change_type": "modify",
+        "description": "Extend VectorMemoryMetadata with scope, lifecycle, provenance, timestamps, validity, supersession, tags, and forget reason while keeping default values for backward compatibility.",
+        "concerns": []
+      },
+      {
+        "target": "src/scenario/narration/memory.py",
+        "change_type": "modify",
+        "description": "Add PersistentNarrationMemoryStore implementing VectorContextStore with JSONL load/save, search, soft forget, audit export, and conflict-aware retrieval.",
+        "concerns": []
+      },
+      {
+        "target": "src/scenario/narration/graph_memory.py",
+        "change_type": "create",
+        "description": "Add SQLiteNarrationGraphMemory with entities/facts/edges schema, accepted patch ingestion, citation edges, supersession, search, and audit export.",
+        "concerns": []
+      },
+      {
+        "target": "src/scenario/narration/__init__.py",
+        "change_type": "modify",
+        "description": "Export the new persistent and graph memory classes from the narration package public API.",
+        "concerns": []
+      },
+      {
+        "target": "tests/scene/test_narration_memory_persistence.py",
+        "change_type": "create",
+        "description": "Test JSONL persistence, reload, retrieval, search, soft forget, and audit behavior.",
+        "concerns": []
+      },
+      {
+        "target": "tests/scene/test_narration_graph_memory.py",
+        "change_type": "create",
+        "description": "Test graph fact ingestion, citation edges, entity/fact audit, search, and supersession validity windows.",
+        "concerns": []
+      },
+      {
+        "target": "docs/codex/plans/2026-06-06-narration-memory-persistence-and-graph.md",
+        "change_type": "create",
+        "description": "Record implementation plan and verification commands for the feature.",
+        "concerns": []
+      },
+      {
+        "target": ".pipeline-runs/RUN-20260606085022-7f9bb239/artifacts/*",
+        "change_type": "create",
+        "description": "Record formal MCP pipeline artifacts and subagent evidence for the redo.",
+        "concerns": []
+      }
+    ],
+    "dependency_changes": [],
+    "feasibility": "feasible",
+    "infeasibility_reason": null,
+    "rollback_notes": null
+  },
+  "validation": {
+    "artifactType": "architecture",
+    "artifact": {
+      "version": "1.0",
+      "spec_ref": "spec.json",
+      "plan_ref": "plan.json",
+      "codebase_analysis": {
+        "relevant_modules": [
+          "src/scenario/narration/contracts.py",
+          "src/scenario/narration/memory.py",
+          "src/scenario/narration/graph_memory.py",
+          "src/scenario/narration/pipeline.py",
+          "src/scenario/narration/prompt.py",
+          "src/scenario/narration/validator.py",
+          "tests/scene/test_narration_memory.py",
+          "tests/scene/test_narration_memory_persistence.py",
+          "tests/scene/test_narration_graph_memory.py",
+          "tests/scene/test_narration_pipeline.py"
+        ],
+        "current_patterns": [
+          "NarrationPipeline runs only after SceneRuntime commits TurnResolution and receives a deep-copied session snapshot.",
+          "VectorContextStore is a protocol with retrieve and write_from_record, making storage implementations swappable.",
+          "NarrationValidator rejects invalid memory citations and prevents vector memory from being used as authoritative facts.",
+          "NarrationPromptBuilder labels vector memory and NarrativeState as non-authoritative auxiliary context.",
+          "Existing tests use small deterministic runtime fixtures and in-memory stores."
+        ],
+        "tech_debt": [
+          "Persistent store currently has no corrupted JSONL recovery policy.",
+          "JSONL writes use whole-file rewrite and are not protected for concurrent writers.",
+          "SQLite graph memory is a local skeleton with no advanced traversal, ontology, migration versioning, or integration into NarrationPipeline.",
+          "ScenarioService still does not expose official memory search/list/forget endpoints.",
+          "Full online runtime smoke depends on external quota and can fail independently of local correctness."
+        ]
+      },
+      "decision": "incremental",
+      "decision_rationale": "The feature fits the existing narration package seams: VectorContextStore already isolates non-authoritative memory retrieval/writeback, and the graph database can live beside it without touching runtime authority. Incremental changes minimize risk in a dirty worktree and preserve existing SceneRuntime behavior.",
+      "proposed_changes": [
+        {
+          "target": "src/scenario/narration/contracts.py",
+          "change_type": "modify",
+          "description": "Extend VectorMemoryMetadata with scope, lifecycle, provenance, timestamps, validity, supersession, tags, and forget reason while keeping default values for backward compatibility.",
+          "concerns": []
+        },
+        {
+          "target": "src/scenario/narration/memory.py",
+          "change_type": "modify",
+          "description": "Add PersistentNarrationMemoryStore implementing VectorContextStore with JSONL load/save, search, soft forget, audit export, and conflict-aware retrieval.",
+          "concerns": []
+        },
+        {
+          "target": "src/scenario/narration/graph_memory.py",
+          "change_type": "create",
+          "description": "Add SQLiteNarrationGraphMemory with entities/facts/edges schema, accepted patch ingestion, citation edges, supersession, search, and audit export.",
+          "concerns": []
+        },
+        {
+          "target": "src/scenario/narration/__init__.py",
+          "change_type": "modify",
+          "description": "Export the new persistent and graph memory classes from the narration package public API.",
+          "concerns": []
+        },
+        {
+          "target": "tests/scene/test_narration_memory_persistence.py",
+          "change_type": "create",
+          "description": "Test JSONL persistence, reload, retrieval, search, soft forget, and audit behavior.",
+          "concerns": []
+        },
+        {
+          "target": "tests/scene/test_narration_graph_memory.py",
+          "change_type": "create",
+          "description": "Test graph fact ingestion, citation edges, entity/fact audit, search, and supersession validity windows.",
+          "concerns": []
+        },
+        {
+          "target": "docs/codex/plans/2026-06-06-narration-memory-persistence-and-graph.md",
+          "change_type": "create",
+          "description": "Record implementation plan and verification commands for the feature.",
+          "concerns": []
+        },
+        {
+          "target": ".pipeline-runs/RUN-20260606085022-7f9bb239/artifacts/*",
+          "change_type": "create",
+          "description": "Record formal MCP pipeline artifacts and subagent evidence for the redo.",
+          "concerns": []
+        }
+      ],
+      "dependency_changes": [],
+      "feasibility": "feasible",
+      "infeasibility_reason": null,
+      "rollback_notes": null
+    }
+  }
+}

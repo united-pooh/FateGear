@@ -420,6 +420,51 @@ If text is safe but some patches fail:
 - Store rejected patches with reasons.
 - Set `fallback_used` to empty or `partial_patch_rejection`.
 
+### 预期外行为处理方法
+
+Unexpected player behavior, such as repeated `off_map_move`, must be handled as
+authoritative runtime state instead of Keeper narration memory. The Keeper may
+warn the player in prose, but the warning is never the source of truth for later
+punishment.
+
+Required handling:
+
+- Classify the unexpected behavior with a structured `reason_code`, for example
+  `off_map_move`, `no_link`, `locked_link`, `missing_flags`, or `missing_stage`.
+- Store a per-player risk state in the runtime/session layer, not in
+  `NarrativeState`. A first version can use `IllegalMoveRiskState` with
+  `illegal_value`, `consecutive_count`, `total_count`, `recent_window_count`,
+  `last_violation_turn`, `last_penalty_tier`, and `severe_triggered`.
+- Initialize missing risk state deterministically:
+  `illegal_value=0`, counts set to `0`, `last_violation_turn=null`,
+  `last_penalty_tier="none"`, and `severe_triggered=false`.
+- Increase risk deterministically when the behavior repeats. Close repeats may
+  use bounded exponential growth, while non-illegal turns may apply slow decay.
+  Decay must be slower than escalation, so intermittent repeated `off_map_move`
+  still eventually reaches heavy punishment.
+- Trigger punishment by threshold crossing after the current risk update, not by
+  LLM discretion. Thresholds should be named, inspectable, and mapped to tiers
+  such as `warning`, `minor_penalty`, `major_penalty`, and `severe_penalty`.
+- Emit auditable runtime events for every risk update and punishment trigger.
+  Events should include `player_id`, `turn_no`, `from_scene_id`, `to_scene_id`,
+  `reason_code`, `score_before`, `score_after`, `delta`, `decay_applied`,
+  `threshold_crossed`, `required_threshold`, `penalty_tier`, and whether state
+  was initialized.
+- Inject the current risk, threshold, and required punishment tier into the
+  Keeper factual prompt layer as read-only facts. The model can explain or
+  dramatize the result, but it cannot reduce or erase the runtime decision.
+  When a pending move is already classifiable, include its `reason_code`,
+  `violation_kind`, and deterministic `score_before -> score_after` preview.
+
+Regression tests must cover both failure modes that caused the original
+forgetting bug:
+
+- A single user performing `off_map_move` for two to three consecutive turns
+  must trigger heavy punishment.
+- A single user performing multiple intermittent `off_map_move` actions, with
+  legal or empty turns between them, must still eventually trigger heavy
+  punishment.
+
 ## Testing Strategy
 
 The first version tests correctness before prose quality.

@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "input": {
+    "sourceThreadId": "019e9342-316b-73d3-bf1a-dd40dab9c52c",
+    "sourceReport": "/Users/united_pooh/wiki/research-reports/2026-W23/2026-06-04-rag-memory-systems-survey.md",
+    "priorityMemoryTypes": [
+      "chat-plugin long-term memory: LivingMemory and MaiBot A_Memorix patterns",
+      "local file/workspace memory: OpenClaw-style auditable Markdown plus search",
+      "production Memory API / Memory-as-a-Service: Mem0/Supermemory/Memobase patterns",
+      "temporal knowledge graph memory: Zep/Graphiti-style valid-time facts and provenance"
+    ],
+    "workspace": "/Users/united_pooh/PycharmProjects/FateGear",
+    "constraints": [
+      "Do not overwrite existing dirty worktree changes",
+      "Use durable MCP run records under .pipeline-runs",
+      "Design before implementation approval because the work changes behavior"
+    ],
+    "initialAssumption": "Build a staged memory subsystem for FateGear rather than a standalone unrelated app."
+  },
+  "thresholds": {
+    "maxRuntimeMs": 172800000,
+    "maxIterations": 24,
+    "budget": null
+  },
+  "metadata": {
+    "createdBy": "Codex Desktop",
+    "date": "2026-06-06",
+    "timezone": "Asia/Shanghai"
+  }
+}

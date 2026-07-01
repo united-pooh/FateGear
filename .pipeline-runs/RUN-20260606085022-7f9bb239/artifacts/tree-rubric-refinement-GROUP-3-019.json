@@ -1,0 +1,273 @@
+{
+  "rubric": {
+    "version": "1.0",
+    "task_id": "GROUP-3-task",
+    "group_id": "GROUP-3",
+    "task_type": "code_implementation",
+    "branches": [
+      {
+        "name": "图作用域",
+        "name_en": "Graph Scope",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B1-D1-01",
+            "content": "entities/facts 明确记录 session_id/module_id 或 scoped entity_id，默认查询不跨 scope。 评分必须只引用 final-output-files 中的路径。",
+            "source": "KEEP_01",
+            "requirement_ids": [
+              "REQ-005",
+              "REQ-006"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/graph_memory.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B1-D2-01",
+            "content": "同 path 不同 session/module 的事实不会互相 supersede，测试证明 cross-session 隔离。 评分必须只引用 final-output-files 中的路径。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-005"
+            ],
+            "output_file_hints": [
+              "tests/scene/test_narration_graph_memory.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "路径边界",
+        "name_en": "Path Boundary",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B2-D1-01",
+            "content": "ingest_record 复用 is_allowed_narrative_path/is_authoritative_path 拒绝 authoritative 或非 NarrativeState path。 评分必须只引用 final-output-files 中的路径。",
+            "source": "KEEP_02",
+            "requirement_ids": [
+              "REQ-003",
+              "REQ-005"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/graph_memory.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B2-D2-01",
+            "content": "测试直接构造 bad KeeperNarrationRecord 并证明 graph 不写 story_state/player/session 等权威路径。 评分必须只引用 final-output-files 中的路径。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-003",
+              "REQ-008"
+            ],
+            "output_file_hints": [
+              "tests/scene/test_narration_graph_memory.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "时序查询",
+        "name_en": "Temporal Query",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B3-D1-01",
+            "content": "facts_for_entity 或 facts_as_of 支持 as_of_turn，按 valid_from_turn <= turn < valid_to_turn 过滤。 评分必须只引用 final-output-files 中的路径。",
+            "source": "KEEP_03",
+            "requirement_ids": [
+              "REQ-005",
+              "REQ-006"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/graph_memory.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B3-D2-01",
+            "content": "superseded 历史和 active 当前事实都可通过 include_inactive/audit 检索，as-of 测试覆盖半开区间。 评分必须只引用 final-output-files 中的路径。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-006",
+              "REQ-008"
+            ],
+            "output_file_hints": [
+              "tests/scene/test_narration_graph_memory.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Schema 生命周期",
+        "name_en": "Schema Lifecycle",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B4-D1-01",
+            "content": "schema_meta/schema_version、CHECK、FK、index 和 PRAGMA foreign_keys 已在初始化中建立。 评分必须只引用 final-output-files 中的路径。",
+            "source": "KEEP_04",
+            "requirement_ids": [
+              "REQ-005"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/graph_memory.py"
+            ]
+          },
+          {
+            "depth": 2,
+            "id": "B4-D2-01",
+            "content": "close() 与 context manager 可关闭连接，audit/search 输出包含 scope、status、validity、source_event_ids。 评分必须只引用 final-output-files 中的路径。",
+            "source": "DEEPEN",
+            "requirement_ids": [
+              "REQ-006"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/graph_memory.py",
+              "tests/scene/test_narration_graph_memory.py"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "validation": {
+    "artifactType": "tree-rubrics-refined",
+    "artifact": {
+      "version": "1.0",
+      "task_id": "GROUP-3-task",
+      "group_id": "GROUP-3",
+      "task_type": "code_implementation",
+      "branches": [
+        {
+          "name": "图作用域",
+          "name_en": "Graph Scope",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B1-D1-01",
+              "content": "entities/facts 明确记录 session_id/module_id 或 scoped entity_id，默认查询不跨 scope。 评分必须只引用 final-output-files 中的路径。",
+              "source": "KEEP_01",
+              "requirement_ids": [
+                "REQ-005",
+                "REQ-006"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/graph_memory.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B1-D2-01",
+              "content": "同 path 不同 session/module 的事实不会互相 supersede，测试证明 cross-session 隔离。 评分必须只引用 final-output-files 中的路径。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-005"
+              ],
+              "output_file_hints": [
+                "tests/scene/test_narration_graph_memory.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "路径边界",
+          "name_en": "Path Boundary",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B2-D1-01",
+              "content": "ingest_record 复用 is_allowed_narrative_path/is_authoritative_path 拒绝 authoritative 或非 NarrativeState path。 评分必须只引用 final-output-files 中的路径。",
+              "source": "KEEP_02",
+              "requirement_ids": [
+                "REQ-003",
+                "REQ-005"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/graph_memory.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B2-D2-01",
+              "content": "测试直接构造 bad KeeperNarrationRecord 并证明 graph 不写 story_state/player/session 等权威路径。 评分必须只引用 final-output-files 中的路径。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-003",
+                "REQ-008"
+              ],
+              "output_file_hints": [
+                "tests/scene/test_narration_graph_memory.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "时序查询",
+          "name_en": "Temporal Query",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B3-D1-01",
+              "content": "facts_for_entity 或 facts_as_of 支持 as_of_turn，按 valid_from_turn <= turn < valid_to_turn 过滤。 评分必须只引用 final-output-files 中的路径。",
+              "source": "KEEP_03",
+              "requirement_ids": [
+                "REQ-005",
+                "REQ-006"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/graph_memory.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B3-D2-01",
+              "content": "superseded 历史和 active 当前事实都可通过 include_inactive/audit 检索，as-of 测试覆盖半开区间。 评分必须只引用 final-output-files 中的路径。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-006",
+                "REQ-008"
+              ],
+              "output_file_hints": [
+                "tests/scene/test_narration_graph_memory.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Schema 生命周期",
+          "name_en": "Schema Lifecycle",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B4-D1-01",
+              "content": "schema_meta/schema_version、CHECK、FK、index 和 PRAGMA foreign_keys 已在初始化中建立。 评分必须只引用 final-output-files 中的路径。",
+              "source": "KEEP_04",
+              "requirement_ids": [
+                "REQ-005"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/graph_memory.py"
+              ]
+            },
+            {
+              "depth": 2,
+              "id": "B4-D2-01",
+              "content": "close() 与 context manager 可关闭连接，audit/search 输出包含 scope、status、validity、source_event_ids。 评分必须只引用 final-output-files 中的路径。",
+              "source": "DEEPEN",
+              "requirement_ids": [
+                "REQ-006"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/graph_memory.py",
+                "tests/scene/test_narration_graph_memory.py"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

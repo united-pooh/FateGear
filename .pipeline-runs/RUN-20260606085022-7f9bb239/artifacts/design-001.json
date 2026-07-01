@@ -1,0 +1,6 @@
+{
+  "artifactName": "design.md",
+  "content": "## Objective\n为 FateGear 的 render-stage Keeper 叙事系统正式建设长期叙事记忆能力：先保证本地记忆可持久、可审计、可检索、可失效，再建立本地 temporal graph 数据库骨架，用实体、事实、边和有效期保存叙事连续性线索。该能力必须服务叙事提示和复盘，不得成为权威游戏状态来源。\n\n## Chosen Approach\n采用增量式、非权威的叙事记忆扩展。现有候选实现（PersistentNarrationMemoryStore、SQLiteNarrationGraphMemory、相关测试）作为待审计输入，而不是直接视为合格交付。正式 pipeline 将先产出 spec、plan、architecture，再通过 Tree Rubrics 对最终文件评分；如发现缺口，再派 worker 对 disjoint 文件范围实施补丁。\n\n## Constraints\n- 权威状态仍属于 SceneRuntime、SessionMapState、StoryState、TurnResolution、RuntimeEvent；叙事记忆只能作为辅助上下文。\n- 不回滚或覆盖当前工作树中与本任务无关的既有脏改。\n- 不引入外部图数据库服务；本轮图数据库使用 Python stdlib sqlite3，保证离线可测。\n- 持久化格式必须可审计、可删除、可 reload；删除使用 soft invalidation 以保留审计轨迹。\n- 至少运行 2 小时，并实际使用 subagent 与 MCP 阶段 artifact，不把普通测试当作 Tree Rubrics。\n\n## Success Criteria\n- MCP run 中存在 design/spec/plan/architecture/tree-rubric/classification/grading/dispatch/execution/validation/qa/final-assessment 阶段记录。\n- 至少 4 个 subagent 独立参与 spec、architecture、tree rubric、QA 或 execution/review。\n- Tree Rubrics 至少覆盖 8 个独立维度，并对最终输出文件做 evidence-based grading。\n- 聚焦 narration memory 测试通过，离线 scene 测试通过；在线 quota 类失败必须单独归因。\n- 如 rubric 或 QA 发现阻塞缺口，必须进入 execution/retry，而不是直接宣布完成。\n",
+  "source": "orchestrator",
+  "note": "Formal redo design input for MCP spec stage."
+}

@@ -32,6 +32,10 @@ class IntentResolution(BaseModel):
     intent_type: str
     success: bool
     reason: str = Field(default="")
+    reason_code: str = Field(default="")
+    violation_kind: str = Field(default="")
+    penalty_tier: str = Field(default="")
+    illegal_value: int | None = Field(default=None)
     target_scene_id: str = Field(default="")
     action_id: str = Field(default="")
     effects_applied: list[str] = Field(default_factory=list)
@@ -54,6 +58,8 @@ class RuntimeEvent(BaseModel):
         "no_pending_intents",
         "scene_batch_started",
         "movement_attempted",
+        "movement_risk_updated",
+        "movement_penalty_triggered",
         "action_resolved",
         "movement_committed",
         "flags_changed",
@@ -82,6 +88,20 @@ class RuntimeEvent(BaseModel):
     success: bool | None = Field(default=None)
     fallback_used: bool | None = Field(default=None)
     reason: str = Field(default="")
+    reason_code: str = Field(default="")
+    violation_kind: str = Field(default="")
+    score_before: int | None = Field(default=None)
+    score_after: int | None = Field(default=None)
+    delta: int | None = Field(default=None)
+    decay_applied: int = Field(default=0)
+    threshold_crossed: str = Field(default="")
+    penalty_tier: str = Field(default="")
+    consecutive_count: int = Field(default=0)
+    recent_window_count: int = Field(default=0)
+    initialized: bool = Field(default=False)
+    required_threshold: int | None = Field(default=None)
+    actual_score: int | None = Field(default=None)
+    source_event_id: str = Field(default="")
     effects_applied: list[str] = Field(default_factory=list)
     added_flags: list[str] = Field(default_factory=list)
     removed_flags: list[str] = Field(default_factory=list)

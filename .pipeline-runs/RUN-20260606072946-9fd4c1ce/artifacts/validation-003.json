@@ -1,0 +1,27 @@
+{
+  "passed": [
+    {
+      "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py tests/scene/test_narration_graph_memory.py tests/scene/test_narration_pipeline.py tests/scene/test_narration_prompt.py tests/scene/test_narration_validator.py -q",
+      "result": "15 passed in 0.21s"
+    },
+    {
+      "command": "pytest tests/scene -q -k not online",
+      "result": "106 passed, 1 deselected in 7.25s"
+    },
+    {
+      "command": "python -m compileall -q src/scenario/narration",
+      "result": "passed"
+    },
+    {
+      "command": "git diff --check scoped files",
+      "result": "passed"
+    }
+  ],
+  "failedExternal": [
+    {
+      "command": "pytest tests/scene -q",
+      "result": "1 failed, 106 passed",
+      "reason": "tests/scene/test_runtime_online_agents.py hit OpenAI 429 insufficient_quota and used fallback, causing online smoke expectation failure"
+    }
+  ]
+}

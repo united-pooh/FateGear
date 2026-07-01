@@ -1,0 +1,32 @@
+schema: spec-driven
+
+api_provider:
+  base_url: http://127.0.0.1:8317
+  model: gpt-5.5
+  reasoning_effort: xhigh
+  api_key: sk-dummy
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+context: |
+  API provider configuration:
+  - Base URL: http://127.0.0.1:8317
+  - Model: gpt-5.5
+  - Reasoning effort: xhigh
+  - API key: sk-dummy
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
