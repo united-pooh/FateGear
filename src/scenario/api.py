@@ -592,6 +592,11 @@ class ScenarioService:
                 payload["intended_target"] = decision.intended_target
             if decision.risk_hint:
                 payload["risk_hint"] = decision.risk_hint
+            requested_skill_key = self._intent_normalizer.extract_requested_skill_key(
+                raw_text
+            )
+            if requested_skill_key:
+                payload["requested_skill_key"] = requested_skill_key
             label = (
                 f"尝试前往未知区域「{decision.intended_target}」"
                 if freeform_kind == "off_map_move" and decision.intended_target

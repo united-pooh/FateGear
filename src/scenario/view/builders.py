@@ -50,10 +50,8 @@ class TurnViewBuilder:
                         for outcome in batch.outcomes
                         if outcome.player_id == player_id
                     ],
-                    public_narration=self._value(
-                        narration,
-                        "public_narration",
-                        "",
+                    public_narration=str(
+                        self._value(narration, "public_narration", "")
                     ),
                     npc_dialogues=self._public_dialogues(narration),
                     private_clues=self._private_clues_for_player(
@@ -73,8 +71,19 @@ class TurnViewBuilder:
             current_scene_id=player_state.current_scene_id,
             current_stage_id=resolution.current_stage_id
             or session.story_state.current_stage_id,
+            hit_points=player_state.investigator.state.hit_points,
+            sanity=player_state.investigator.state.sanity,
+            physical_state=str(player_state.investigator.state.physical_state),
+            mental_state=str(player_state.investigator.state.mental_state),
+            special_state=player_state.investigator.state.special_state,
             resolved_ending=resolution.resolved_ending or session.resolved_ending,
             scenes=scenes,
+            dice_rolls=[
+                roll
+                for roll in resolution.dice_rolls
+                if self._value(roll, "player_id", "") == player_id
+                and self._value(roll, "visibility", "public") == "public"
+            ],
         )
 
     def build_keeper_turn_view(
@@ -91,14 +100,12 @@ class TurnViewBuilder:
                     scene_id=batch.scene_id,
                     player_ids=batch.player_ids,
                     outcomes=batch.outcomes,
-                    public_narration=self._value(
-                        narration,
-                        "public_narration",
-                        "",
+                    public_narration=str(
+                        self._value(narration, "public_narration", "")
                     ),
                     npc_dialogues=self._all_dialogues(narration),
                     private_clues=self._all_private_clues(narration),
-                    keeper_hint=self._value(narration, "keeper_hint", ""),
+                    keeper_hint=str(self._value(narration, "keeper_hint", "")),
                     is_fallback=bool(
                         self._value(narration, "is_fallback", False)
                     ),
@@ -113,11 +120,12 @@ class TurnViewBuilder:
             resolved_ending=resolution.resolved_ending or session.resolved_ending,
             scenes=scenes,
             event_log=resolution.event_log,
+            dice_rolls=resolution.dice_rolls,
         )
 
     def _public_dialogues(self, narration: object) -> list[PublicDialogueView]:
         result: list[PublicDialogueView] = []
-        for dialogue in self._value(narration, "npc_dialogues", []) or []:
+        for dialogue in self._list_value(narration, "npc_dialogues"):
             visible_scope = self._value(
                 dialogue,
                 "visible_scope",
@@ -131,7 +139,7 @@ class TurnViewBuilder:
     def _all_dialogues(self, narration: object) -> list[PublicDialogueView]:
         return [
             self._dialogue_view(dialogue)
-            for dialogue in self._value(narration, "npc_dialogues", []) or []
+            for dialogue in self._list_value(narration, "npc_dialogues")
         ]
 
     def _dialogue_view(self, dialogue: object) -> PublicDialogueView:
@@ -149,14 +157,14 @@ class TurnViewBuilder:
     ) -> list[PrivateClueView]:
         return [
             self._private_clue_view(clue)
-            for clue in self._value(narration, "private_clues", []) or []
+            for clue in self._list_value(narration, "private_clues")
             if self._value(clue, "player_id", "") == player_id
         ]
 
     def _all_private_clues(self, narration: object) -> list[PrivateClueView]:
         return [
             self._private_clue_view(clue)
-            for clue in self._value(narration, "private_clues", []) or []
+            for clue in self._list_value(narration, "private_clues")
         ]
 
     def _private_clue_view(self, clue: object) -> PrivateClueView:
@@ -170,6 +178,14 @@ class TurnViewBuilder:
         if isinstance(item, dict):
             return item.get(key, default)
         return getattr(item, key, default)
+
+    def _list_value(self, item: object, key: str) -> list[object]:
+        value = self._value(item, key, [])
+        if isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        return []
 
 
 class ScenarioViewBuilder:
@@ -196,6 +212,11 @@ class ScenarioViewBuilder:
             current_scene_id=scene.id,
             current_scene_name=scene.name,
             current_scene_description=scene.description,
+            hit_points=player_state.investigator.state.hit_points,
+            sanity=player_state.investigator.state.sanity,
+            physical_state=str(player_state.investigator.state.physical_state),
+            mental_state=str(player_state.investigator.state.mental_state),
+            special_state=player_state.investigator.state.special_state,
             reachable_scene_ids=runtime.list_reachable_scenes(session, player_id),
             available_actions=[
                 PlayerActionView(

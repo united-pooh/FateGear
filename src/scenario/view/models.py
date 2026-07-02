@@ -54,8 +54,14 @@ class PlayerTurnView(BaseModel):
     player_id: str
     current_scene_id: str
     current_stage_id: str
+    hit_points: int = 0
+    sanity: int = 0
+    physical_state: str = ""
+    mental_state: str = ""
+    special_state: str = ""
     resolved_ending: str | None = None
     scenes: list[PlayerSceneNarrationView] = Field(default_factory=list)
+    dice_rolls: list[Any] = Field(default_factory=list)
 
 
 class KeeperTurnView(BaseModel):
@@ -66,6 +72,7 @@ class KeeperTurnView(BaseModel):
     resolved_ending: str | None = None
     scenes: list[KeeperSceneNarrationView] = Field(default_factory=list)
     event_log: list[Any] = Field(default_factory=list)
+    dice_rolls: list[Any] = Field(default_factory=list)
 
 
 class PlayerSessionView(BaseModel):
@@ -77,6 +84,11 @@ class PlayerSessionView(BaseModel):
     current_scene_id: str
     current_scene_name: str
     current_scene_description: str = ""
+    hit_points: int = 0
+    sanity: int = 0
+    physical_state: str = ""
+    mental_state: str = ""
+    special_state: str = ""
     reachable_scene_ids: list[str] = Field(default_factory=list)
     available_actions: list[PlayerActionView] = Field(default_factory=list)
     pending_intent_submitted: bool = False

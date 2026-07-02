@@ -126,7 +126,7 @@ class PromptBuilder:
         keeper_private = self._build_keeper_private_layer(
             hidden_notes=keeper_hidden_notes
         )
-        pending_intents = self._build_pending_intents(
+        pending_intent_summaries = self._build_pending_intents(
             session=session,
             module=module,
             scene_id=scene_id,
@@ -143,7 +143,7 @@ class PromptBuilder:
             history=history,
             keeper_private=keeper_private,
             narrative=narrative,
-            pending_intents=pending_intents,
+            pending_intents=pending_intent_summaries,
         )
 
     def build_narrative_context(
@@ -321,6 +321,9 @@ class PromptBuilder:
                         freeform_kind=str(raw_intent.get("freeform_kind", "")),
                         intended_target=str(raw_intent.get("intended_target", "")),
                         risk_hint=str(raw_intent.get("risk_hint", "")),
+                        requested_skill_key=str(
+                            raw_intent.get("requested_skill_key", "")
+                        ),
                     )
                 )
             else:

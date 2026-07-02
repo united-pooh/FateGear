@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from random import randint
+import re
 
 from cards.domain.card import InvestigatorCard
 
@@ -18,6 +19,8 @@ from ..module.types import ModuleCondition, ModuleEffect
 from ..session.state import SessionMapState, SessionPlayerState
 
 RollProvider = Callable[[], int]
+
+_DICE_NOTATION_PATTERN = re.compile(r"^(\d+)d(\d+)$", re.IGNORECASE)
 
 
 class RuleEngine:
@@ -109,7 +112,8 @@ class RuleEngine:
 
         roll = self._next_roll()
         threshold = self._difficulty_threshold(skill.value, check)
-        success = roll <= threshold
+        level = self._success_level(roll, skill.value)
+        success = roll <= threshold and level != "fumble"
         detail = {
             "player_id": player_state.player_id,
             "action_id": action.id,
@@ -118,9 +122,7 @@ class RuleEngine:
             "roll_value": roll,
             "threshold": threshold,
             "success": success,
-            "success_level": (
-                self._success_level(roll, skill.value) if success else "fail"
-            ),
+            "success_level": level if success or level == "fumble" else "fail",
             "reason": "" if success else check.failure_reason,
         }
         if success:
@@ -228,7 +230,8 @@ class RuleEngine:
         - roll_value: int
         - threshold: int
         - success: bool
-        - success_level: str  ("extreme" / "hard" / "regular" / "fail")
+        - success_level: str
+          ("critical" / "extreme" / "hard" / "regular" / "fail" / "fumble")
         - rationale: str
 
         若玩家没有对应技能，``success`` 为 False，``roll_value`` 为 0。
@@ -250,7 +253,7 @@ class RuleEngine:
         roll = self._next_roll()
         sv = skill.value
         level = self._success_level(roll, sv)
-        success = level != "fail"
+        success = level not in {"fail", "fumble"}
         # proposed_difficulty 用于叙事参考，不改变实际阈值
         return {
             "player_id": proposed.player_id,
@@ -263,6 +266,20 @@ class RuleEngine:
             "success_level": level,
             "rationale": proposed.rationale,
         }
+
+    def roll_notation(self, notation: str) -> tuple[list[int], int]:
+        """Roll a simple NdM dice notation and return each die plus the total."""
+        match = _DICE_NOTATION_PATTERN.match(notation.strip())
+        if match is None:
+            raise ValueError(f"不支持的骰式: {notation}")
+        count = int(match.group(1))
+        sides = int(match.group(2))
+        if count <= 0 or sides <= 0:
+            raise ValueError(f"骰式必须使用正整数: {notation}")
+        if count > 20 or sides > 100:
+            raise ValueError(f"骰式超出当前安全范围: {notation}")
+        values = [self._next_die(sides) for _ in range(count)]
+        return values, sum(values)
 
     def clone_card(self, investigator: InvestigatorCard) -> InvestigatorCard:
         """复制人物卡，隔离会话内状态与外部引用。"""
@@ -308,6 +325,10 @@ class RuleEngine:
         return skill_value // 5
 
     def _success_level(self, roll: int, skill_value: int) -> str:
+        if roll == 1:
+            return "critical"
+        if roll == 100 or (skill_value < 50 and roll >= 96):
+            return "fumble"
         if roll <= skill_value // 5:
             return "extreme"
         if roll <= skill_value // 2:
@@ -321,6 +342,10 @@ class RuleEngine:
         if rolled < 1 or rolled > 100:
             raise ValueError(f"检定结果必须在 1..100 之间，收到: {rolled}")
         return rolled
+
+    def _next_die(self, sides: int) -> int:
+        rolled = self._next_roll()
+        return ((rolled - 1) % sides) + 1
 
     def _apply_effects_directly(
         self,

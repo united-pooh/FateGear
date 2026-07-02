@@ -140,6 +140,7 @@ class PlayerIntentSummary(BaseModel):
     freeform_kind: str = Field(default="")
     intended_target: str = Field(default="")
     risk_hint: str = Field(default="")
+    requested_skill_key: str = Field(default="")
 
 
 class IntentAgentPrompt(BaseModel):

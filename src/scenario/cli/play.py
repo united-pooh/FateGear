@@ -96,6 +96,11 @@ def _print_player_view(service: ScenarioService, session_id: str, player_id: str
             f"{action.action_id}:{action.name}" for action in view.available_actions
         ]
         print("[actions] " + ", ".join(actions))
+    print(
+        f"[status] HP={view.hit_points} SAN={view.sanity} "
+        f"physical={view.physical_state} mental={view.mental_state} "
+        f"special={view.special_state}"
+    )
     print(f"[stage] {view.current_stage_id} turn={view.current_turn}")
     if view.resolved_ending:
         print(f"[ending] {view.resolved_ending}")
@@ -151,6 +156,15 @@ def _print_turn_view(
     for scene in player_view.scenes:
         print()
         print(f"===== Turn {player_view.turn_no} | {scene.scene_id} =====")
+        visible_rolls = [
+            roll
+            for roll in player_view.dice_rolls
+            if getattr(roll, "scene_id", "") in {"", scene.scene_id}
+        ]
+        for roll in visible_rolls:
+            display_text = getattr(roll, "display_text", "")
+            if display_text:
+                print(display_text)
         if scene.public_narration:
             print(scene.public_narration)
         for dialogue in scene.npc_dialogues:
@@ -164,9 +178,9 @@ def _print_turn_view(
             resolution=resolution,
             requester_id=player_id,
         )
-        for scene in keeper_view.scenes:
-            if scene.keeper_hint:
-                print(f"\n[keeper hint] {scene.keeper_hint}")
+        for keeper_scene in keeper_view.scenes:
+            if keeper_scene.keeper_hint:
+                print(f"\n[keeper hint] {keeper_scene.keeper_hint}")
         calls = resolution.agent_calls
         if calls:
             summary = ", ".join(
@@ -174,8 +188,21 @@ def _print_turn_view(
                 for call in calls
             )
             print(f"\n[agent calls] {summary}")
+        hidden_rolls = [
+            roll
+            for roll in keeper_view.dice_rolls
+            if getattr(roll, "visibility", "public") == "keeper"
+            and getattr(roll, "display_text", "")
+        ]
+        for roll in hidden_rolls:
+            print(f"\n[keeper dice]\n{roll.display_text}")
 
     print()
+    print(
+        f"[player] HP={player_view.hit_points} SAN={player_view.sanity} "
+        f"physical={player_view.physical_state} mental={player_view.mental_state} "
+        f"special={player_view.special_state}"
+    )
     print(
         f"[state] stage={resolution.current_stage_id} "
         f"ending={resolution.resolved_ending or '-'} next_turn={resolution.next_turn}"

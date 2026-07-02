@@ -165,6 +165,41 @@ class IntentNormalizer:
         "连接处",
         "车厢连接处",
     )
+    _REQUESTED_SKILL_TERMS = {
+        "spot_hidden": (
+            "侦查",
+            "侦察",
+            "spot_hidden",
+            "spot hidden",
+            "看清",
+            "仔细看",
+        ),
+        "listen": (
+            "聆听",
+            "倾听",
+            "listen",
+            "听声",
+            "听声音",
+        ),
+        "stealth": (
+            "潜行",
+            "stealth",
+            "悄悄",
+            "蹑手蹑脚",
+            "放轻脚步",
+            "压低脚步",
+        ),
+    }
+    _CHECK_REQUEST_TERMS = (
+        "检定",
+        "申请",
+        "使用",
+        "用",
+        "过",
+        "骰",
+        "roll",
+        "check",
+    )
 
     def normalize(
         self,
@@ -449,6 +484,19 @@ class IntentNormalizer:
             },
         )
 
+    def extract_requested_skill_key(self, raw_text: str) -> str:
+        """从玩家文本中提取主动申请的检定技能。"""
+        normalized_text = self._normalize_text(raw_text)
+        has_check_language = any(
+            term in normalized_text for term in self._CHECK_REQUEST_TERMS
+        )
+        for skill_key, terms in self._REQUESTED_SKILL_TERMS.items():
+            if not any(self._normalize_text(term) in normalized_text for term in terms):
+                continue
+            if has_check_language or skill_key == "stealth":
+                return skill_key
+        return ""
+
     def _best_term_score(
         self,
         terms: list[str],
@@ -527,6 +575,9 @@ class IntentNormalizer:
             for key in ("freeform_kind", "intended_target", "risk_hint"):
                 if key in match.metadata:
                     payload[key] = match.metadata[key]
+            requested_skill_key = self.extract_requested_skill_key(raw_text)
+            if requested_skill_key:
+                payload["requested_skill_key"] = requested_skill_key
         else:
             payload = {"type": "freeform", "text": raw_text}
         return NormalizedIntentResult(

@@ -7,10 +7,11 @@ import logging
 from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
 from cards.domain.card import InvestigatorCard
+from cards.domain.enums import MentalState, PhysicalState
 
 from ..agent.models import (
     AuthorizedPrivateClue,
@@ -22,7 +23,7 @@ from ..agent.plan_agent import KeeperPlanAgent
 from ..agent.prompt_builder import PromptBuilder
 from ..agent.render_agent import KeeperRenderAgent
 from ..io.module_loader import MODULE_ROOT, load_module_by_id
-from ..module.models import ModuleAction, ModuleDefinition
+from ..module.models import ModuleAction, ModuleDefinition, ModuleScene
 from ..scene.models import SceneLink
 from ..scene.rules import SceneMovementRules
 from ..session.state import SceneInstanceState, SessionMapState, SessionPlayerState
@@ -329,6 +330,7 @@ class SceneRuntime:
         flag_sets: set[str] = set()
         flag_clears: set[str] = set()
         clock_deltas: dict[str, int] = defaultdict(int)
+        status_deltas: list[dict[str, object]] = []
         completed_actions: set[str] = set()
         scene_events: set[str] = set()
         scene_clears: set[str] = set()
@@ -376,7 +378,9 @@ class SceneRuntime:
             # 本批次 Agent 提议的动态检定结果，key 为 (player_id, action_id)
             dynamic_check_results: dict[tuple[str, str], dict] = {}
             pending_action_ids_by_player: dict[str, set[str]] = defaultdict(set)
+            pending_payloads_by_player: dict[str, dict[str, object]] = {}
             for pending_player_id, pending_payload in intents:
+                pending_payloads_by_player[pending_player_id] = pending_payload
                 pending_type = str(pending_payload.get("type", ""))
                 if pending_type == "action":
                     pending_action_ids_by_player[pending_player_id].add(
@@ -430,6 +434,20 @@ class SceneRuntime:
                     )
                     # 执行 Agent 提议的动态检定（在规则引擎静态检定之前）
                     for proposed in plan.proposed_checks:
+                        if self._should_skip_agent_freeform_check(
+                            proposed=proposed,
+                            pending_payload=pending_payloads_by_player.get(
+                                proposed.player_id,
+                                {},
+                            ),
+                        ):
+                            logger.info(
+                                "Plan Agent 为未主动申请技能的边界自由行动提议检定，已跳过："
+                                "player=%s skill=%s",
+                                proposed.player_id,
+                                proposed.skill_key,
+                            )
+                            continue
                         if proposed.action_id not in pending_action_ids_by_player.get(
                             proposed.player_id,
                             set(),
@@ -585,12 +603,18 @@ class SceneRuntime:
                         intent=intent,
                         agent_check_result=dynamic_result,
                     )
+                    raw_runtime_risk_effects = runtime_risk.get("effects_applied", [])
                     runtime_risk_effects = [
                         str(effect)
-                        for effect in runtime_risk.get("effects_applied", [])
+                        for effect in (
+                            raw_runtime_risk_effects
+                            if isinstance(raw_runtime_risk_effects, list)
+                            else []
+                        )
                     ]
-                    if dynamic_result is None and runtime_risk.get("check_result"):
-                        dynamic_result = runtime_risk["check_result"]
+                    runtime_check_result = runtime_risk.get("check_result")
+                    if dynamic_result is None and isinstance(runtime_check_result, dict):
+                        dynamic_result = runtime_check_result
                         batch_resolved_checks.append(dynamic_result)
                         dice_rolls.append(
                             self._build_dice_roll_audit(
@@ -602,13 +626,28 @@ class SceneRuntime:
                                 result=dynamic_result,
                             )
                         )
-                    for clock_id, delta in runtime_risk.get("clock_deltas", {}).items():
-                        clock_deltas[str(clock_id)] += int(delta)
-                    check_passed = (
-                        bool(dynamic_result.get("success", False))
-                        if dynamic_result is not None
-                        else True
-                    )
+                    raw_status_deltas = runtime_risk.get("status_deltas", [])
+                    for status_delta in (
+                        raw_status_deltas if isinstance(raw_status_deltas, list) else []
+                    ):
+                        if isinstance(status_delta, dict):
+                            status_deltas.append(status_delta)
+                    raw_status_rolls = runtime_risk.get("dice_rolls", [])
+                    for status_roll in (
+                        raw_status_rolls if isinstance(raw_status_rolls, list) else []
+                    ):
+                        if isinstance(status_roll, DiceRollAudit):
+                            dice_rolls.append(status_roll)
+                    raw_clock_deltas = runtime_risk.get("clock_deltas", {})
+                    if isinstance(raw_clock_deltas, dict):
+                        for clock_id, delta in raw_clock_deltas.items():
+                            clock_deltas[str(clock_id)] += int(delta)
+                    if dynamic_result is not None:
+                        check_passed = bool(dynamic_result.get("success", False))
+                    elif "success" in runtime_risk:
+                        check_passed = bool(runtime_risk["success"])
+                    else:
+                        check_passed = True
                     check_note = (
                         str(
                             dynamic_result.get("reason")
@@ -668,6 +707,7 @@ class SceneRuntime:
                             freeform_kind=intent.freeform_kind,
                             intended_target=intent.intended_target,
                             risk_hint=intent.risk_hint,
+                            requested_skill_key=intent.requested_skill_key,
                             effects_applied=runtime_risk_effects,
                         )
                     )
@@ -903,6 +943,12 @@ class SceneRuntime:
             module=module,
             deltas=clock_deltas,
         )
+        self._apply_status_deltas(
+            session=session,
+            status_deltas=status_deltas,
+            event_log=event_log,
+            turn_no=snapshot.current_turn,
+        )
 
         session.current_turn += 1
         per_turn_deltas = {
@@ -1107,7 +1153,7 @@ class SceneRuntime:
         *,
         session: SessionMapState,
         module: ModuleDefinition,
-        scene_by_id: dict[str, object],
+        scene_by_id: dict[str, ModuleScene],
         snapshot_turn: int,
         scene_batches: list[SceneBatchResolution],
         render_payloads: dict[
@@ -1140,7 +1186,7 @@ class SceneRuntime:
             resolved_checks, batch_effects, authorized_private_clues = (
                 render_payloads.get(batch.scene_id, ([], [], []))
             )
-            pending_intents = {
+            pending_intents: dict[str, dict[str, object]] = {
                 outcome.player_id: {
                     "type": outcome.intent_type,
                     **(
@@ -1176,6 +1222,11 @@ class SceneRuntime:
                     **(
                         {"risk_hint": outcome.risk_hint}
                         if outcome.risk_hint
+                        else {}
+                    ),
+                    **(
+                        {"requested_skill_key": outcome.requested_skill_key}
+                        if outcome.requested_skill_key
                         else {}
                     ),
                 }
@@ -1413,8 +1464,8 @@ class SceneRuntime:
     ) -> dict[str, object]:
         """为危险自由行动提供运行时兜底检定与后果。
 
-        Plan Agent 可以更细腻地裁定自由行动；这层只处理它漏掉的高风险边界：
-        连续探索地图外、深渊、后方声源，或在威胁接近时奔跑/制造声响。
+        玩家主动申请技能时，运行时执行公开检定；玩家没有申请却继续试探
+        地图外/未定义边界时，交给 KP 暗骰生成惩罚后果。
         """
         prior_boundary_attempts = self._count_prior_boundary_freeforms(
             session_id=session_id,
@@ -1488,40 +1539,89 @@ class SceneRuntime:
             or sound_source_push
         )
 
-        if not needs_check:
+        requested_skill_key = intent.requested_skill_key.strip()
+        if not boundary_attempt and not needs_check:
             return {}
 
         check_result: dict | None = None
         has_agent_check = agent_check_result is not None
         effects_applied: list[str] = []
-        reason = "运行时兜底：危险自由行动需要先裁定风险，不能无成本推进。"
-        skill_key = self._choose_freeform_risk_skill(
-            player_state=player_state,
-            prefer_observation=dangerous_observation and not noisy_or_rushing,
-        )
-        if skill_key and not has_agent_check:
-            if noisy_or_rushing:
-                reason = "运行时兜底：在后方威胁接近时奔跑或制造声响会吸引循声者。"
-            elif dangerous_observation:
-                reason = "运行时兜底：探看深渊、车外或后方声源需要先确认风险。"
-            proposed = ProposedCheck(
-                player_id=player_state.player_id,
-                action_id="freeform",
-                skill_key=skill_key,
-                proposed_difficulty=(
-                    "hard"
-                    if noisy_or_rushing or prior_boundary_attempts >= 3
-                    else "normal"
-                ),
-                rationale=reason,
-            )
-            check_result = self._rule_engine.resolve_proposed_check(
-                proposed=proposed,
-                player_state=player_state,
-            )
-            effects_applied.append(f"运行时自由行动检定:{skill_key}")
-
+        status_deltas: list[dict[str, object]] = []
+        dice_rolls: list[DiceRollAudit] = []
         clock_deltas: dict[str, int] = {}
+        danger_level = self._freeform_danger_level(
+            prior_boundary_attempts=prior_boundary_attempts,
+            current_threat=self._rear_threat_value(module, snapshot),
+            noisy_or_rushing=noisy_or_rushing,
+            dangerous_observation=dangerous_observation,
+            moving_deeper=moving_deeper,
+        )
+        reason = "危险自由行动已按边界风险裁定。"
+
+        if requested_skill_key:
+            reason = (
+                f"玩家主动申请使用 {requested_skill_key} 判断处境，"
+                "以本次检定决定是否及时察觉边界风险。"
+            )
+            if has_agent_check:
+                check_result = agent_check_result
+            elif requested_skill_key in player_state.investigator.skills:
+                proposed_difficulty = "hard" if danger_level >= 3 else "normal"
+                proposed = ProposedCheck(
+                    player_id=player_state.player_id,
+                    action_id="freeform",
+                    skill_key=requested_skill_key,
+                    proposed_difficulty=proposed_difficulty,
+                    rationale=reason,
+                )
+                check_result = self._rule_engine.resolve_proposed_check(
+                    proposed=proposed,
+                    player_state=player_state,
+                )
+            else:
+                check_result = {
+                    "player_id": player_state.player_id,
+                    "action_id": "freeform",
+                    "skill_key": requested_skill_key,
+                    "proposed_difficulty": "normal",
+                    "roll_value": 0,
+                    "threshold": 0,
+                    "success": False,
+                    "success_level": "fail",
+                    "rationale": reason,
+                    "note": f"缺少技能 {requested_skill_key}",
+                }
+            effects_applied.append(f"玩家主动检定:{requested_skill_key}")
+
+        if requested_skill_key:
+            success = bool(check_result and check_result.get("success"))
+            if not success:
+                penalty = self._build_freeform_status_penalty(
+                    player_state=player_state,
+                    turn_no=snapshot.current_turn,
+                    severity=max(1, danger_level - 1),
+                    visibility="public",
+                    reason="主动判断处境失败，边界风险转化为可见后果。",
+                )
+                effects_applied.extend(penalty["effects_applied"])
+                status_deltas.extend(penalty["status_deltas"])
+                dice_rolls.extend(penalty["dice_rolls"])
+        else:
+            reason = (
+                "玩家未主动申请技能判断处境却继续试探未定义边界；"
+                "KP 进行暗骰惩罚，暗骰数值不对玩家公开。"
+            )
+            penalty = self._build_freeform_status_penalty(
+                player_state=player_state,
+                turn_no=snapshot.current_turn,
+                severity=danger_level,
+                visibility="keeper",
+                reason=reason,
+            )
+            effects_applied.extend(penalty["effects_applied"])
+            status_deltas.extend(penalty["status_deltas"])
+            dice_rolls.extend(penalty["dice_rolls"])
+
         clock = module.clock_map().get("rear_threat")
         if clock is not None:
             current_threat = snapshot.clock_values.get(clock.id, clock.start)
@@ -1530,7 +1630,13 @@ class SceneRuntime:
                 prior_boundary_attempts >= 4 or current_threat >= 6
             )
             extra_threat = 0
-            if severe_noise:
+            if not requested_skill_key and boundary_attempt:
+                extra_threat = max(1, danger_level - 1)
+            elif requested_skill_key and effective_check_result is not None and not bool(
+                effective_check_result.get("success")
+            ):
+                extra_threat = max(1, danger_level - 2)
+            elif severe_noise:
                 if effective_check_result is not None and bool(
                     effective_check_result.get("success")
                 ):
@@ -1551,7 +1657,274 @@ class SceneRuntime:
             "clock_deltas": clock_deltas,
             "effects_applied": effects_applied,
             "reason": reason,
+            "status_deltas": status_deltas,
+            "dice_rolls": dice_rolls,
+            "success": bool(check_result.get("success")) if check_result else False,
         }
+
+    def _rear_threat_value(
+        self,
+        module: ModuleDefinition,
+        snapshot: SessionMapState,
+    ) -> int:
+        clock = module.clock_map().get("rear_threat")
+        if clock is None:
+            return 0
+        return snapshot.clock_values.get(clock.id, clock.start)
+
+    def _freeform_danger_level(
+        self,
+        *,
+        prior_boundary_attempts: int,
+        current_threat: int,
+        noisy_or_rushing: bool,
+        dangerous_observation: bool,
+        moving_deeper: bool,
+    ) -> int:
+        level = 1
+        if prior_boundary_attempts >= 1 or current_threat >= 2 or moving_deeper:
+            level = 2
+        if prior_boundary_attempts >= 3 or current_threat >= 5 or noisy_or_rushing:
+            level = 3
+        if prior_boundary_attempts >= 5 or current_threat >= 8:
+            level = 4
+        if dangerous_observation and current_threat >= 4:
+            level = max(level, 3)
+        return min(level, 4)
+
+    def _build_freeform_status_penalty(
+        self,
+        *,
+        player_state: SessionPlayerState,
+        turn_no: int,
+        severity: int,
+        visibility: Literal["public", "keeper"],
+        reason: str,
+    ) -> dict[str, list]:
+        severity = min(max(severity, 1), 4)
+        san_notation = ("1d2", "1d3", "1d4", "1d6")[severity - 1]
+        effects_applied: list[str] = []
+        status_deltas: list[dict[str, object]] = []
+        dice_rolls: list[DiceRollAudit] = []
+
+        san_before = player_state.investigator.state.sanity
+        san_values, san_loss = self._rule_engine.roll_notation(san_notation)
+        san_after = max(0, san_before - san_loss)
+        san_delta = san_after - san_before
+        status_deltas.append(
+            {
+                "player_id": player_state.player_id,
+                "target": "sanity",
+                "delta": san_delta,
+                "reason": reason,
+            }
+        )
+        dice_rolls.append(
+            self._build_status_roll_audit(
+                player_id=player_state.player_id,
+                turn_no=turn_no,
+                scene_id=player_state.current_scene_id,
+                label="SAN CHECK",
+                notation=san_notation,
+                values=san_values,
+                total=san_loss,
+                status_target="sanity",
+                status_before=san_before,
+                status_after=san_after,
+                visibility=visibility,
+                reason=reason,
+            )
+        )
+        effects_applied.append(
+            self._format_status_effect(
+                label="SAN",
+                notation=san_notation,
+                total=san_loss,
+                before=san_before,
+                after=san_after,
+                visibility=visibility,
+            )
+        )
+
+        if severity >= 3:
+            damage_notation = "1d2" if severity == 3 else "2d2"
+            hp_before = player_state.investigator.state.hit_points
+            damage_values, damage = self._rule_engine.roll_notation(damage_notation)
+            hp_after = max(0, hp_before - damage)
+            hp_delta = hp_after - hp_before
+            status_deltas.append(
+                {
+                    "player_id": player_state.player_id,
+                    "target": "hit_points",
+                    "delta": hp_delta,
+                    "reason": reason,
+                }
+            )
+            dice_rolls.append(
+                self._build_status_roll_audit(
+                    player_id=player_state.player_id,
+                    turn_no=turn_no,
+                    scene_id=player_state.current_scene_id,
+                    label="收到伤害",
+                    notation=damage_notation,
+                    values=damage_values,
+                    total=damage,
+                    status_target="hit_points",
+                    status_before=hp_before,
+                    status_after=hp_after,
+                    visibility=visibility,
+                    reason=reason,
+                )
+            )
+            effects_applied.append(
+                self._format_status_effect(
+                    label="HP",
+                    notation=damage_notation,
+                    total=damage,
+                    before=hp_before,
+                    after=hp_after,
+                    visibility=visibility,
+                )
+            )
+
+        return {
+            "effects_applied": effects_applied,
+            "status_deltas": status_deltas,
+            "dice_rolls": dice_rolls,
+        }
+
+    def _build_status_roll_audit(
+        self,
+        *,
+        player_id: str,
+        turn_no: int,
+        scene_id: str,
+        label: str,
+        notation: str,
+        values: list[int],
+        total: int,
+        status_target: str,
+        status_before: int,
+        status_after: int,
+        visibility: Literal["public", "keeper"],
+        reason: str,
+    ) -> DiceRollAudit:
+        prefix = "[暗骰] " if visibility == "keeper" else ""
+        roll_text = f"{notation}={total}"
+        target_label = "SAN" if status_target == "sanity" else "HP"
+        display_text = (
+            f"{prefix}{label}\n"
+            f"投掷骰子 {roll_text}\n"
+            f"{target_label}: {status_before}->{status_after}"
+        )
+        return DiceRollAudit(
+            source="status_consequence",
+            turn_no=turn_no,
+            player_id=player_id,
+            scene_id=scene_id,
+            visibility=visibility,
+            roll_kind="status",
+            label=label,
+            notation=notation,
+            roll_values=values,
+            total=total,
+            status_target=status_target,
+            status_before=status_before,
+            status_after=status_after,
+            status_delta=status_after - status_before,
+            reason=reason,
+            display_text=display_text,
+        )
+
+    def _format_status_effect(
+        self,
+        *,
+        label: str,
+        notation: str,
+        total: int,
+        before: int,
+        after: int,
+        visibility: Literal["public", "keeper"],
+    ) -> str:
+        if visibility == "keeper":
+            return f"暗骰状态变化:{label}-{total}({before}->{after})"
+        return f"{label}变化:{notation}={total}({before}->{after})"
+
+    def _apply_status_deltas(
+        self,
+        *,
+        session: SessionMapState,
+        status_deltas: list[dict[str, object]],
+        event_log: list[RuntimeEvent],
+        turn_no: int,
+    ) -> None:
+        for delta in status_deltas:
+            player_id = str(delta.get("player_id", ""))
+            target = str(delta.get("target", ""))
+            raw_amount = delta.get("delta", 0)
+            amount = raw_amount if isinstance(raw_amount, int) else 0
+            if amount == 0 or player_id not in session.player_states:
+                continue
+            player_state = session.player_states[player_id]
+            investigator = player_state.investigator
+            if target == "sanity":
+                before = investigator.state.sanity
+                investigator.modify_sanity(amount)
+                after = investigator.state.sanity
+                if after == 0:
+                    investigator.state.mental_state = MentalState.INDEFINITE_INSANITY
+                    investigator.state.special_state = "SAN归零"
+                elif abs(amount) >= 5:
+                    investigator.state.mental_state = MentalState.TEMPORARY_INSANITY
+                    investigator.state.special_state = "短时失控"
+                label = "SAN"
+            elif target == "hit_points":
+                before = investigator.state.hit_points
+                investigator.modify_hit_point(amount)
+                after = investigator.state.hit_points
+                if after == 0:
+                    investigator.state.physical_state = PhysicalState.DYING
+                    investigator.state.special_state = "濒死"
+                label = "HP"
+            else:
+                continue
+            event_log.append(
+                RuntimeEvent(
+                    type="status_changed",
+                    turn_no=turn_no,
+                    player_id=player_id,
+                    scene_id=player_state.current_scene_id,
+                    effects_applied=[f"{label}{amount:+d}:{before}->{after}"],
+                    reason=str(delta.get("reason", "")),
+                    message=(
+                        f"玩家 {player_id} 状态变化："
+                        f"{label}{amount:+d}（{before}->{after}）"
+                    ),
+                )
+            )
+
+    def _should_skip_agent_freeform_check(
+        self,
+        *,
+        proposed: ProposedCheck,
+        pending_payload: dict[str, object],
+    ) -> bool:
+        if proposed.action_id != "freeform":
+            return False
+        try:
+            intent = SCENE_INTENT_ADAPTER.validate_python(pending_payload)
+        except Exception:  # noqa: BLE001
+            return False
+        if isinstance(intent, ObserveIntent):
+            intent = FreeformIntent(type="freeform", text=intent.text)
+        if not isinstance(intent, FreeformIntent):
+            return False
+        if not self._is_boundary_freeform(intent):
+            return False
+        requested_skill_key = intent.requested_skill_key.strip()
+        if not requested_skill_key:
+            return True
+        return requested_skill_key != proposed.skill_key
 
     def _count_prior_boundary_freeforms(
         self,
@@ -1698,13 +2071,33 @@ class SceneRuntime:
     def _build_dice_roll_audit(
         self,
         *,
-        source: str,
+        source: Literal[
+            "static_action_check",
+            "dynamic_agent_check",
+            "runtime_freeform_check",
+        ],
         turn_no: int,
         scene_id: str,
         scene_name: str,
         action: ModuleAction | None,
         result: dict,
     ) -> DiceRollAudit:
+        skill_key = str(result.get("skill_key", ""))
+        roll_value = int(result.get("roll_value", 0) or 0)
+        threshold = int(result.get("threshold", 0) or 0)
+        success = bool(result.get("success", False))
+        label = f"{skill_key} CHECK" if skill_key else "CHECK"
+        level_label = self._roll_level_label(str(result.get("success_level", "")))
+        display_text = (
+            f"{label}\n"
+            f"投掷骰子 d100={roll_value}\n"
+            f"目标值 {threshold}：{level_label or ('成功' if success else '失败')}"
+            if roll_value > 0
+            else ""
+        )
+        visibility: Literal["public", "keeper"] = (
+            "keeper" if result.get("visibility") == "keeper" else "public"
+        )
         return DiceRollAudit(
             source=source,
             turn_no=turn_no,
@@ -1713,16 +2106,33 @@ class SceneRuntime:
             scene_name=scene_name,
             action_id=str(result.get("action_id") or getattr(action, "id", "")),
             action_name=getattr(action, "name", ""),
-            skill_key=str(result.get("skill_key", "")),
+            skill_key=skill_key,
             difficulty=str(result.get("difficulty", "")),
             proposed_difficulty=str(result.get("proposed_difficulty", "")),
-            roll_value=int(result.get("roll_value", 0) or 0),
-            threshold=int(result.get("threshold", 0) or 0),
-            success=bool(result.get("success", False)),
+            roll_value=roll_value,
+            threshold=threshold,
+            success=success,
             success_level=str(result.get("success_level", "")),
             reason=str(result.get("reason", "")),
             note=str(result.get("note", "")),
+            visibility=visibility,
+            roll_kind="skill_check",
+            label=label,
+            notation="d100" if roll_value > 0 else "",
+            roll_values=[roll_value] if roll_value > 0 else [],
+            total=roll_value,
+            display_text=display_text,
         )
+
+    def _roll_level_label(self, success_level: str) -> str:
+        return {
+            "critical": "大成功",
+            "extreme": "极难成功",
+            "hard": "困难成功",
+            "regular": "成功",
+            "fail": "失败",
+            "fumble": "大失败",
+        }.get(success_level, "")
 
     def _authorized_clues_for_action(
         self,
@@ -1751,7 +2161,7 @@ class SceneRuntime:
     def _build_agent_call_audit(
         self,
         *,
-        stage: str,
+        stage: Literal["plan", "render"],
         turn_no: int,
         scene_id: str,
         scene_name: str,

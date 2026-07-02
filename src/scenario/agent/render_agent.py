@@ -359,6 +359,7 @@ def _build_render_user_message(commit: CommitResult) -> str:
                 freeform_kind = _value(outcome, "freeform_kind", "")
                 intended_target = _value(outcome, "intended_target", "")
                 risk_hint = _value(outcome, "risk_hint", "")
+                requested_skill_key = _value(outcome, "requested_skill_key", "")
                 lines.append(
                     f"  - {player} 自由行动："
                     f"{text}；"
@@ -366,11 +367,12 @@ def _build_render_user_message(commit: CommitResult) -> str:
                     "不等同于模组关键动作，除已提交效果外不得推进剧情节点；"
                     "除非另有成功 move，不得叙述成已经移动到其他场景。"
                 )
-                if freeform_kind or intended_target or risk_hint:
+                if freeform_kind or intended_target or risk_hint or requested_skill_key:
                     lines.append(
                         "    边界信息："
                         f"类型={freeform_kind or '普通自由行动'}；"
                         f"目标={intended_target or '未指定'}；"
+                        f"主动申请检定={requested_skill_key or '无'}；"
                         f"提示={risk_hint or '无'}"
                     )
                 effects = _list_value(outcome, "effects_applied")

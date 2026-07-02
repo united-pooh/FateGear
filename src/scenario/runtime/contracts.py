@@ -33,6 +33,7 @@ class FreeformIntent(BaseModel):
     freeform_kind: str = Field(default="", max_length=40)
     intended_target: str = Field(default="", max_length=80)
     risk_hint: str = Field(default="", max_length=800)
+    requested_skill_key: str = Field(default="", max_length=50)
 
 
 SceneIntent = MoveIntent | ActionIntent | ObserveIntent | FreeformIntent
@@ -52,6 +53,7 @@ class IntentResolution(BaseModel):
     freeform_kind: str = Field(default="")
     intended_target: str = Field(default="")
     risk_hint: str = Field(default="")
+    requested_skill_key: str = Field(default="")
     effects_applied: list[str] = Field(default_factory=list)
 
 
@@ -82,6 +84,7 @@ class RuntimeEvent(BaseModel):
         "story_transition_applied",
         "ending_reached",
         "turn_completed",
+        "status_changed",
         "plan_agent_called",
         "plan_agent_skipped",
         "agent_effects_queued",
@@ -127,6 +130,7 @@ class DiceRollAudit(BaseModel):
         "static_action_check",
         "dynamic_agent_check",
         "runtime_freeform_check",
+        "status_consequence",
     ]
     turn_no: int = Field(default=0)
     player_id: str = Field(default="")
@@ -143,6 +147,18 @@ class DiceRollAudit(BaseModel):
     success_level: str = Field(default="")
     reason: str = Field(default="")
     note: str = Field(default="")
+    visibility: Literal["public", "keeper"] = Field(default="public")
+    roll_kind: str = Field(default="skill_check")
+    label: str = Field(default="")
+    notation: str = Field(default="")
+    roll_values: list[int] = Field(default_factory=list)
+    total: int = Field(default=0)
+    status_target: str = Field(default="")
+    status_before: int = Field(default=0)
+    status_after: int = Field(default=0)
+    status_delta: int = Field(default=0)
+    penalty_dice: int = Field(default=0)
+    display_text: str = Field(default="")
 
 
 class AgentCallAudit(BaseModel):

@@ -1,1310 +1,482 @@
-# FateGear 系统设计文档
+# FateGear
 
-FateGear 的目标不是做一个“会讲故事的聊天机器人”，而是做一个可落地的 COC 守密人工具。它面向固定模组、多玩家协作、私有信息隔离、剧情节奏控制和可审计的回合处理流程。
+FateGear 是一个面向 Call of Cthulhu 7e 跑团的 LLM 守密人运行时原型。它的目标不是做一个“会讲故事的聊天机器人”，而是把模组、玩家意图、规则检定、剧情状态、私密信息、叙事生成和审计日志放进同一条可验证的回合链路里。
 
-这意味着系统必须同时满足两件事：
+当前版本已经能跑通一个最小 COC/KP 后端闭环：玩家提交结构化或自然语言意图，运行时按场景分批处理，Plan Agent 只提出建议，RuleEngine 与剧情状态机提交权威结果，Render Agent 在提交后生成公共叙事、NPC 台词和私密线索，最后通过玩家/守密人视图和 JSONL 审计日志暴露结果。
 
-- 有足够强的叙事能力，让玩家感受到守密人的临场反馈。
-- 有足够硬的工程边界，让剧情推进、规则判定、状态迁移和日志追踪都可验证、可回放、可调试。
+## 当前定位
 
-当前的设计结论是：
+FateGear 服务的是有明确模组边界的跑团，而不是开放式闲聊。当前重点是：
 
-- V1 先做地图与场景事件转移。
-- 地图/空间状态监控前端放在下一阶段。
-- Agent 只输出提议和叙事，不直接修改数据库状态。
-- 运行时核心依赖会话快照与事件日志，而不是每轮靠回放日志重建全部上下文。
+- 固定模组下的场景探索、行动结算和剧情推进。
+- 多玩家同团时的场景分组、公开/私密/keeper-only 信息隔离。
+- COC 7e 调查员卡、技能检定、成功等级、SAN/HP 后果和暗骰。
+- LLM 参与意图理解、检定建议和叙事生成，但不能直接改写权威状态。
+- 每回合可审计、可回放、可定位问题来源。
 
-## 命名空间迁移（Breaking）
+一句话概括当前架构：
 
-自 `2026-03-30` 起，项目已完成运行时命名空间收敛：
-
-- 旧 `scene.*` 命名空间已删除，不再提供兼容层。
-- 所有运行时与领域模型统一到 `scenario.*`。
-- `SceneRuntime` 的唯一入口为 `scenario.runtime.SceneRuntime`。
-
-如果你的外部脚本仍在使用 `scene.*` 导入，请改为 `scenario.*` 对应路径。
-
-## 1. 项目定位
-
-FateGear 服务的不是“自由闲聊式 TRPG”，而是有明确模组边界的 COC 守密场景，例如《常暗之箱》这种强叙事、强结局约束、带有空间探索和时间压力的模组。
-
-系统需要支持的核心能力包括：
-
-- 多名玩家处于不同场景时的空间隔离与并行结算
-- 玩家私有线索、Keeper 全局信息与公开叙事的分层输出
-- 剧情阶段、场景状态、NPC 状态和规则结果的解耦
-- 回合级别的审计、回放与调试
-
-## 2. 核心设计原则
-
-### Agent 只提议，不直接改库
-
-任何 LLM 输出都不能直接进入数据库。Agent 负责：
-
-- 理解玩家意图
-- 提出结构化计划
-- 基于已提交状态生成叙事文本
-
-真正决定数据库状态的是：
-
-- `RuleEngine`
-- `TransitionValidator`
-- `StateStore` 事务提交逻辑
-
-### 判定与叙事分两段
-
-一轮处理必须拆成两个阶段：
-
-1. `KeeperAgent(Plan)` 产出结构化计划
-2. `KeeperAgent(Render)` 基于已提交结果产出叙事
-
-这样做的目的是避免“判定逻辑”和“叙事润色”互相污染。规则结果先落定，文本生成后发生。
-
-### 会话快照优先于日志重放
-
-系统必须保存当前会话快照，而不是要求编排器每一轮都靠事件日志回放来重建上下文。快照负责支撑：
-
-- 高频读取
-- 中频写入
-- PromptBuilder 快速构造上下文
-- Keeper 面板快速查询
-
-事件日志仍然保留，但它解决的是审计和回放，不负责承担运行时主读取路径。
-
-## 3. 三层数据模型
-
-这套设计把三种完全不同性质的数据拆开管理。
-
-### 模组静态定义层：`module_*`
-
-这层解决“作者写了什么”。
-
-- `module_info`
-- `module_story_stage`
-- `module_scene`
-- `module_scene_transition`
-- `module_npc`
-- `module_clue`
-- `module_trigger`
-
-特点：
-
-- 基本不变
-- 可版本化
-- 可复用
-- 可做静态校验
-
-### 会话当前快照层：`session_*`
-
-这层解决“这一局当前是什么状态”。
-
-- `session`
-- `session_story_state`
-- `session_scene_state`
-- `session_player_state`
-- `session_npc_state`
-- `session_clue_state`
-- `session_timer_state`
-
-特点：
-
-- 高频读
-- 中频写
-- 强依赖事务一致性
-- 需要快速构造 prompt 和监控视图
-
-编排器应当能够从这层一次性拉出：
-
-- 当前剧情阶段
-- 各玩家所在场景
-- 在场 NPC
-- 已公开与私有线索
-- 危险度或倒计时
-- 已触发与待触发的计时器
-
-### 回放与审计层：`event_log` 与回合日志
-
-这层解决“为什么会变成现在这样”。
-
-- `turns`
-- `turn_batches`
-- `player_intents`
-- `event_log`
-- `dice_rolls`
-- `narration_log`
-- `private_message_log`
-
-这层主要服务于：
-
-- 回放某一轮发生了什么
-- 检查某次剧情跳转为什么成立
-- 对比玩家所见文本与全局状态差异
-- 追查是 PromptBuilder、RuleEngine、Validator 还是 Agent 输出出了问题
-
-## 4. 核心运行时组件
-
-V1 的最小闭环围绕下面六个组件展开：
-
-- `StoryState`
-- `SceneRouter`
-- `RuleEngine`
-- `NPCState`
-- 两段式 `KeeperAgent`
-- `Turn Log + Event Log`
-
-各组件职责如下：
-
-### `StoryState`
-
-负责管理剧情主阶段、分支阶段与结局锁，不负责玩家空间位置。
-
-### `SceneRouter`
-
-根据 `session_player_state.current_scene_id` 将玩家动作按场景分组，形成 `SceneTurnBatch`。它负责“谁和谁在同一批结算”，不负责决定剧情是否跳幕。
-
-### `RuleEngine`
-
-负责数值检定、对抗检定、环境修正、伤害计算、状态变化效果等规则运算。它只接受结构化输入，不解析自然语言。
-
-### `NPCState`
-
-负责 NPC 当前状态、位置信息、知识边界和记忆摘要。V1 不给每个 NPC 一个独立 Agent，而是由 Keeper Agent 结合 NPC 状态卡进行统一控制。
-
-### `PromptBuilder`
-
-从会话快照、场景批次和最近事件中构造计划阶段 prompt，不直接访问历史全量日志。
-
-### `TransitionValidator`
-
-校验剧情是否允许迁移，避免 Agent 越权推进剧情。它决定：
-
-- 当前阶段能否跳到下一阶段
-- 某个结局是否满足触发条件
-- 某个场景事件是否允许落地
-
-### `StateStore`
-
-负责事务提交状态与日志，包括：
-
-- 写入本轮结构化结果
-- 更新快照表
-- 写入事件日志
-- 保存公开叙事与私有消息
-
-## 5. 系统总览图
-
-```mermaid
-graph TD
-    subgraph Frontend
-        PlayerUI[玩家界面]
-        KeeperUI[Keeper 面板]
-    end
-
-    subgraph API
-        Gateway[Gateway]
-    end
-
-    subgraph Orchestration
-        Orchestrator[Orchestrator]
-        SceneRouter[SceneRouter]
-        PromptBuilder[PromptBuilder]
-        PlanAgent[KeeperAgent Plan]
-        RuleEngine[RuleEngine]
-        Validator[TransitionValidator]
-        RenderAgent[KeeperAgent Render]
-    end
-
-    subgraph Storage
-        ModuleDB[(module_*)]
-        SessionDB[(session_*)]
-        EventDB[(event_log / turns / dice_rolls)]
-    end
-
-    PlayerUI --> Gateway
-    KeeperUI --> Gateway
-    Gateway --> Orchestrator
-
-    Orchestrator --> SceneRouter
-    Orchestrator --> PromptBuilder
-    PromptBuilder --> SessionDB
-    PromptBuilder --> ModuleDB
-    PromptBuilder --> EventDB
-
-    Orchestrator --> PlanAgent
-    Orchestrator --> RuleEngine
-    Orchestrator --> Validator
-    Validator --> SessionDB
-    Validator --> ModuleDB
-
-    Orchestrator --> SessionDB
-    Orchestrator --> EventDB
-
-    Orchestrator --> RenderAgent
-    RenderAgent --> SessionDB
-
-    Orchestrator --> Gateway
-    Gateway --> PlayerUI
-    Gateway --> KeeperUI
+```text
+玩家输入 -> IntentNormalizer / Intent Agent
+        -> SceneRuntime 按场景分批
+        -> KeeperPlanAgent 提议
+        -> RuleEngine / TransitionValidator 裁定
+        -> 提交 flags、clocks、位置、状态、剧情阶段
+        -> KeeperRenderAgent 只读叙事
+        -> PlayerView / KeeperView / audit log
 ```
 
-这张图对应的关键边界是：
+## 当前进度
 
-- `KeeperAgent Plan` 不直接写数据库
-- `KeeperAgent Render` 只基于已提交结果生成文本
-- `SessionDB` 服务运行时快照
-- `EventDB` 服务回放与审计
+### 已实现
 
-## 6. 一轮行动处理流程
+- `scenario.*` 运行时命名空间，旧 `scene.*` 已移除。
+- YAML 模组加载与校验，支持 `scenes`、`links`、`actions`、`clocks`、`story_stages`、`story_transitions`、`endings`。
+- COC 调查员卡、属性、技能、派生值、基础规则服务。
+- 内存版 `SceneRuntime`，支持建团、加人、提交意图、结算回合、回合历史和幂等重放。
+- `RuleEngine`，支持动作前置条件、D100 技能检定、成功等级、flag/clock 效果、简单 `NdM` 后果骰。
+- 自然语言 `IntentNormalizer`，支持移动、动作别名、观察/自由行动、澄清候选项、边界行动识别。
+- 可选 `KeeperIntentAgent`，用于处理确定性规则无法接受的模糊自然语言输入。
+- 两段式 Keeper Agent：
+  - `KeeperPlanAgent` 输出结构化提议。
+  - `KeeperRenderAgent` 在权威提交后生成叙事。
+- `PromptBuilder` 分层上下文：system、module、spatial、history、keeper_private、narrative。
+- 只读 `NarrativeContext`：NPC 人设卡、世界书、氛围、文风控制、安全边界、上下文预算和跳过原因。
+- 玩家/守密人视图：
+  - `PlayerTurnView` 只显示本人可见信息。
+  - `KeeperTurnView` 保留全局事件、keeper-only 内容和暗骰。
+  - 玩家视图与守密人视图支持 `requester_id` 访问边界。
+- 骰子审计：
+  - 静态动作检定。
+  - 动态 Agent 检定。
+  - 运行时自由行动兜底检定。
+  - SAN/HP 状态后果骰。
+- 危险边界自由行动规则：
+  - 玩家主动申请技能时才进行公开技能检定。
+  - 玩家未申请技能却试探地图外/高危边界时，KP 暗骰给出随危险升级的后果。
+  - 暗骰不进入玩家视图，但仍会修改权威 SAN/HP 状态。
+- `JsonScenarioStateStore`，支持会话快照和回合历史 JSON 持久化与恢复。
+- KP 视角 JSONL 审计日志，可记录建团、加入、意图提交、结算、视图结果和内部回合结果。
+- `scenario.narration` 叙事管线实验层，包含叙事输入、记忆、prompt、验证、补丁、记录和回放能力。
+- HTTP API，基于 `aiohttp` 暴露建团、加人、提交意图、自然语言意图、结算、玩家视图和守密人视图。
+- CLI 玩法入口，支持离线规则模式下查看状态、骰子和结果。
+- 两个样例模组：
+  - `generic_mvp`：通用设施逃离 MVP。
+  - `tokoyami_subset`：《常暗之厢》最小验证模组，包含 NPC、世界书、氛围、后方威胁时钟、真/坏结局。
 
-### 回合时序图
+### 正在成形但还不是产品级
 
-```mermaid
-sequenceDiagram
-    participant P as Player
-    participant G as Gateway
-    participant O as Orchestrator
-    participant R as SceneRouter
-    participant B as PromptBuilder
-    participant A1 as KeeperAgent Plan
-    participant E as RuleEngine
-    participant V as TransitionValidator
-    participant S as StateStore
-    participant A2 as KeeperAgent Render
-    participant UI as Frontend
+- NPC 目前主要是模组叙事上下文，还没有完整 `SessionNPCState`、离屏行动、关系记忆和权威知识边界状态。
+- 线索还没有形成完整 `ClueGraph`、线索迁移、误解修正和 fail-forward 投递机制。
+- COC 规则仍是基础子集，尚未覆盖奖励/惩罚骰、Luck、对抗检定、战斗、追逐、疯狂症状等完整规则。
+- 视图访问边界是服务层校验，还不是正式身份认证/令牌系统。
+- `SceneRuntime.resolve_turn()` 仍偏重，后续应继续拆出 PaceDirector、ClueManager、NPCController、VisibilityService。
+- 当前持久化以 JSON store 为主，数据库级事务、跨进程锁和线上观测还未完成。
+- 还没有正式前端和 Keeper 面板。
 
-    P->>G: 提交行动文本
-    G->>S: 写入 player_intents
-    G->>UI: 返回已提交
+## 目录结构
 
-    O->>S: 读取本轮全部 intents
-    O->>R: 按 scene 分组
-    R-->>O: SceneTurnBatch[]
-
-    loop 每个 SceneTurnBatch
-        O->>B: 构造 plan prompt
-        B-->>O: AgentPlanPrompt
-        O->>A1: 请求结构化计划
-        A1-->>O: KeeperAgentPlan
-
-        O->>E: 执行检定与规则
-        E-->>O: RuleResolution
-
-        O->>V: 校验剧情迁移
-        V-->>O: TransitionDecision
-
-        O->>S: 事务提交状态与日志
-        S-->>O: CommitResult
-
-        O->>A2: 基于已提交结果生成叙事
-        A2-->>O: KeeperNarration
-
-        O->>S: 保存 narration 与 private_messages
-    end
-
-    O->>UI: 推送本轮结果
+```text
+FateGear/
+  main.py                         # aiohttp 服务入口
+  module/                         # YAML 模组
+    generic_mvp/
+    tokoyami_subset/
+  src/
+    cards/                        # COC 调查员卡、技能、规则和 IO
+    scenario/
+      agent/                      # Intent / Plan / Render Agent 契约与调用
+      api.py                      # ScenarioService 服务层
+      audit/                      # KP JSONL 审计日志
+      context/                    # NarrativeContext 选择器
+      intent/                     # 自然语言意图归一化
+      io/                         # 模组加载
+      module/                     # 模组 schema 与校验
+      narration/                  # 实验性叙事管线
+      runtime/                    # SceneRuntime、RuleEngine、回合契约
+      session/                    # 会话快照
+      story/                      # 剧情阶段与迁移
+      store/                      # JSON StateStore
+      view/                       # 玩家/守密人视图投影
+  tests/
+    cards/
+    scene/
+  docs/
+    fategear-kp-framework-research.md
+    fategear-five-iteration-upgrade.md
 ```
 
-### Harness 扩展图
+## 运行方式
 
-下面这张图在不删除原有 `Scene` / `Story` 主流程节点的前提下，补上了 `Planner`、`Evaluator`、额外判定和 `Narrator` 的 harness 位置。适合“玩家临场偏离预设、需要 Agent 提议额外阻力与后果，再由运行时权威执行”的设计。
+### 1. 安装依赖
 
-```mermaid
-flowchart TD
-    U[用户提交动作]
-
-    U --> A{动作类型}
-
-    A -->|移动| S1[交给 Scene<br/>判断能不能走<br/>更新场景位置]
-    A -->|场景动作| S2[交给 Scene<br/>检查前置条件]
-
-    S2 --> C{这个动作是否需要技能检定?}
-    C -->|不需要| S3[直接按动作结果处理]
-    C -->|需要| S4[读取人物卡技能值<br/>进行检定]
-    S4 --> D{检定是否成功?}
-    D -->|成功| S5[应用成功效果<br/>例如拿到物品 / 开门 / 推进状态]
-    D -->|失败| S6[应用失败结果<br/>例如不给奖励 / 触发失败效果]
-
-    S1 --> R1[Scene 产出本轮结果]
-    S3 --> R1
-    S5 --> R1
-    S6 --> R1
-
-    R1 --> E{这轮结果有没有触发剧情条件?}
-
-    E -->|没有| L[留在循环区<br/>继续下一轮动作]
-    E -->|有| T[触发 Story]
-
-    T --> T1[推进剧情阶段]
-    T --> T2[开放出口或新区域]
-    T --> T3[触发结局判定]
-
-    T1 --> L
-    T2 --> L
-    T3 --> END[进入对应结局]
-
-    CTX[Harness Artifact<br/>turn_context / scene_state / stage_state / player_card / recent_events]
-    P[Harness: Planner Agent<br/>理解自然语言 / 归一化动作 / 提议额外判定 / 设定叙事目标]
-    EV{Harness: Evaluator Agent<br/>Planner 提议是否合理?}
-    CONTRACT[Harness Artifact<br/>turn_contract / normalized_intent / proposed_checks / stakes / narration_goal]
-
-    U --> CTX
-    CTX --> P
-    P --> EV
-    EV -->|退回修改| P
-    EV -->|通过| CONTRACT
-    CONTRACT --> A
-
-    X1{Harness 是否提议额外判定?<br/>例如 SAN / 幸运 / 受伤风险}
-    X2[交给 Scene<br/>执行额外判定]
-    X3{额外判定是否成功?}
-    X4[应用额外判定成功结果<br/>例如仅掉SAN / 无额外损伤]
-    X5[应用额外判定失败结果<br/>例如受伤 / 更多SAN损失 / 新风险状态]
-
-    S2 --> X1
-    X1 -->|不需要| C
-    X1 -->|需要| X2
-    X2 --> X3
-    X3 -->|成功| X4
-    X3 -->|失败| X5
-    X4 --> R1
-    X5 --> R1
-
-    N[Harness: Narrator Agent<br/>基于已提交结果进行守密人式叙事]
-    LOG[Harness Artifact<br/>turn_log / scene_resolution / story_resolution / narration_packet]
-    SUM[Harness Artifact<br/>session_summary / risk_summary / unresolved_clues]
-
-    L --> N
-    END --> N
-    N --> LOG
-    LOG --> SUM
-    SUM --> CTX
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-### Python 风格核心伪代码
+### 2. 启动离线规则模式
 
-```python
-async def resolve_turn(session_id: str, turn_no: int) -> list["KeeperNarration"]:
-    snapshot = await repo.load_session_snapshot(session_id)
-    intents = await repo.load_turn_intents(session_id=session_id, turn_no=turn_no)
+离线模式不需要 LLM API key，适合验证模组、规则和 API。
 
-    batches = scene_router.group_by_scene(
-        intents=intents,
-        players=snapshot.players,
-    )
-
-    outputs: list[KeeperNarration] = []
-
-    for batch in batches:
-        plan_prompt = prompt_builder.build_plan_prompt(
-            PlanPromptInput(
-                session=snapshot,
-                batch=batch,
-                recent_events=snapshot.recent_events,
-            )
-        )
-
-        plan = await keeper_agent.plan_turn(plan_prompt)
-
-        rule_result = rule_engine.resolve_checks(
-            RuleResolutionInput(
-                session=snapshot,
-                plan=plan,
-            )
-        )
-
-        transition_decision = transition_validator.validate_transition(
-            TransitionValidationInput(
-                current_stage_id=snapshot.story.current_stage_id,
-                proposed_transition=plan.proposed_transition,
-                story_state=snapshot.story,
-                scene_state=snapshot.scenes,
-                npc_state=snapshot.npcs,
-                rule_effects=rule_result.effects,
-            )
-        )
-
-        commit_result = await state_store.commit_turn(
-            CommitTurnInput(
-                session_id=session_id,
-                turn_no=turn_no,
-                batch=batch,
-                plan=plan,
-                rule_result=rule_result,
-                transition_decision=transition_decision,
-            )
-        )
-
-        narration = await keeper_agent.render_narration(
-            RenderNarrationInput(
-                committed_state=commit_result,
-                visible_scope="public",
-            )
-        )
-
-        await state_store.save_narration(
-            session_id=session_id,
-            turn_no=turn_no,
-            scene_id=batch.scene_id,
-            narration=narration,
-        )
-        outputs.append(narration)
-
-    await state_store.finish_turn(session_id=session_id, turn_no=turn_no)
-    return outputs
+```powershell
+python main.py --no-agents
 ```
 
-这段流程背后的核心原则是：
+默认服务地址：
 
-> 任何 LLM 输出，在进入数据库前都必须先经过规则引擎与迁移校验。
-
-## 7. 外部产品接口
-
-外部接口服务于玩家界面和 Keeper 工具界面。协议层使用 HTTP 与 JSON，字段命名统一使用 `snake_case`。路径均无 `/api` 前缀。
-
-### 辅助接口
-
-```http
-GET /
-GET /health
-GET /modules
+```text
+http://127.0.0.1:8000
 ```
 
-`GET /` 返回所有可用端点列表。`GET /health` 返回 `{"status": "ok"}`。`GET /modules` 返回当前模组目录下可用模组列表：
+### 3. 启动带 Agent 的模式
 
-```json
-{
-  "modules": [
-    {
-      "module_id": "generic_mvp",
-      "title": "通用最小可行模组",
-      "entry_scene_id": "foyer",
-      "entry_stage_id": "setup"
-    }
-  ]
-}
+复制 `.env.example`，配置任一 provider。
+
+```powershell
+Copy-Item .env.example .env
+```
+
+常用环境变量：
+
+```text
+AGENT_API_KEY=
+AGENT_BASE_URL=
+PLANNER_AGENT_MODEL=
+NARRATOR_AGENT_MODEL=
+
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_THINKING=disabled
+```
+
+启动：
+
+```powershell
+python main.py
+```
+
+可选参数：
+
+```powershell
+python main.py --host 127.0.0.1 --port 8000 --module-root .\module
+python main.py --no-agents --no-kp-log
+python main.py --kp-log-path .\log\kp-flow.jsonl
+```
+
+## HTTP API 速览
+
+### 健康检查和模组列表
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/modules
 ```
 
 ### 创建会话
 
-```http
-POST /sessions
+```powershell
+$party = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8000/sessions `
+  -ContentType application/json `
+  -Body '{"module_id":"tokoyami_subset","creator_id":"keeper"}'
+
+$party
 ```
 
-请求（创建者即第一位玩家，其余玩家通过 join 接口加入）：
+### 加入玩家
 
-```json
-{
-  "module_id": "generic_mvp",
-  "creator_id": "keeper"
-}
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/sessions/$($party.session_id)/players" `
+  -ContentType application/json `
+  -Body '{"player_id":"player_1"}'
 ```
 
-返回（`PartySummary`）：
+### 提交结构化意图
 
-```json
-{
-  "session_id": "a1b2c3d4e5f6",
-  "module_id": "generic_mvp",
-  "owner_id": "keeper",
-  "current_turn": 1,
-  "current_stage_id": "setup",
-  "resolved_ending": null,
-  "status": "waiting",
-  "pending_players": [],
-  "players": [
-    {
-      "player_id": "keeper",
-      "current_scene_id": "foyer",
-      "last_scene_id": "foyer"
-    }
-  ]
-}
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/sessions/$($party.session_id)/intents" `
+  -ContentType application/json `
+  -Body '{"player_id":"keeper","intent":{"type":"action","action_id":"inspect_note"}}'
 ```
 
-`status` 取值：`waiting`（第 1 回合且无待结算意图）、`active`（进行中）、`ended`（已进入结局）。
+### 提交自然语言意图
 
-### 加入会话
-
-```http
-POST /sessions/{session_id}/players
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/sessions/$($party.session_id)/text-intents" `
+  -ContentType application/json `
+  -Body '{"player_id":"keeper","text":"我查看门上的便签"}'
 ```
 
-请求：
+### 结算回合
 
-```json
-{
-  "player_id": "p2"
-}
+`resolve` 返回守密人回合视图，不直接裸返内部 `TurnResolution`。
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/sessions/$($party.session_id)/resolve" `
+  -ContentType application/json `
+  -Body '{"requester_id":"keeper"}'
 ```
 
-返回与创建会话相同结构的 `PartySummary`，`players` 数组包含所有已加入玩家。
+幂等重放：
 
-加入限制：只允许在第 1 回合且无待结算意图时加入；同一 `player_id` 不能重复加入；会话已进入结局后不允许加入。
-
-### 列出所有会话
-
-```http
-GET /sessions
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8000/sessions/$($party.session_id)/resolve" `
+  -ContentType application/json `
+  -Body '{"expected_turn":1,"requester_id":"keeper"}'
 ```
 
-返回：
+### 查看玩家视图和守密人视图
 
-```json
-{
-  "sessions": [ /* PartySummary 列表 */ ]
-}
+```powershell
+Invoke-RestMethod `
+  "http://127.0.0.1:8000/sessions/$($party.session_id)/players/keeper/view?requester_id=keeper"
+
+Invoke-RestMethod `
+  "http://127.0.0.1:8000/sessions/$($party.session_id)/keeper-view?requester_id=keeper"
 ```
 
-### 获取单个会话状态
+## 回合处理模型
 
-```http
-GET /sessions/{session_id}
+```mermaid
+sequenceDiagram
+    participant P as Player
+    participant N as IntentNormalizer
+    participant R as SceneRuntime
+    participant PA as KeeperPlanAgent
+    participant E as RuleEngine
+    participant V as TransitionValidator
+    participant RA as KeeperRenderAgent
+    participant View as ViewBuilder
+
+    P->>N: 自然语言或结构化意图
+    N->>R: SceneIntent
+    R->>R: 按当前场景分批
+    R->>PA: 构造分层 Plan Prompt
+    PA-->>R: ProposedCheck / Effect / Transition
+    R->>E: 执行检定、效果和后果骰
+    R->>V: 校验剧情迁移和结局
+    R->>R: 提交权威状态、事件和回合历史
+    R->>RA: 提交后只读 CommitResult
+    RA-->>R: KeeperNarration
+    R->>View: 构建 PlayerTurnView / KeeperTurnView
 ```
 
-返回该会话的 `PartySummary`。
+核心原则：
 
-### 提交玩家意图
+- Plan 阶段只能提出结构化建议。
+- RuleEngine 和 TransitionValidator 才能决定规则与剧情是否生效。
+- Render 阶段只能读取已提交事实并生成叙事。
+- 私密线索、keeper-only 台词和暗骰必须通过视图层过滤。
+- 审计日志保留“为什么变成现在这样”，不是每轮 prompt 的主读取路径。
 
-```http
-POST /sessions/{session_id}/intents
+## 模组写法
+
+模组使用 YAML。当前 schema 的主干如下：
+
+```yaml
+module_id: tokoyami_subset
+title: 常暗之厢最小验证模组
+entry_scene_id: car_6
+entry_stage_id: awake
+
+narrative_context:
+  worldview_brief: ...
+  npcs: []
+  lorebook_entries: []
+  safety_boundaries: []
+  atmosphere: {}
+  prose_controls: {}
+
+flags: []
+scenes: []
+links: []
+actions: []
+clocks: []
+story_stages: []
+story_transitions: []
+endings: []
 ```
 
-请求体：
+动作可以提供自然语言匹配和叙事所需的作者信息：
 
-```json
-{
-  "player_id": "keeper",
-  "intent": {
-    "type": "move",
-    "target_scene_id": "corridor"
-  }
-}
+```yaml
+actions:
+  - id: find_key
+    scene_id: car_3
+    name: 寻找钥匙
+    kind: search
+    description: 在3号车厢杂乱行李间寻找驾驶室钥匙。
+    aliases: [找钥匙, 搜钥匙, 翻行李]
+    expected_inputs: [钥匙, 行李, 箱子]
+    stakes: 成功会找到驾驶室钥匙；失败会浪费本回合机会。
+    fail_forward_hint: 失败时可以暴露钥匙曾被移动过的迹象。
+    check:
+      skill_key: spot_hidden
+      difficulty: regular
+      failure_reason: 你没有在行李间找到钥匙。
+    effects_on_success:
+      - type: set_flag
+        flag: key_obtained
 ```
 
-意图有两种类型，由 `type` 字段区分：
+当前样例模组可参考：
 
-移动意图：
+- `module/generic_mvp/module.yaml`
+- `module/tokoyami_subset/module.yaml`
 
-```json
-{
-  "type": "move",
-  "target_scene_id": "corridor"
-}
+## 骰子与暗骰
+
+FateGear 把骰子作为跑团核心反馈，而不是纯文本修饰。
+
+- 玩家可见检定会进入 `PlayerTurnView.dice_rolls`。
+- keeper-only 暗骰只进入 `KeeperTurnView.dice_rolls`。
+- SAN/HP 后果骰会真实修改调查员状态。
+- `DiceRollAudit.display_text` 用于保留面向跑团的展示文本，例如 `SAN CHECK`、`投掷骰子 1d3=3`。
+- `critical`、`extreme`、`hard`、`regular`、`fail`、`fumble` 保持独立语义，`fumble` 不会被当作成功。
+
+危险边界自由行动的当前规则：
+
+- 玩家明确说“用侦查/聆听/潜行检定”时，运行时执行公开检定。
+- 玩家不申请技能却继续试探地图外、黑暗、声源、车外等高危边界时，运行时走 `status_consequence`。
+- 惩罚强度随 prior boundary attempts、`rear_threat` 时钟和动作危险性升级。
+- 暗骰可以隐藏展示，但不能隐藏状态后果。
+
+## 视图与信息隔离
+
+当前有两类主要视图：
+
+- `PlayerTurnView` / `PlayerSessionView`
+- `KeeperTurnView` / `KeeperSessionView`
+
+玩家视图会过滤：
+
+- 其他玩家的私有线索。
+- keeper-only NPC 台词。
+- `keeper_hint`。
+- `visibility="keeper"` 的暗骰。
+
+守密人视图保留：
+
+- 全部场景批次。
+- 全部事件日志。
+- 全部骰点审计。
+- 私有线索和 keeper-only 信息。
+
+服务层目前使用 `requester_id` 做基础访问边界：
+
+- 玩家视图：本人或团主可看。
+- 守密人视图：团主可看。
+
+## 审计与持久化
+
+当前有三类记录能力：
+
+- `TurnResolution`：本轮内部权威结果，包含 scene batches、event log、dice rolls、agent calls、flags、clocks、story transition、ending。
+- `JsonScenarioStateStore`：将会话快照和已结算回合保存到 JSON，并在新运行时实例启动后恢复。
+- `JsonlKPAuditLogger`：服务层 KP 视角 JSONL 审计，记录建团、加入、意图提交、回合结算和视图结果。
+
+这三者的分工：
+
+- 会话快照服务高频运行。
+- 回合历史服务幂等重放和视图构建。
+- JSONL 审计服务排错、复盘和离线分析。
+
+## 开发与验证
+
+常用测试：
+
+```powershell
+pytest
 ```
 
-动作意图：
+针对场景运行时：
 
-```json
-{
-  "type": "action",
-  "action_id": "examine_wound"
-}
+```powershell
+pytest tests/scene
 ```
 
-服务端以 `session_player_state.current_scene_id` 为准，不接受客户端传入的场景覆盖。每位玩家在同一回合只能提交一次意图；会话已进入结局后不能继续提交。
+针对卡牌/调查员规则：
 
-### 结算当前轮
-
-```http
-POST /sessions/{session_id}/resolve
+```powershell
+pytest tests/cards
 ```
 
-结算成功后返回 `TurnResolution`：
+静态检查：
 
-```json
-{
-  "session_id": "a1b2c3d4e5f6",
-  "turn_no": 1,
-  "next_turn": 2,
-  "scene_batches": [
-    {
-      "scene_id": "foyer",
-      "player_ids": ["keeper", "p2"],
-      "outcomes": [
-        {
-          "player_id": "keeper",
-          "scene_id": "foyer",
-          "intent_type": "action",
-          "success": true,
-          "reason": "",
-          "action_id": "examine_wound",
-          "effects_applied": ["设置标记:clue_found"]
-        }
-      ]
-    }
-  ],
-  "event_log": [ /* RuntimeEvent 列表，记录本轮所有事件 */ ],
-  "applied_flags": ["clue_found"],
-  "applied_clock_deltas": { "danger": 1 },
-  "triggered_clock_events": [],
-  "clock_values": { "danger": 1 },
-  "story_signals": [],
-  "new_stage": null,
-  "applied_story_transition_id": null,
-  "resolved_ending": null,
-  "ending_result": ""
-}
+```powershell
+ruff check src tests
+git diff --check
 ```
 
-`scene_batches` 按场景分组，每个 batch 包含该场景内所有玩家本轮的意图结果。`event_log` 记录本轮完整处理链路，可用于审计与回放。
+当前历史上最有价值的回归测试包括：
 
-### 获取玩家视角（尚未实现）
+- `tests/scene/test_runtime_action_checks.py`
+- `tests/scene/test_runtime_views.py`
+- `tests/scene/test_intent_normalizer.py`
+- `tests/scene/test_context_selector.py`
+- `tests/scene/test_state_store.py`
+- `tests/scene/test_kp_audit_log.py`
+- `tests/scene/test_narration_*`
 
-> ⚠️ 计划接口，内部服务层尚未实现。
+## 近期路线
 
-```http
-GET /sessions/{session_id}/view?player_id=p1
-```
+### P0：让一小段模组真的自然可玩
 
-返回的是该玩家当前可见的信息，不暴露全局隐藏状态。
+- 强化自然语言意图：长句、多目标、追问、撤回和补充说明。
+- 把骰子前 stakes、失败后果和 fail-forward 写入稳定流程。
+- 让 CLI/HTTP 示例形成可连续体验的一轮小跑团。
 
-### 获取 Keeper 全局面板（尚未实现）
+### P1：补调查核心数据层
 
-> ⚠️ 计划接口，内部服务层尚未实现。
+- `ModuleClue` / `SessionClueState`。
+- `ClueGraph`：发现、遗漏、误解、迁移和冗余线索。
+- 私有线索投递、已知边界和玩家视角查询。
 
-```http
-GET /sessions/{session_id}/keeper-view
-```
+### P2：补 NPC 状态层
 
-这个视图需要能看到：
+- `SessionNPCState`：位置、状态、情绪、态度、知识、秘密、下一步行动。
+- NPC 离屏行动和世界时钟。
+- NPC 不能全知、不能瞬移、不能泄漏未授权秘密。
 
-- 当前主剧情阶段
-- 全图玩家位置
-- NPC 状态
-- 可触发迁移
-- 计时器
-- Agent 私有备注
+### P3：补节奏导演
 
-### 公开字段口径
+- `PaceDirector`：卡关检测、危险升级、场景停滞、提示投递、聚光灯管理。
+- 将 `rear_threat` 这种模组时钟抽象成通用压力机制。
 
-为避免前后端和编排层在命名上漂移，外部接口至少稳定下面这些字段：
+### P4：补产品化外壳
 
-- 会话最小字段：`session_id`、`module_id`、`owner_id`、`current_stage_id`、`current_turn`、`status`
-- 加入请求最小字段：`player_id`
-- 玩家状态最小字段：`player_id`、`current_scene_id`、`last_scene_id`
-- 意图最小字段：`type`（`"move"` 或 `"action"`），移动附加 `target_scene_id`，动作附加 `action_id`
-- 回合结算最小字段：`session_id`、`turn_no`、`next_turn`、`scene_batches`、`new_stage`、`resolved_ending`
-- 玩家视角接口只返回该玩家当前可见信息，不暴露全局隐藏状态
-- Keeper 视角接口返回全局剧情、玩家位置、NPC 状态、计时器、可触发迁移和 Agent 备注
+- 正式身份认证和访问日志。
+- 数据库级 StateStore。
+- Keeper 面板。
+- 玩家前端。
+- Agent prompt/output 完整落库和可观测性。
 
-## 8. 内部编排接口
+## 设计边界
 
-内部接口不追求“花哨协议”，目标是稳定职责边界。下面的接口表达采用 Python 类型标注和 `pydantic.BaseModel` 风格。
+FateGear 最重要的边界是：
 
-### 关键输入输出模型
+> LLM 可以帮助理解、建议和叙述，但不能成为游戏事实的唯一来源。
 
-```python
-from pydantic import BaseModel
+因此：
 
+- 模组静态事实来自 YAML。
+- 会话事实来自 `SessionMapState`。
+- 规则事实来自 `RuleEngine`。
+- 剧情迁移来自 `TransitionValidator`。
+- 叙事文本来自 Render Agent，但只能描述已提交结果。
+- 事件日志和回合历史负责回答“为什么会这样”。
 
-class PlanPromptInput(BaseModel):
-    session: "SessionSnapshot"
-    batch: "SceneTurnBatch"
-    recent_events: list["TurnEvent"]
-
-
-class RuleResolutionInput(BaseModel):
-    session: "SessionSnapshot"
-    plan: "KeeperAgentPlan"
-
-
-class TransitionValidationInput(BaseModel):
-    current_stage_id: str
-    proposed_transition: "ProposedTransition | None"
-    story_state: "StoryState"
-    scene_state: list["SceneState"]
-    npc_state: list["NPCState"]
-    rule_effects: list["RuleEffect"]
-
-
-class CommitTurnInput(BaseModel):
-    session_id: str
-    turn_no: int
-    batch: "SceneTurnBatch"
-    plan: "KeeperAgentPlan"
-    rule_result: "RuleResolution"
-    transition_decision: "TransitionDecision"
-
-
-class RenderNarrationInput(BaseModel):
-    committed_state: "CommitResult"
-    visible_scope: str
-```
-
-### 核心函数签名
-
-```python
-def build_plan_prompt(input: PlanPromptInput) -> "AgentPlanPrompt": ...
-
-
-async def plan_turn(prompt: "AgentPlanPrompt") -> "KeeperAgentPlan": ...
-
-
-def resolve_checks(input: RuleResolutionInput) -> "RuleResolution": ...
-
-
-def validate_transition(
-    input: TransitionValidationInput,
-) -> "TransitionDecision": ...
-
-
-async def commit_turn(input: CommitTurnInput) -> "CommitResult": ...
-
-
-async def render_narration(
-    input: RenderNarrationInput,
-) -> "KeeperNarration": ...
-```
-
-这些接口的职责划分是：
-
-- `PromptBuilder` 负责上下文构造
-- `KeeperAgent Plan` 只做结构化计划
-- `RuleEngine` 只做规则解算
-- `TransitionValidator` 只做迁移校验
-- `StateStore` 负责事务提交
-- `KeeperAgent Render` 只在提交后生成叙事
-
-## 9. V1 落地路线
-
-当前最适合的主线不是先做前端，而是先打通后端最小闭环。
-
-### 当前 V1 主线
-
-1. 地图建模
-2. 场景事件转移
-3. `StoryState`
-4. `TransitionValidator`
-5. `Turn Log + Event Log`
-
-这条路线优先保证：
-
-- 地图与剧情状态分离
-- 迁移条件有硬边界
-- 每轮状态变化可审计
-- 多场景并行结算有基础支点
-
-### 下一阶段
-
-- 地图/空间状态监控前端
-- Keeper 全局视图
-- 私有线索展示
-- 多场景并行结算可视化
-
-这部分应该建立在后端快照、日志和迁移机制已经稳定的前提上，否则前端只会成为“包装不稳定状态”的壳。
-
-## 10. 当前实现状态
-
-当前仓库还没有进入会话编排和地图状态阶段，已落地的内容主要是角色卡与基础数值域模型。
-
-### 已实现
-
-- `cards.domain.attributes`
-  调查员属性对象与基础校验
-- `cards.domain.state`
-  当前数值状态
-- `cards.domain.card`
-  调查员卡片聚合根
-- `cards.rules.derived`
-  `HP`、`MP`、`SAN`、`MOV`、`Build`、`Damage Bonus` 等衍生公式
-- `cards.rules.validation`
-  `cards` 域跨模型业务校验（当前覆盖技能模板与技能定义集合校验）
-- `cards.domain.skills`
-  技能模板、分支技能与已具体化技能定义
-- `cards.domain.build`
-  从最小映射输入构建调查员卡
-- `cards.seed.*`
-  技能、职业、武器等 seed 骨架
-- `docs/cards/model-notes.md`
-  当前数值域的设计说明
-
-### 尚未实现
-
-- `module_* / session_* / event_log` 持久化模型
-- `Orchestrator`
-- `SceneRouter`
-- `TransitionValidator`
-- `resolve_turn` 主流程
-- 地图与场景状态管理
-- Keeper 监控前端
-
-这意味着 README 里的主体内容描述的是目标架构，不是当前代码已经全部完成的现状。
-
-当前的职责边界补充如下：
-
-- `cards.rules.validation` 只承接 `cards` 域跨模型业务校验
-- `scenario.*` 负责地图移动相关骨架与后续实现
-- 剧情 `TransitionValidator` 仍未实现，且不属于 `cards`
-
-## 11. 为什么先做地图与场景事件转移
-
-这是当前最重要的工程判断。
-
-如果一开始只做“AI 守密人能说话”，系统会很快看起来能跑，但在下面这些问题上迅速失控：
-
-- 多人分场景时上下文怎么隔离
-- 玩家位置变化如何驱动可见信息变化
-- 某个剧情跳转为什么成立
-- NPC 为什么在这一轮突然改口
-- 某轮玩家看到的文本为什么和状态不一致
-
-而先把地图、场景事件转移、剧情阶段和回合日志做对，后面无论是 Keeper 面板还是玩家视图，都有稳定的数据基础。
-
-## 12. 当前结论
-
-FateGear 当前最合适的架构方向不是“纯聊天 Agent”，也不是“只做游戏服务器”，而是二者融合后的守密人工具：
-
-- 地图状态负责“人在哪里”
-- 剧情状态负责“故事到哪一幕”
-- 规则引擎负责“这次行动是否成立”
-- Agent 负责“怎么说”和“给出什么提议”
-- 日志系统负责“为什么会这样”
-
-只要 `StoryState`、`SceneRouter`、`RuleEngine`、`NPCState`、两段式 `KeeperAgent` 和日志系统打通，FateGear 就不再是一个 AI 聊天外壳，而是一个真正可扩展的 COC 守密人工具。
-
-## 13. FateGear V1 TODO List（按当前仓库进度勾选）
-
-> 目标：先完成**地图与场景转移**，再按“状态机 + RuleEngine + NPCState + 两段式 Agent + Turn/Event Log”的路径推进。
->
-> 勾选标准：只有已经在 README 中明确锁定的原则项，或仓库里已有代码与测试支撑的实现项才标记为完成。当前仓库仍以 `src/cards` 为主结构，尚未进入 `FastAPI + SQLAlchemy + PostgreSQL` 阶段。
-
-### 0. 范围与原则
-
-- [x] 明确 V1 范围：只做地图、场景转移、剧情状态机、回合流、基础规则引擎、NPC 状态、日志、基础 Agent
-- [ ] 明确 V1 不做：自定义模组编辑器、每个 NPC 独立 Agent、语音、复杂长期记忆、自动配图
-- [x] 明确一条核心原则：**场景转移** 和 **剧情状态转移** 必须分开建模
-- [x] 明确一条核心原则：Agent 只输出“提议”，不直接写数据库
-- [x] 明确一条核心原则：规则判定和叙事生成拆成两步
-- [x] 明确一条核心原则：每轮必须落 `turn_log` 和 `event_log`
-- [x] 先做“无 LLM 也能跑通”的最小闭环，再接入模型
-- [x] 已打通无 LLM 的最小场景运行时（YAML 模组 + Session + Intent + Resolve + Event Log）
-
-### 1. Python 工程初始化
-
-- [x] 初始化 Python 项目（建议 `uv` 或 `poetry`）
-- [x] 建立基础目录结构
-- [ ] 接入 `FastAPI`
-- [ ] 接入 `SQLAlchemy 2.0`
-- [ ] 接入 `Alembic`
-- [x] 接入 `Pydantic v2`
-- [x] 接入 `pytest`
-- [x] 接入 `PyYAML`
-- [x] 接入质量工具（`ruff` / `mypy` / `pyclean`）
-- [ ] 配置 `.env` / 配置管理
-- [ ] 配置日志系统
-- [ ] 配置本地开发数据库（PostgreSQL）
-- [ ] 建立基础异常处理和统一返回结构
-
-#### 建议目录
-
-- [ ] 创建 `app/api`
-- [ ] 创建 `app/domain`
-- [ ] 创建 `app/services`
-- [ ] 创建 `app/repositories`
-- [ ] 创建 `app/models`
-- [ ] 创建 `app/schemas`
-- [ ] 创建 `app/core`
-- [x] 创建 `tests`
-
-### 2. 地图与场景转移（第一优先级）
-
-#### 2.1 地图数据模型
-
-- [x] 定义 `Scene`
-- [x] 为 `Scene` 增加字段：`id`
-- [x] 为 `Scene` 增加字段：`module_id`
-- [x] 为 `Scene` 增加字段：`name`
-- [x] 为 `Scene` 增加字段：`description`
-- [x] 为 `Scene` 增加字段：`tags`
-- [x] 为 `Scene` 增加字段：`is_entry`
-- [x] 为 `Scene` 增加字段：`is_safe_zone`
-- [x] 定义 `SceneLink`
-- [x] 为 `SceneLink` 增加字段：`from_scene_id`
-- [x] 为 `SceneLink` 增加字段：`to_scene_id`
-- [x] 为 `SceneLink` 增加字段：`is_locked`
-- [x] 为 `SceneLink` 增加字段：`required_flags`
-- [x] 为 `SceneLink` 增加字段：`block_reason`
-- [x] 定义 `SessionMapState`
-- [x] 定义 `SessionPlayerState`
-- [x] 在 `SessionPlayerState` 中增加 `current_scene_id`
-- [x] 在 `SessionPlayerState` 中增加 `last_scene_id`
-- [x] 在 `SessionPlayerState` 中增加 `visibility_state`
-- [x] 定义 `SceneInstanceState`
-- [x] 为 `SceneInstanceState` 增加字段：`completed_action_ids`
-- [x] 为 `SceneInstanceState` 增加字段：`has_event_occurred`
-- [ ] 为 `SceneInstanceState` 增加字段：`visited`
-- [ ] 为 `SceneInstanceState` 增加字段：`danger_level`
-- [x] 为 `SceneInstanceState` 增加字段：`local_flags`
-- [ ] 为 `SceneInstanceState` 增加字段：`destroyed / disabled`
-- [x] 定义地图配置导入格式（JSON/YAML 都可）
-
-#### 2.2 场景转移规则
-
-- [x] 实现“是否可移动”校验
-- [x] 支持普通相邻场景移动
-- [x] 支持单向场景移动
-- [x] 支持锁定场景移动
-- [ ] 将模组 YAML 里的显式锁定连线接入运行时
-- [x] 支持条件解锁场景移动
-- [ ] 支持隐藏通路
-- [ ] 支持场景禁入
-- [ ] 支持场景摧毁/关闭后不可进入
-- [x] 支持队伍拆分到不同场景
-- [x] 支持多人同场景
-- [x] 支持移动后写入事件日志
-- [ ] 支持移动后更新玩家可见视图
-
-#### 2.3 `SceneRouter` 服务
-
-- [ ] 实现 `SceneRouter.can_move(session_id, player_id, target_scene_id)`
-- [ ] 实现 `SceneRouter.move_player(session_id, player_id, target_scene_id)`
-- [ ] 实现 `SceneRouter.move_group(session_id, player_ids, target_scene_id)`
-- [ ] 实现 `SceneRouter.list_reachable_scenes(session_id, player_id)`
-- [ ] 实现 `SceneRouter.group_players_by_scene(session_id)`
-- [ ] 实现 `SceneRouter.get_scene_snapshot(session_id, scene_id)`
-- [ ] 实现 `SceneRouter.get_player_view(session_id, player_id)`
-
-#### 2.4 地图相关 API
-
-- [ ] `POST /sessions`
-- [ ] `GET /sessions/{session_id}/map`
-- [ ] `GET /sessions/{session_id}/view?player_id=...`
-- [ ] `POST /sessions/{session_id}/move`
-- [ ] `GET /sessions/{session_id}/reachable-scenes?player_id=...`
-
-#### 2.5 地图模块验收标准
-
-- [x] 两个玩家可以处于不同场景
-- [x] 玩家移动后 `current_scene_id` 正确更新
-- [x] 锁定路径会返回明确失败原因
-- [ ] 视图接口只返回该玩家当前可见信息
-- [x] 场景移动会生成 `event_log`
-- [ ] 场景移动不会自动触发剧情状态迁移
-- [x] 服务端状态是唯一真相，前端位置仅作参考
-- [x] 同一回合不同场景 batch 基于同一份快照结算
-
-### 3. 剧情状态机（第二优先级）
-
-#### 3.1 剧情状态模型
-
-- [x] 定义 `StoryState`
-- [x] 定义 `StoryStage`
-- [x] 为 `StoryStage` 增加字段：`id`
-- [x] 为 `StoryStage` 增加字段：`name`
-- [x] 为 `StoryStage` 增加字段：`description`
-- [x] 为 `StoryStage` 增加字段：`required_flags`
-- [x] 为 `StoryStage` 增加字段：`available_clues`
-- [x] 为 `StoryStage` 增加字段：`npc_presence_rules`
-- [x] 为 `StoryStage` 增加字段：`is_terminal`
-- [x] 为 `StoryStage` 增加字段：`terminal_type`
-- [x] 定义 `StoryTransition`
-- [x] 为 `StoryTransition` 增加字段：`source_stage_id`
-- [x] 为 `StoryTransition` 增加字段：`target_stage_id`
-- [x] 为 `StoryTransition` 增加字段：`required_flags`
-- [x] 为 `StoryTransition` 增加字段：`trigger_type`
-- [x] 为 `StoryTransition` 增加字段：`priority`
-
-#### 3.2 剧情状态服务
-
-- [x] 实现 `TransitionValidator`
-- [ ] 实现 `StoryStateService.can_transition(...)`
-- [x] 实现 `StoryStateService.apply_transition(...)`
-- [x] 确保剧情迁移只允许走模组定义路径
-- [x] 确保未解锁结局不能被直接触发
-- [x] 剧情迁移后写入 `event_log`
-
-#### 3.3 剧情状态模块验收标准
-
-- [x] 地图状态和剧情状态完全分离
-- [x] 即使玩家进入了某场景，也不等于剧情阶段自动推进
-- [x] 必须满足 transition 条件才能进入下一剧情阶段
-- [x] 终局只能由状态机合法进入
-
-### 4. 回合、输入与结算主链路
-
-#### 4.1 回合模型
-
-- [ ] 定义 `Session`
-- [ ] 定义 `Turn`
-- [ ] 定义 `PlayerIntent`
-- [ ] 定义 `SceneTurnBatch`
-- [ ] 定义 `TurnResult`
-- [ ] 定义 `NarrationRecord`
-- [x] 定义 `MoveIntent`
-- [x] 定义 `ActionIntent`
-- [x] 定义 `RuntimeEvent`
-- [x] 定义 `TurnResolution`
-
-#### 4.2 回合服务
-
-- [x] 实现“提交玩家动作”接口
-- [x] 支持多玩家同一轮分别提交动作
-- [x] 支持房主/主持人手动触发结算
-- [ ] 支持玩家全部提交后自动触发结算
-- [x] 实现按场景分组 `SceneTurnBatch`
-- [x] 实现每轮快照加载
-- [ ] 实现结算幂等保护
-- [ ] 实现结算事务提交
-- [x] 实现回合结束标记
-
-#### 4.3 回合接口
-
-- [x] `POST /sessions/{session_id}/intents`
-- [x] `POST /sessions/{session_id}/resolve`
-- [ ] `GET /sessions/{session_id}/turns/{turn_no}`
-- [ ] `GET /sessions/{session_id}/keeper-view`
-
-#### 4.4 回合模块验收标准
-
-- [x] 同一轮多个玩家动作可同时存在
-- [x] 系统能按场景正确分组处理
-- [ ] 同一轮重复 resolve 不会重复写状态
-- [ ] 每轮结果可回放
-
-### 5. `RuleEngine`（基础版）
-
-#### 5.1 规则引擎骨架
-
-- [x] 先实现通用“动作 -> 是否需要判定 -> 执行判定 -> 返回结果”流程
-- [ ] 定义 `CheckRequest`
-- [ ] 定义 `CheckResult`
-- [ ] 定义 `RuleEffect`
-- [ ] 定义 `DiceRoll`
-- [x] 已实现动作条件校验与效果执行骨架（`flag` / `clock` / `once` / `required_stages`）
-
-#### 5.2 基础能力
-
-- [ ] 实现骰子工具
-- [ ] 实现基础成功/失败判定
-- [ ] 实现成功等级
-- [ ] 实现对角色属性/技能值的读取
-- [ ] 实现规则结果写回效果
-- [ ] 实现规则结果日志落库
-
-#### 5.3 `RuleEngine` 模块验收标准
-
-- [ ] Agent 只决定“是否要判定”
-- [ ] 判定数值全部由 `RuleEngine` 处理
-- [ ] 检定结果可审计
-- [ ] 检定结果可回放
-
-### 6. `NPCState`（在场、知识边界、动态状态）
-
-#### 6.1 NPC 数据模型
-
-- [ ] 定义 `NPC`
-- [ ] 为 `NPC` 增加字段：`name`
-- [ ] 为 `NPC` 增加字段：`personality`
-- [ ] 为 `NPC` 增加字段：`secrets`
-- [ ] 为 `NPC` 增加字段：`knowledge_boundary`
-- [ ] 为 `NPC` 增加字段：`current_scene_id`
-- [ ] 为 `NPC` 增加字段：`current_emotion`
-- [ ] 为 `NPC` 增加字段：`relationship_map`
-- [ ] 为 `NPC` 增加字段：`dialogue_summary`
-- [ ] 为 `NPC` 增加字段：`revealed_secret_flags`
-- [ ] 为 `NPC` 增加字段：`alive / injured / unconscious / hostile`
-
-#### 6.2 NPC 服务
-
-- [ ] 实现 NPC 在场判定
-- [ ] 实现 NPC 可见性判定
-- [ ] 实现 NPC 对玩家关系更新
-- [ ] 实现 NPC 情绪更新
-- [ ] 实现 NPC 已透露秘密写回
-- [ ] 实现 NPC 与场景联动
-- [ ] 实现 NPC 与剧情阶段联动
-
-#### 6.3 NPC 模块验收标准
-
-- [ ] NPC 是否出现由场景和剧情共同决定
-- [ ] NPC 说话内容不越过知识边界
-- [ ] NPC 已透露过的信息不会“剧情倒流”
-- [ ] NPC 动态状态会持续保留
-
-### 7. `PromptBuilder + 两段式 Agent`
-
-#### 7.1 `PromptBuilder`
-
-- [ ] 定义永久层：规则与系统约束
-- [ ] 定义模组层：世界观与模组说明
-- [ ] 定义剧情阶段层：当前 `StoryStage`
-- [ ] 定义空间快照层：当前 `Scene` + 在场 NPC + 玩家位置
-- [ ] 定义历史摘要层：最近 N 轮关键事件
-- [ ] 定义私有层：仅守密人可见提示
-- [ ] 实现 Prompt 拼装器
-- [ ] 实现 token 控制策略
-
-#### 7.2 Plan 阶段 Agent
-
-- [ ] 定义结构化输出 schema
-- [ ] 让 Agent 输出：动作理解
-- [ ] 让 Agent 输出：是否需要检定
-- [ ] 让 Agent 输出：拟议状态变化
-- [ ] 让 Agent 输出：拟议剧情迁移
-- [ ] 让 Agent 输出：守密人私有备注
-- [ ] 让 Agent 不直接输出最终数据库状态
-
-#### 7.3 Render 阶段 Agent
-
-- [ ] 根据已提交结果生成公共叙事
-- [ ] 根据已提交结果生成 NPC 台词
-- [ ] 根据已提交结果生成私有线索
-- [ ] 根据已提交结果生成守密人提示
-- [ ] 保证渲染阶段只读，不改状态
-
-#### 7.4 Agent 模块验收标准
-
-- [ ] 没有通过校验的 Agent 提议不会落库
-- [ ] 叙事文本基于“已提交结果”生成
-- [ ] 模型失效时可退化为模板化文本
-- [ ] Agent 输出结构可记录和回放
-
-### 8. 日志、审计与回放
-
-#### 8.1 日志表
-
-- [ ] 定义 `turn_log`
-- [ ] 定义 `event_log`
-- [ ] 定义 `dice_roll_log`
-- [ ] 定义 `agent_plan_log`
-- [ ] 定义 `narration_log`
-- [x] 定义运行时 `RuntimeEvent` 与回合内 `event_log`
-
-#### 8.2 日志内容
-
-- [ ] 记录玩家原始输入
-- [ ] 记录解析后的动作意图
-- [ ] 记录检定请求
-- [ ] 记录骰子结果
-- [ ] 记录 Agent 提议
-- [ ] 记录状态提交结果
-- [ ] 记录剧情迁移结果
-- [ ] 记录最终叙事文本
-- [x] 记录移动、动作、标记变化、时钟推进、剧情迁移、结局与回合结束事件
-
-#### 8.3 回放与调试
-
-- [ ] 实现按回合查看日志
-- [ ] 实现按玩家查看私有信息
-- [ ] 实现按场景查看事件
-- [ ] 实现按 NPC 查看状态变化
-- [ ] 实现 Keeper 调试面板
-- [x] 测试中可按回合导出场景 / 剧情日志文件
-
-#### 8.4 日志模块验收标准
-
-- [ ] 可以回答“为什么剧情跳了”
-- [ ] 可以回答“为什么 NPC 改口了”
-- [ ] 可以回答“为什么这轮触发了检定”
-- [ ] 可以回放某轮完整处理链路
-
-### 9. Keeper 面板（基础版）
-
-- [ ] 查看当前剧情阶段
-- [ ] 查看全图玩家位置
-- [ ] 查看场景占用情况
-- [ ] 查看 NPC 当前状态
-- [ ] 查看本轮待处理动作
-- [ ] 查看最近事件日志
-- [ ] 查看可触发剧情迁移
-- [ ] 查看守密人私有提示
-
-### 10. 测试清单
-
-#### 10.1 单元测试
-
-- [ ] `SceneRouter.can_move`
-- [ ] `SceneRouter.move_player`
-- [ ] `SceneRouter.group_players_by_scene`
-- [x] `TransitionValidator.can_transition`
-- [ ] `RuleEngine.resolve_checks`
-- [ ] `NPCState` 更新逻辑
-- [x] `SceneMovementRules.evaluate_transition`
-- [x] YAML 模组加载与语义校验
-
-#### 10.2 集成测试
-
-- [x] 创建会话 -> 进入初始场景
-- [x] 玩家移动 -> 场景快照更新
-- [x] 多玩家分场景 -> 正确分 batch
-- [ ] 一轮 resolve -> 规则判定 -> 状态提交 -> 叙事输出
-- [x] 一轮 resolve -> 动作效果 -> 状态提交 -> 剧情迁移
-- [x] 剧情状态合法迁移
-- [ ] 剧情状态非法迁移被拦截
-
-#### 10.3 回归测试
-
-- [ ] 同一模组多次运行结果稳定
-- [ ] 重复提交 resolve 不会重复结算
-- [ ] 断线后可恢复会话状态
-- [ ] 日志完整可追踪
-
-### 11. 开发里程碑
-
-#### M1：地图与场景转移跑通（不接 LLM）
-
-- [x] 完成地图模型
-- [ ] 完成 `SceneRouter`
-- [ ] 完成移动接口
-- [ ] 完成玩家视图接口
-- [x] 完成事件日志
-- [x] 完成多人分场景支持
-
-#### M2：剧情状态机接入
-
-- [x] 完成 `StoryState`
-- [x] 完成 `TransitionValidator`
-- [x] 完成剧情迁移日志
-- [x] 完成“场景转移 != 剧情转移”校验
-
-#### M3：回合流 + `RuleEngine` 跑通
-
-- [x] 完成 Intent 提交
-- [x] 完成按场景分组
-- [ ] 完成基础规则判定
-- [ ] 完成一轮结算事务
-
-#### M4：`NPCState` 跑通
-
-- [ ] 完成 NPC 数据模型
-- [ ] 完成在场判定
-- [ ] 完成知识边界与状态更新
-
-#### M5：两段式 Agent 接入
-
-- [ ] 完成 Plan 阶段结构化输出
-- [ ] 完成 Validator 校验
-- [ ] 完成 Render 阶段叙事生成
-- [ ] 完成 Agent 日志
-
-#### M6：Keeper 调试面板
-
-- [ ] 完成全局视图
-- [ ] 完成回放能力
-- [ ] 完成调试信息查看
-
-### 12. 当前最推荐的开工顺序
-
-- [ ] 先做数据库模型：`Scene / SceneLink / SessionPlayerState / SceneInstanceState`
-- [ ] 再做 `SceneRouter`
-- [ ] 再做“玩家移动 + 玩家视图 + event_log”
-- [x] 然后做 `StoryState + TransitionValidator`
-- [ ] 然后做 `Turn / Intent / Resolve`
-- [ ] 然后做 `RuleEngine`
-- [ ] 然后做 `NPCState`
-- [ ] 最后接 `PromptBuilder + 两段式 Agent`
-
-### 13. V1 完成定义（Done Definition）
-
-- [x] 可以创建一局游戏
-- [x] 可以加载一张模组地图
-- [x] 玩家可以在合法场景间移动
-- [x] 多玩家可以分处不同场景
-- [x] 系统可以按场景结算玩家动作
-- [x] 剧情只能通过状态机合法推进
-- [ ] NPC 有位置、状态、知识边界
-- [ ] 检定结果由 `RuleEngine` 计算
-- [ ] Agent 只提议，不直接写库
-- [ ] 每轮都有完整日志可查
-- [ ] Keeper 能看到全局面板
-- [x] 没有 LLM 时，系统也能以模板方式完成基本结算
+这个边界会让系统比纯 prompt 跑团慢一些、硬一些，但它换来的是可审计、可回放、可测试，也更适合以后扩展成多人在线跑团工具。

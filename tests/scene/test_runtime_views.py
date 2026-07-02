@@ -8,7 +8,7 @@ from scenario.agent.models import (
     PrivateClue,
     VisibleScope,
 )
-from scenario.runtime import SceneBatchResolution, TurnResolution
+from scenario.runtime import DiceRollAudit, SceneBatchResolution, TurnResolution
 from scenario.runtime import SceneRuntime
 from scenario.session import SessionMapState
 from scenario.view import TurnViewBuilder
@@ -48,6 +48,22 @@ def _build_resolution_with_private_material() -> tuple[SessionMapState, TurnReso
         session_id=session.session_id,
         turn_no=1,
         next_turn=2,
+        dice_rolls=[
+            DiceRollAudit(
+                source="runtime_freeform_check",
+                player_id="p1",
+                visibility="public",
+                label="spot_hidden CHECK",
+                display_text="spot_hidden CHECK\n投掷骰子 d100=42",
+            ),
+            DiceRollAudit(
+                source="status_consequence",
+                player_id="p1",
+                visibility="keeper",
+                label="SAN CHECK",
+                display_text="[暗骰] SAN CHECK\n投掷骰子 1d3=3",
+            ),
+        ],
         scene_batches=[
             SceneBatchResolution(
                 scene_id="foyer",
@@ -75,6 +91,8 @@ def test_player_turn_view_filters_private_clues_and_omits_keeper_hint() -> None:
     assert "keeper-only 下一步提示" not in payload
     assert "只有守密人该看到这句" not in payload
     assert "keeper_hint" not in payload
+    assert "spot_hidden CHECK" in payload
+    assert "SAN CHECK" not in payload
 
 
 def test_keeper_turn_view_preserves_all_private_material() -> None:
@@ -91,3 +109,5 @@ def test_keeper_turn_view_preserves_all_private_material() -> None:
     assert "keeper-only 下一步提示" in payload
     assert "只有守密人该看到这句" in payload
     assert "keeper_hint" in payload
+    assert "spot_hidden CHECK" in payload
+    assert "SAN CHECK" in payload

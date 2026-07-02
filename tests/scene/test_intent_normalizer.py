@@ -333,6 +333,41 @@ def test_intent_normalizer_accepts_off_map_car_as_freeform_boundary() -> None:
     assert result.match_basis == ["freeform:off_map_move:0.76"]
 
 
+def test_intent_normalizer_extracts_requested_skill_for_off_map_boundary() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    result = IntentNormalizer().normalize(
+        runtime=runtime,
+        session=session,
+        module=module,
+        player_id="p1",
+        raw_text="我用侦查检定判断后方黑暗里的处境，再前往七号车厢",
+    )
+
+    assert result.accepted is True
+    assert result.matched_id == "off_map_move"
+    assert result.intent_payload == {
+        "type": "freeform",
+        "text": "我用侦查检定判断后方黑暗里的处境，再前往七号车厢",
+        "freeform_kind": "off_map_move",
+        "intended_target": "七号车厢",
+        "risk_hint": (
+            "玩家正在尝试前往模组场景图未定义或当前不可达的区域。"
+            "这不是澄清失败，应按地图边界自由裁定：依据当前场景、"
+            "模组氛围、威胁时钟和已知线索决定是危险边界、死亡警告区、"
+            "暗骰检定、幸运/侦查/潜行检定、奖励、阻力或代价；"
+            "不要把它改写成已定义移动。"
+        ),
+        "requested_skill_key": "spot_hidden",
+    }
+
+
 def test_intent_normalizer_accepts_location_question_as_freeform_for_api() -> None:
     runtime = SceneRuntime()
     session = runtime.create_session(
