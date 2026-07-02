@@ -1,0 +1,25 @@
+{
+  "commands": [
+    {
+      "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py tests/scene/test_narration_graph_memory.py tests/scene/test_narration_pipeline.py tests/scene/test_narration_prompt.py tests/scene/test_narration_validator.py -q",
+      "result": "29 passed in 0.29s"
+    },
+    {
+      "command": "python -m compileall -q src/scenario/narration",
+      "result": "passed"
+    },
+    {
+      "command": "pytest tests/scene/test_narration_*.py tests/scene/test_keeper_render_agent.py -q",
+      "result": "45 passed in 0.37s"
+    },
+    {
+      "command": "pytest tests/scene -q -k 'not online'",
+      "result": "120 passed, 1 deselected in 6.27s"
+    },
+    {
+      "command": "python -m ruff check .",
+      "result": "All checks passed!"
+    }
+  ],
+  "note": "Counts increased after graph missing-module-scope regression test was added."
+}

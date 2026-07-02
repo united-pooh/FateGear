@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "command": "PYTHONPATH=src python - <<cross-scope negative smoke script>>",
+  "status": "passed",
+  "result": "cross-scope negative smoke passed: no session/module leakage",
+  "covers": [
+    "REQ-003",
+    "REQ-004",
+    "REQ-005",
+    "REQ-006",
+    "REQ-008"
+  ],
+  "notes": [
+    "An initial too-narrow assertion failed because same-scope narrative and patch memories both matched the query; printed diagnostic output confirmed no scope leak.",
+    "Corrected smoke asserts ordinary memory retrieval returns only exact session/module, partial search returns no scoped memory, and graph facts remain independent for session-a/generic_mvp, session-b/generic_mvp, and session-a/other_module."
+  ]
+}

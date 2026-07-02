@@ -197,6 +197,54 @@ def _build_skills(
     return skills
 
 
+def _create_investigator_card(
+    *,
+    name: Name,
+    age: Age,
+    strength: PercentileStat,
+    constitution: PercentileStat,
+    size: PercentileStat,
+    dexterity: PercentileStat,
+    appearance: PercentileStat,
+    intelligence: PercentileStat,
+    power: PercentileStat,
+    education: PercentileStat,
+    occupation: Occupation,
+    player: Player,
+    luck: LuckStat | None,
+    cthulhu_mythos: CthulhuMythos,
+    skill_templates: Mapping[SkillKey, SkillTemplate] | None,
+    skill_inputs: Sequence[InvestigatorSkillInput],
+    fill_base_skills: bool = False,
+) -> InvestigatorCard:
+    attributes = InvestigatorAttributes(
+        strength=strength,
+        constitution=constitution,
+        size=size,
+        dexterity=dexterity,
+        appearance=appearance,
+        intelligence=intelligence,
+        power=power,
+        education=education,
+        luck=luck,
+    )
+    skills = _build_skills(
+        skill_inputs=skill_inputs,
+        skill_templates=skill_templates,
+        fill_base_skills=fill_base_skills,
+    )
+
+    return InvestigatorCard.create(
+        name=name,
+        age=age,
+        attributes=attributes,
+        occupation=occupation,
+        player=player,
+        cthulhu_mythos=cthulhu_mythos,
+        skills=skills,
+    )
+
+
 @validate_call
 def build_investigator_card(
     *,
@@ -218,7 +266,13 @@ def build_investigator_card(
     skill_inputs: Sequence[InvestigatorSkillInput | Mapping[str, Any]] | None = None,
     fill_base_skills: bool = False,
 ) -> InvestigatorCard:
-    attributes = InvestigatorAttributes(
+    parsed_skill_inputs = _parse_skill_inputs(
+        payload_skill_inputs=(),
+        skill_inputs=skill_inputs,
+    )
+    return _create_investigator_card(
+        name=name,
+        age=age,
         strength=strength,
         constitution=constitution,
         size=size,
@@ -227,26 +281,13 @@ def build_investigator_card(
         intelligence=intelligence,
         power=power,
         education=education,
-        luck=luck,
-    )
-    parsed_skill_inputs = _parse_skill_inputs(
-        payload_skill_inputs=(),
-        skill_inputs=skill_inputs,
-    )
-    skills = _build_skills(
-        skill_inputs=parsed_skill_inputs,
-        skill_templates=skill_templates,
-        fill_base_skills=fill_base_skills,
-    )
-
-    return InvestigatorCard.create(
-        name=name,
-        age=age,
-        attributes=attributes,
         occupation=occupation,
         player=player,
+        luck=luck,
         cthulhu_mythos=cthulhu_mythos,
-        skills=skills,
+        skill_templates=skill_templates,
+        skill_inputs=parsed_skill_inputs,
+        fill_base_skills=fill_base_skills,
     )
 
 
@@ -262,7 +303,7 @@ def build_investigator_from_mapping(
         payload_skill_inputs=parsed.skills,
         skill_inputs=skill_inputs,
     )
-    return build_investigator_card(
+    return _create_investigator_card(
         name=parsed.name,
         player=parsed.player,
         occupation=parsed.occupation,

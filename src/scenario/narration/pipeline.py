@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from scenario.module.models import ModuleDefinition
 from scenario.runtime.contracts import TurnResolution
 from scenario.session.state import SessionMapState
@@ -21,6 +23,13 @@ from .records import InMemoryNarrationRepository, build_narration_record
 from .validator import NarrationValidator
 
 
+class NarrationGraphStore(Protocol):
+    """Accepted-record graph sink used by NarrationPipeline."""
+
+    def ingest_record(self, record: KeeperNarrationRecord) -> object:
+        """Persist graph facts derived from an accepted narration record."""
+
+
 class NarrationPipeline:
     """Render narration after SceneRuntime has committed a turn."""
 
@@ -33,6 +42,7 @@ class NarrationPipeline:
         prompt_builder: NarrationPromptBuilder | None = None,
         validator: NarrationValidator | None = None,
         model_metadata: ModelMetadata | None = None,
+        graph_store: NarrationGraphStore | None = None,
     ) -> None:
         self.agent = agent
         self.memory_store = memory_store or InMemoryVectorContextStore()
@@ -40,6 +50,7 @@ class NarrationPipeline:
         self.prompt_builder = prompt_builder or NarrationPromptBuilder()
         self.validator = validator or NarrationValidator()
         self.model_metadata = model_metadata or ModelMetadata()
+        self.graph_store = graph_store
 
     def render_after_turn(
         self,
@@ -80,6 +91,8 @@ class NarrationPipeline:
         )
         self.repository.append_record(record)
         self.memory_store.write_from_record(record)
+        if self.graph_store is not None:
+            self.graph_store.ingest_record(record)
         return record
 
 

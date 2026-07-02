@@ -26,6 +26,7 @@ from .config import (
     build_openai_client,
     detect_provider_kind,
     load_agent_settings,
+    select_provider_for_model,
 )
 from .models import CommitResult, KeeperNarration, PrivateClue
 
@@ -502,7 +503,12 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
         settings = config or load_agent_settings()
         narrator_config = settings.narrator
         super().__init__(model_id=model_id or narrator_config.model)
-        self._client = openai_client or build_openai_client(settings.narrator_provider)
+        provider = select_provider_for_model(
+            model_id=self._model_id,
+            default_provider=settings.narrator_provider,
+            deepseek_provider=settings.deepseek_provider,
+        )
+        self._client = openai_client or build_openai_client(provider)
         self._temperature = (
             narrator_config.temperature if temperature is None else temperature
         )

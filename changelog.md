@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-06-03
+
+### Added
+- 新增单玩家 `off_map_move` 风险状态：运行时按玩家持久化 `IllegalMoveRiskState`，记录 `illegal_value`、连续次数、累计次数、近期窗口、最近违规回合和惩罚等级。
+- 新增越界移动风险事件与惩罚事件：`movement_risk_updated` 记录分数变化，`movement_penalty_triggered` 记录重度惩罚阈值、实际分数和应用效果。
+- 新增 Keeper Prompt 只读风险事实，将当前越界风险、阈值、下一档惩罚和当前 pending move 的风险预览注入空间层，供模型解释但不允许覆盖运行时裁定。
+
+### Safety
+- `no_link` 移动会被运行时分类为 `violation_kind=off_map_move` 并按阈值升级；`missing_flags`、`missing_stage`、`locked_link` 等受规则阻塞的移动不会被误判为越界移动。
+- 非越界回合只进行缓慢衰减，连续 2-3 次或多次间隔越界移动都会在确定性阈值下触发重度惩罚。
+
+### Tests
+- 新增连续越界、间隔越界、非越界阻塞不误伤、风险 prompt 注入等回归测试。
+
 ## 2026-06-01
 
 ### Added

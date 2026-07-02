@@ -180,12 +180,22 @@ class VectorMemoryMetadata(BaseModel):
     memory_id: str = Field(..., min_length=1)
     source_turn: int = Field(..., ge=1)
     source_event_ids: list[str] = Field(default_factory=list)
+    session_id: str = ""
+    module_id: str = ""
     scope: str = Field(default="public")
     kind: Literal["narrative", "npc", "scene", "clue"]
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     source_text: str = ""
     source_record_id: str = ""
     created_from: Literal["seed", "record", "patch"] = "seed"
+    status: Literal["active", "stale", "forgotten"] = "active"
+    created_at: str = ""
+    updated_at: str = ""
+    valid_from_turn: int | None = Field(default=None, ge=1)
+    valid_to_turn: int | None = Field(default=None, ge=1)
+    supersedes: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    forget_reason: str = ""
 
 
 class VectorMemory(BaseModel):

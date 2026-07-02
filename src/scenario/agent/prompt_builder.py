@@ -13,6 +13,8 @@ from typing import Sequence
 
 from ..context import NarrativeContextLayer, NarrativeContextSelector
 from ..module.models import ModuleDefinition
+from ..scene.models import SceneLink
+from ..scene.rules import SceneMovementRules
 from ..session.state import SessionMapState
 from ..story.models import StoryState
 from .models import (
@@ -105,6 +107,9 @@ class PromptBuilder:
         Returns:
             AgentPlanPrompt：可直接传入 KeeperPlanAgent.call()。
         """
+        intent_map = (
+            pending_intents if pending_intents is not None else session.pending_intents
+        )
         system = self._build_system_layer()
         narrative = self.build_narrative_context(
             session=session,
@@ -120,7 +125,10 @@ class PromptBuilder:
             narrative=narrative,
         )
         spatial = self._build_spatial_layer(
-            session=session, module=module, scene_id=scene_id
+            session=session,
+            module=module,
+            scene_id=scene_id,
+            pending_intents=intent_map,
         )
         history = self._build_history_layer(recent_events=recent_events or [])
         keeper_private = self._build_keeper_private_layer(
@@ -130,7 +138,7 @@ class PromptBuilder:
             session=session,
             module=module,
             scene_id=scene_id,
-            pending_intents=pending_intents,
+            pending_intents=intent_map,
         )
 
         return AgentPlanPrompt(
@@ -210,6 +218,7 @@ class PromptBuilder:
         session: SessionMapState,
         module: ModuleDefinition,
         scene_id: str,
+        pending_intents: dict[str, dict[str, object]],
     ) -> SpatialLayer:
         scene_map = module.scene_map()
         scene = scene_map.get(scene_id)
@@ -236,6 +245,15 @@ class PromptBuilder:
             pid: sorted(session.player_states[pid].investigator.skills.keys())
             for pid in present_player_ids
         }
+        illegal_move_risk = {
+            pid: self._build_illegal_move_risk_fact(
+                session=session,
+                module=module,
+                player_id=pid,
+                pending_intent=pending_intents.get(pid),
+            )
+            for pid in present_player_ids
+        }
 
         return SpatialLayer(
             scene_id=scene_id,
@@ -247,7 +265,103 @@ class PromptBuilder:
             global_flags=sorted(session.global_flags),
             clock_values=dict(session.clock_values),
             player_skill_keys=player_skill_keys,
+            illegal_move_risk=illegal_move_risk,
         )
+
+    def _build_illegal_move_risk_fact(
+        self,
+        *,
+        session: SessionMapState,
+        module: ModuleDefinition,
+        player_id: str,
+        pending_intent: dict[str, object] | None,
+    ) -> dict[str, object]:
+        from ..runtime.movement_risk import (
+            OFF_MAP_MAJOR_THRESHOLD,
+            OFF_MAP_SEVERE_THRESHOLD,
+            OFF_MAP_THRESHOLDS_ASC,
+        )
+
+        risk = session.player_states[player_id].illegal_move_risk
+        next_threshold: dict[str, int | None] = {
+            "tier": None,
+            "value": None,
+        }
+        for tier, threshold in OFF_MAP_THRESHOLDS_ASC:
+            if risk.illegal_value < threshold:
+                next_threshold = {"tier": tier, "value": threshold}
+                break
+        fact: dict[str, object] = {
+            "illegal_value": risk.illegal_value,
+            "consecutive_count": risk.consecutive_count,
+            "total_count": risk.total_count,
+            "recent_window_count": risk.recent_window_count,
+            "last_violation_turn": risk.last_violation_turn,
+            "last_penalty_tier": risk.last_penalty_tier,
+            "severe_triggered": risk.severe_triggered,
+            "major_threshold": OFF_MAP_MAJOR_THRESHOLD,
+            "severe_threshold": OFF_MAP_SEVERE_THRESHOLD,
+            "next_threshold": next_threshold,
+            "current_intent_classification": {},
+        }
+        if pending_intent is not None and str(pending_intent.get("type", "")) == "move":
+            fact["current_intent_classification"] = (
+                self._classify_pending_move_for_risk(
+                    session=session,
+                    module=module,
+                    player_id=player_id,
+                    target_scene_id=str(pending_intent.get("target_scene_id", "")),
+                )
+            )
+        return fact
+
+    def _classify_pending_move_for_risk(
+        self,
+        *,
+        session: SessionMapState,
+        module: ModuleDefinition,
+        player_id: str,
+        target_scene_id: str,
+    ) -> dict[str, object]:
+        player_state = session.player_states[player_id]
+        decision = SceneMovementRules(
+            scene_links=[
+                SceneLink(
+                    from_scene_id=link.from_scene_id,
+                    to_scene_id=link.to_scene_id,
+                    required_flags=list(link.required_flags),
+                    required_stages=list(link.required_stages),
+                    block_reason=link.block_reason,
+                )
+                for link in module.links
+            ],
+            active_flags=session.global_flags,
+            active_stage_id=session.story_state.current_stage_id,
+        ).evaluate_transition(
+            from_scene_id=player_state.current_scene_id,
+            to_scene_id=target_scene_id,
+        )
+        violation_kind = (
+            "off_map_move"
+            if not decision.allowed and decision.reason_code == "no_link"
+            else ""
+        )
+        classification: dict[str, object] = {
+            "intent_type": "move",
+            "from_scene_id": player_state.current_scene_id,
+            "target_scene_id": target_scene_id,
+            "allowed": decision.allowed,
+            "reason_code": decision.reason_code,
+            "violation_kind": violation_kind,
+        }
+        if violation_kind == "off_map_move":
+            from ..runtime.movement_risk import preview_off_map_risk_update
+
+            classification["risk_preview"] = preview_off_map_risk_update(
+                player_state.illegal_move_risk,
+                turn_no=session.current_turn,
+            )
+        return classification
 
     def _build_history_layer(
         self, *, recent_events: Sequence[object]

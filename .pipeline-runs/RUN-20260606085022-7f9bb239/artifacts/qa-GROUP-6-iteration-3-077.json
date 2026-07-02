@@ -1,0 +1,155 @@
+{
+  "qaReport": {
+    "version": "1.0",
+    "group_id": "GROUP-6",
+    "iteration": 3,
+    "status": "pass",
+    "test_infrastructure": "configured",
+    "test_results": [
+      {
+        "kind": "new",
+        "requirement_ids": [
+          "REQ-001",
+          "REQ-002",
+          "REQ-003",
+          "REQ-004"
+        ],
+        "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py -q",
+        "status": "passed",
+        "details": "11 passed after half-open validity hardening; covers in-memory scope/status/validity, persistent scope/search, redaction, bad JSONL, supersession, audit."
+      },
+      {
+        "kind": "new",
+        "requirement_ids": [
+          "REQ-005",
+          "REQ-006"
+        ],
+        "command": "pytest tests/scene/test_narration_graph_memory.py -q",
+        "status": "passed",
+        "details": "Graph tests included in focused 26 passed suite; scoped graph and half-open as-of semantics remain covered."
+      },
+      {
+        "kind": "scenario",
+        "requirement_ids": [
+          "REQ-003",
+          "REQ-005",
+          "REQ-008"
+        ],
+        "command": "pytest tests/scene/test_narration_pipeline.py tests/scene/test_narration_graph_memory.py -q",
+        "status": "passed",
+        "details": "Pipeline/graph tests included in focused 26 passed suite; graph ingest and runtime immutability still covered."
+      },
+      {
+        "kind": "existing",
+        "requirement_ids": [
+          "REQ-008"
+        ],
+        "command": "pytest tests/scene -q -k 'not online'",
+        "status": "passed",
+        "details": "117 passed, 1 deselected in 8.49s."
+      },
+      {
+        "kind": "manual",
+        "requirement_ids": [
+          "REQ-007"
+        ],
+        "command": "MCP artifact audit after iteration 3",
+        "status": "passed",
+        "details": "Run contains P1 fail, rework, recheck, iteration-2/3 executions, refreshed tree grading, validation, QA, and online quota attribution."
+      },
+      {
+        "kind": "scenario",
+        "requirement_ids": [
+          "REQ-008"
+        ],
+        "command": "pytest tests/scene -q",
+        "status": "failed",
+        "details": "Latest full scene run after P1 rework failed only online provider test due OpenAI 429 insufficient_quota; offline and focused passed after half-open validity follow-up."
+      }
+    ],
+    "blocking_issues": [],
+    "notes": [
+      "No P0/P1 blockers after Aristotle recheck.",
+      "Online provider 429 remains external and non-blocking.",
+      "SQLite migration for old prototype DB files and multi-process JSONL locking remain future hardening items."
+    ]
+  },
+  "validation": {
+    "artifactType": "qa-report",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-6",
+      "iteration": 3,
+      "status": "pass",
+      "test_infrastructure": "configured",
+      "test_results": [
+        {
+          "kind": "new",
+          "requirement_ids": [
+            "REQ-001",
+            "REQ-002",
+            "REQ-003",
+            "REQ-004"
+          ],
+          "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py -q",
+          "status": "passed",
+          "details": "11 passed after half-open validity hardening; covers in-memory scope/status/validity, persistent scope/search, redaction, bad JSONL, supersession, audit."
+        },
+        {
+          "kind": "new",
+          "requirement_ids": [
+            "REQ-005",
+            "REQ-006"
+          ],
+          "command": "pytest tests/scene/test_narration_graph_memory.py -q",
+          "status": "passed",
+          "details": "Graph tests included in focused 26 passed suite; scoped graph and half-open as-of semantics remain covered."
+        },
+        {
+          "kind": "scenario",
+          "requirement_ids": [
+            "REQ-003",
+            "REQ-005",
+            "REQ-008"
+          ],
+          "command": "pytest tests/scene/test_narration_pipeline.py tests/scene/test_narration_graph_memory.py -q",
+          "status": "passed",
+          "details": "Pipeline/graph tests included in focused 26 passed suite; graph ingest and runtime immutability still covered."
+        },
+        {
+          "kind": "existing",
+          "requirement_ids": [
+            "REQ-008"
+          ],
+          "command": "pytest tests/scene -q -k 'not online'",
+          "status": "passed",
+          "details": "117 passed, 1 deselected in 8.49s."
+        },
+        {
+          "kind": "manual",
+          "requirement_ids": [
+            "REQ-007"
+          ],
+          "command": "MCP artifact audit after iteration 3",
+          "status": "passed",
+          "details": "Run contains P1 fail, rework, recheck, iteration-2/3 executions, refreshed tree grading, validation, QA, and online quota attribution."
+        },
+        {
+          "kind": "scenario",
+          "requirement_ids": [
+            "REQ-008"
+          ],
+          "command": "pytest tests/scene -q",
+          "status": "failed",
+          "details": "Latest full scene run after P1 rework failed only online provider test due OpenAI 429 insufficient_quota; offline and focused passed after half-open validity follow-up."
+        }
+      ],
+      "blocking_issues": [],
+      "notes": [
+        "No P0/P1 blockers after Aristotle recheck.",
+        "Online provider 429 remains external and non-blocking.",
+        "SQLite migration for old prototype DB files and multi-process JSONL locking remain future hardening items."
+      ]
+    }
+  }
+}

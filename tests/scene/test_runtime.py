@@ -402,6 +402,199 @@ def test_same_turn_scene_batches_use_the_same_snapshot() -> None:
     )
 
 
+def test_consecutive_off_map_moves_escalate_to_heavy_penalty() -> None:
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+
+    first_resolution = _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "move", "target_scene_id": "exit"}},
+    )
+    first_outcome = _find_outcome(first_resolution, player_id="p1")
+    assert first_outcome.success is False
+    assert first_outcome.reason_code == "no_link"
+    assert first_outcome.violation_kind == "off_map_move"
+    assert first_outcome.penalty_tier == "warning"
+    assert first_outcome.illegal_value == 3
+    assert session.player_states["p1"].current_scene_id == "foyer"
+
+    second_resolution = _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "move", "target_scene_id": "exit"}},
+    )
+
+    second_outcome = _find_outcome(second_resolution, player_id="p1")
+    assert second_outcome.success is False
+    assert second_outcome.violation_kind == "off_map_move"
+    assert second_outcome.penalty_tier in {"major_penalty", "severe_penalty"}
+    assert second_outcome.illegal_value is not None
+    assert second_outcome.illegal_value >= 7
+    assert session.player_states["p1"].current_scene_id == "foyer"
+
+    risk = session.player_states["p1"].illegal_move_risk
+    assert risk.total_count == 2
+    assert risk.consecutive_count == 2
+    assert risk.last_violation_turn == second_resolution.turn_no
+    assert risk.last_penalty_tier in {"major_penalty", "severe_penalty"}
+
+    risk_events = _find_events(
+        second_resolution,
+        event_type="movement_risk_updated",
+        player_id="p1",
+    )
+    assert len(risk_events) == 1
+    assert risk_events[0].violation_kind == "off_map_move"
+    assert risk_events[0].reason_code == "no_link"
+    assert risk_events[0].score_before == 3
+    assert risk_events[0].score_after == second_outcome.illegal_value
+    assert risk_events[0].threshold_crossed in {"major_penalty", "severe_penalty"}
+    assert risk_events[0].required_threshold == 7
+
+    penalty_events = _find_events(
+        second_resolution,
+        event_type="movement_penalty_triggered",
+        player_id="p1",
+    )
+    assert len(penalty_events) == 1
+    assert penalty_events[0].penalty_tier in {"major_penalty", "severe_penalty"}
+    assert penalty_events[0].actual_score == second_outcome.illegal_value
+    assert penalty_events[0].effects_applied
+
+
+def test_intermittent_off_map_moves_eventually_escalate_despite_safe_turns() -> None:
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+
+    _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "move", "target_scene_id": "exit"}},
+    )
+    legal_resolution = _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "move", "target_scene_id": "storage"}},
+    )
+    legal_decay_events = _find_events(
+        legal_resolution,
+        event_type="movement_risk_updated",
+        player_id="p1",
+    )
+    assert legal_decay_events[0].reason_code == "risk_decay"
+    assert legal_decay_events[0].decay_applied == 1
+    assert session.player_states["p1"].current_scene_id == "storage"
+
+    _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "move", "target_scene_id": "exit"}},
+    )
+    empty_resolution = _resolve_turn(runtime, session_id=session.session_id)
+    empty_decay_events = _find_events(
+        empty_resolution,
+        event_type="movement_risk_updated",
+        player_id="p1",
+    )
+    assert len(empty_decay_events) == 1
+    assert empty_decay_events[0].reason_code == "risk_decay"
+    assert empty_decay_events[0].score_after < empty_decay_events[0].score_before
+
+    final_resolution = _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "move", "target_scene_id": "exit"}},
+    )
+
+    final_outcome = _find_outcome(final_resolution, player_id="p1")
+    assert final_outcome.success is False
+    assert final_outcome.violation_kind == "off_map_move"
+    assert final_outcome.penalty_tier in {"major_penalty", "severe_penalty"}
+
+    risk = session.player_states["p1"].illegal_move_risk
+    assert risk.total_count == 3
+    assert risk.last_violation_turn == final_resolution.turn_no
+    assert risk.last_penalty_tier in {"major_penalty", "severe_penalty"}
+
+    penalty_events = _find_events(
+        final_resolution,
+        event_type="movement_penalty_triggered",
+        player_id="p1",
+    )
+    assert len(penalty_events) == 1
+    assert penalty_events[0].violation_kind == "off_map_move"
+    assert penalty_events[0].actual_score == final_outcome.illegal_value
+
+
+@pytest.mark.parametrize(
+    ("starting_scene_id", "flags", "target_scene_id", "expected_reason_code"),
+    [
+        ("foyer", set(), "control", "missing_flags"),
+        ("control", {"exit_open"}, "exit", "missing_stage"),
+    ],
+)
+def test_blocked_moves_due_to_requirements_do_not_count_as_off_map_move(
+    starting_scene_id: str,
+    flags: set[str],
+    target_scene_id: str,
+    expected_reason_code: str,
+) -> None:
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    session.player_states["p1"].current_scene_id = starting_scene_id
+    session.player_states["p1"].last_scene_id = starting_scene_id
+    session.global_flags.update(flags)
+
+    resolution = _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "move", "target_scene_id": target_scene_id}},
+    )
+
+    outcome = _find_outcome(resolution, player_id="p1")
+    assert outcome.success is False
+    assert outcome.reason_code == expected_reason_code
+    assert outcome.violation_kind == ""
+    assert outcome.penalty_tier == ""
+    assert outcome.illegal_value is None
+
+    risk = session.player_states["p1"].illegal_move_risk
+    assert risk.illegal_value == 0
+    assert risk.total_count == 0
+    assert risk.last_violation_turn is None
+
+    attempted_events = _find_events(
+        resolution,
+        event_type="movement_attempted",
+        player_id="p1",
+    )
+    assert attempted_events[0].reason_code == expected_reason_code
+    assert attempted_events[0].violation_kind == ""
+    assert not _find_events(
+        resolution,
+        event_type="movement_risk_updated",
+        player_id="p1",
+    )
+    assert not _find_events(
+        resolution,
+        event_type="movement_penalty_triggered",
+        player_id="p1",
+    )
+
+
 def test_action_effects_update_clocks_thresholds_story_stage_and_once_actions() -> None:
     runtime = _runtime_with_deterministic_success()
     session = runtime.create_session(

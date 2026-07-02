@@ -159,6 +159,7 @@ def _offline_agent_settings() -> AgentSettings:
     provider = OpenAIProviderConfig()
     return AgentSettings(
         default_provider=provider,
+        deepseek_provider=provider,
         planner_provider=provider,
         narrator_provider=provider,
         planner=AgentModelConfig(

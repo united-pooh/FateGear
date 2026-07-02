@@ -46,8 +46,6 @@ async def error_middleware(
         return web.json_response({"error": str(exc)}, status=404)
     except FileNotFoundError as exc:
         return web.json_response({"error": str(exc)}, status=404)
-    except ValueError as exc:
-        return web.json_response({"error": str(exc)}, status=400)
     except PermissionError as exc:
         return web.json_response({"error": str(exc)}, status=403)
     except json.JSONDecodeError as exc:
@@ -55,6 +53,8 @@ async def error_middleware(
             {"error": f"请求体不是合法 JSON: {exc}"},
             status=400,
         )
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
     except ContentTypeError as exc:
         return web.json_response(
             {"error": f"请求体不是合法 JSON: {exc}"},

@@ -17,6 +17,9 @@ class MovementDecision(BaseModel):
 
     allowed: bool
     reason: str = Field(default="")
+    reason_code: str = Field(default="")
+    missing_flags: list[str] = Field(default_factory=list)
+    missing_stages: list[str] = Field(default_factory=list)
 
 
 class SceneMovementRules:
@@ -74,6 +77,7 @@ class SceneMovementRules:
                 return MovementDecision(
                     allowed=False,
                     reason=link.block_reason or "通路当前处于锁定状态",
+                    reason_code="locked_link",
                 )
 
             current_flags = effective_flags or set()
@@ -84,7 +88,12 @@ class SceneMovementRules:
                 reason = (
                     link.block_reason or f"缺少状态标记: {', '.join(missing_flags)}"
                 )
-                return MovementDecision(allowed=False, reason=reason)
+                return MovementDecision(
+                    allowed=False,
+                    reason=reason,
+                    reason_code="missing_flags",
+                    missing_flags=missing_flags,
+                )
 
             if link.required_stages:
                 if (
@@ -92,11 +101,20 @@ class SceneMovementRules:
                     or effective_stage_id not in link.required_stages
                 ):
                     reason = link.block_reason or "当前剧情阶段不允许通过该通路"
-                    return MovementDecision(allowed=False, reason=reason)
+                    return MovementDecision(
+                        allowed=False,
+                        reason=reason,
+                        reason_code="missing_stage",
+                        missing_stages=list(link.required_stages),
+                    )
 
             return MovementDecision(allowed=True)
 
-        return MovementDecision(allowed=False, reason="场景之间不存在可通行连线")
+        return MovementDecision(
+            allowed=False,
+            reason="场景之间不存在可通行连线",
+            reason_code="no_link",
+        )
 
     def list_reachable_scenes(
         self,

@@ -1,0 +1,65 @@
+{
+  "classification": {
+    "version": "1.0",
+    "task_id": "GROUP-3-task",
+    "group_id": "GROUP-3",
+    "task_type": "code_implementation",
+    "depth_enhancement_applicable": true,
+    "recommended_branches": [
+      {
+        "name": "图作用域",
+        "name_en": "Graph Scope",
+        "rationale": "Graph facts must not supersede or query across unrelated sessions/modules."
+      },
+      {
+        "name": "路径边界",
+        "name_en": "Path Boundary",
+        "rationale": "Graph ingest must defensively preserve the NarrativeState-only boundary."
+      },
+      {
+        "name": "时序查询",
+        "name_en": "Temporal Query",
+        "rationale": "As-of-turn lookup is required to audit history and expiry."
+      },
+      {
+        "name": "Schema 生命周期",
+        "name_en": "Schema Lifecycle",
+        "rationale": "SQLite needs durable schema metadata, constraints, indexes, and resource lifecycle."
+      }
+    ],
+    "summary": "GROUP-3 classification separates independently gradable dimensions for code_implementation."
+  },
+  "validation": {
+    "artifactType": "tree-classification",
+    "artifact": {
+      "version": "1.0",
+      "task_id": "GROUP-3-task",
+      "group_id": "GROUP-3",
+      "task_type": "code_implementation",
+      "depth_enhancement_applicable": true,
+      "recommended_branches": [
+        {
+          "name": "图作用域",
+          "name_en": "Graph Scope",
+          "rationale": "Graph facts must not supersede or query across unrelated sessions/modules."
+        },
+        {
+          "name": "路径边界",
+          "name_en": "Path Boundary",
+          "rationale": "Graph ingest must defensively preserve the NarrativeState-only boundary."
+        },
+        {
+          "name": "时序查询",
+          "name_en": "Temporal Query",
+          "rationale": "As-of-turn lookup is required to audit history and expiry."
+        },
+        {
+          "name": "Schema 生命周期",
+          "name_en": "Schema Lifecycle",
+          "rationale": "SQLite needs durable schema metadata, constraints, indexes, and resource lifecycle."
+        }
+      ],
+      "summary": "GROUP-3 classification separates independently gradable dimensions for code_implementation."
+    }
+  }
+}

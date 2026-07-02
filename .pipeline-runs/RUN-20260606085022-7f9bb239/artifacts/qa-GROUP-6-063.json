@@ -1,0 +1,157 @@
+{
+  "qaReport": {
+    "version": "1.0",
+    "group_id": "GROUP-6",
+    "iteration": 2,
+    "status": "pass",
+    "test_infrastructure": "configured",
+    "test_results": [
+      {
+        "kind": "new",
+        "requirement_ids": [
+          "REQ-001",
+          "REQ-002",
+          "REQ-003",
+          "REQ-004"
+        ],
+        "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py -q",
+        "status": "passed",
+        "details": "10 passed; covers in-memory scope, persistent scope/global seed/search, patch provenance, supersession, redaction, bad JSONL, audit."
+      },
+      {
+        "kind": "new",
+        "requirement_ids": [
+          "REQ-005",
+          "REQ-006"
+        ],
+        "command": "pytest tests/scene/test_narration_graph_memory.py -q",
+        "status": "passed",
+        "details": "7 graph tests included in focused suites; covers scoped graph, rejection, as-of, audit, lifecycle."
+      },
+      {
+        "kind": "scenario",
+        "requirement_ids": [
+          "REQ-003",
+          "REQ-005",
+          "REQ-008"
+        ],
+        "command": "pytest tests/scene/test_narration_pipeline.py tests/scene/test_narration_graph_memory.py -q",
+        "status": "passed",
+        "details": "8 passed; covers pipeline graph ingest and runtime immutability."
+      },
+      {
+        "kind": "existing",
+        "requirement_ids": [
+          "REQ-008"
+        ],
+        "command": "pytest tests/scene -q -k 'not online'",
+        "status": "passed",
+        "details": "116 passed, 1 deselected after P1 rework."
+      },
+      {
+        "kind": "scenario",
+        "requirement_ids": [
+          "REQ-008"
+        ],
+        "command": "pytest tests/scene -q",
+        "status": "failed",
+        "details": "Only online runtime agent test failed due OpenAI 429 insufficient_quota; recorded as external quota risk, not blocking implementation failure."
+      },
+      {
+        "kind": "manual",
+        "requirement_ids": [
+          "REQ-007"
+        ],
+        "command": "MCP artifact audit",
+        "status": "passed",
+        "details": "Run contains design/spec/plan/architecture/dispatch, per-group tree classification/rubrics/verification/refinement, executions, final-output snapshots, tree grading, doc, validation, QA gate, P1 rework and recheck evidence."
+      }
+    ],
+    "blocking_issues": [],
+    "notes": [
+      "Godel QA gate passed with tail risks; Aristotle initially failed P1, then rechecked and passed after in-memory scope, partial search, and ADR fixes.",
+      "Online provider 429 insufficient_quota remains external and is isolated from offline validation.",
+      "SQLite graph schema migration from older prototype files is not implemented; new schema/version is covered for fresh local graph stores.",
+      "Persistent JSONL lock is process-local only, not multi-process file locking."
+    ]
+  },
+  "validation": {
+    "artifactType": "qa-report",
+    "artifact": {
+      "version": "1.0",
+      "group_id": "GROUP-6",
+      "iteration": 2,
+      "status": "pass",
+      "test_infrastructure": "configured",
+      "test_results": [
+        {
+          "kind": "new",
+          "requirement_ids": [
+            "REQ-001",
+            "REQ-002",
+            "REQ-003",
+            "REQ-004"
+          ],
+          "command": "pytest tests/scene/test_narration_memory.py tests/scene/test_narration_memory_persistence.py -q",
+          "status": "passed",
+          "details": "10 passed; covers in-memory scope, persistent scope/global seed/search, patch provenance, supersession, redaction, bad JSONL, audit."
+        },
+        {
+          "kind": "new",
+          "requirement_ids": [
+            "REQ-005",
+            "REQ-006"
+          ],
+          "command": "pytest tests/scene/test_narration_graph_memory.py -q",
+          "status": "passed",
+          "details": "7 graph tests included in focused suites; covers scoped graph, rejection, as-of, audit, lifecycle."
+        },
+        {
+          "kind": "scenario",
+          "requirement_ids": [
+            "REQ-003",
+            "REQ-005",
+            "REQ-008"
+          ],
+          "command": "pytest tests/scene/test_narration_pipeline.py tests/scene/test_narration_graph_memory.py -q",
+          "status": "passed",
+          "details": "8 passed; covers pipeline graph ingest and runtime immutability."
+        },
+        {
+          "kind": "existing",
+          "requirement_ids": [
+            "REQ-008"
+          ],
+          "command": "pytest tests/scene -q -k 'not online'",
+          "status": "passed",
+          "details": "116 passed, 1 deselected after P1 rework."
+        },
+        {
+          "kind": "scenario",
+          "requirement_ids": [
+            "REQ-008"
+          ],
+          "command": "pytest tests/scene -q",
+          "status": "failed",
+          "details": "Only online runtime agent test failed due OpenAI 429 insufficient_quota; recorded as external quota risk, not blocking implementation failure."
+        },
+        {
+          "kind": "manual",
+          "requirement_ids": [
+            "REQ-007"
+          ],
+          "command": "MCP artifact audit",
+          "status": "passed",
+          "details": "Run contains design/spec/plan/architecture/dispatch, per-group tree classification/rubrics/verification/refinement, executions, final-output snapshots, tree grading, doc, validation, QA gate, P1 rework and recheck evidence."
+        }
+      ],
+      "blocking_issues": [],
+      "notes": [
+        "Godel QA gate passed with tail risks; Aristotle initially failed P1, then rechecked and passed after in-memory scope, partial search, and ADR fixes.",
+        "Online provider 429 insufficient_quota remains external and is isolated from offline validation.",
+        "SQLite graph schema migration from older prototype files is not implemented; new schema/version is covered for fresh local graph stores.",
+        "Persistent JSONL lock is process-local only, not multi-process file locking."
+      ]
+    }
+  }
+}

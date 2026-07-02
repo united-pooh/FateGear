@@ -25,6 +25,7 @@ from .config import (
     build_openai_client,
     detect_provider_kind,
     load_agent_settings,
+    select_provider_for_model,
 )
 from .models import AgentPlanPrompt, KeeperAgentPlan
 
@@ -149,6 +150,36 @@ def _build_user_message(prompt: AgentPlanPrompt) -> str:
                 "重要：玩家技能为空时，proposed_checks 必须保持空数组；"
                 "不要为了增加戏剧性虚构技能检定。"
             )
+    illegal_move_risk = getattr(sp, "illegal_move_risk", {})
+    if illegal_move_risk:
+        lines.append("【越界移动风险（只读运行时事实，Agent 不得覆盖）】")
+        for pid, risk in illegal_move_risk.items():
+            next_threshold = risk.get("next_threshold") or {}
+            next_tier = next_threshold.get("tier") or "none"
+            next_value = next_threshold.get("value")
+            lines.append(
+                "  "
+                f"{pid}: illegal_value={risk.get('illegal_value')}, "
+                f"tier={risk.get('last_penalty_tier')}, "
+                f"consecutive={risk.get('consecutive_count')}, "
+                f"total={risk.get('total_count')}, "
+                f"recent={risk.get('recent_window_count')}, "
+                f"next_threshold={next_tier}:{next_value}"
+            )
+            classification = risk.get("current_intent_classification") or {}
+            if classification:
+                preview = classification.get("risk_preview") or {}
+                lines.append(
+                    "    "
+                    f"current_move={classification.get('from_scene_id')}->"
+                    f"{classification.get('target_scene_id')}, "
+                    f"reason_code={classification.get('reason_code')}, "
+                    f"violation_kind={classification.get('violation_kind') or 'none'}, "
+                    f"preview={preview.get('score_before')}->"
+                    f"{preview.get('score_after')}, "
+                    f"required_threshold={preview.get('required_threshold')}, "
+                    f"heavy_required={preview.get('heavy_punishment_required')}"
+                )
     if sp.clock_values:
         clocks = "、".join(f"{k}={v}" for k, v in sp.clock_values.items())
         lines.append(f"时钟：{clocks}")
@@ -357,7 +388,12 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
         settings = config or load_agent_settings()
         planner_config = settings.planner
         super().__init__(model_id=model_id or planner_config.model)
-        self._client = openai_client or build_openai_client(settings.planner_provider)
+        provider = select_provider_for_model(
+            model_id=self._model_id,
+            default_provider=settings.planner_provider,
+            deepseek_provider=settings.deepseek_provider,
+        )
+        self._client = openai_client or build_openai_client(provider)
         self._temperature = (
             planner_config.temperature if temperature is None else temperature
         )

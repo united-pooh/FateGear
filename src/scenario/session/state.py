@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from cards.domain.card import InvestigatorCard
@@ -36,6 +38,53 @@ class SceneInstanceState(BaseModel):
     local_flags: set[str] = Field(
         default_factory=set,
         description="当前场景实例持有的局部状态标记。",
+    )
+
+
+PenaltyTier = Literal[
+    "none",
+    "warning",
+    "minor_penalty",
+    "major_penalty",
+    "severe_penalty",
+]
+
+
+class IllegalMoveRiskState(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
+    illegal_value: int = Field(
+        default=0,
+        ge=0,
+        description="玩家越界移动风险值；由运行时维护，不由叙事层写入。",
+    )
+    consecutive_count: int = Field(
+        default=0,
+        ge=0,
+        description="连续回合触发越界移动的次数。",
+    )
+    total_count: int = Field(
+        default=0,
+        ge=0,
+        description="当前会话内累计越界移动次数。",
+    )
+    recent_window_count: int = Field(
+        default=0,
+        ge=0,
+        description="近期窗口内越界移动次数，用于防止间隔违规被完全洗白。",
+    )
+    last_violation_turn: int | None = Field(
+        default=None,
+        ge=1,
+        description="最近一次越界移动发生的回合。",
+    )
+    last_penalty_tier: PenaltyTier = Field(
+        default="none",
+        description="最近一次风险更新后的惩罚等级。",
+    )
+    severe_triggered: bool = Field(
+        default=False,
+        description="当前会话内是否已经触发过严重越界惩罚。",
     )
 
 
@@ -127,6 +176,10 @@ class SessionPlayerState(BaseModel):
     visibility_state: dict[str, bool] = Field(
         default_factory=dict,
         description="玩家当前可见性状态表，用于标记 NPC、线索、路径等对象是否可见。",
+    )
+    illegal_move_risk: IllegalMoveRiskState = Field(
+        default_factory=IllegalMoveRiskState,
+        description="玩家越界移动风险状态，由运行时跨回合维护。",
     )
 
     investigator: InvestigatorCard = Field(

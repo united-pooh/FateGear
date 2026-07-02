@@ -1,0 +1,327 @@
+{
+  "rubric": {
+    "version": "1.0",
+    "task_id": "GROUP-6-task",
+    "group_id": "GROUP-6",
+    "task_type": "validation_and_final_assessment",
+    "branches": [
+      {
+        "name": "非权威边界",
+        "name_en": "Non Authority Boundary",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B1-D1-01",
+            "content": "最终输出文件证明 memory/graph/NarrativeState 只辅助 prompt/audit，不被 runtime 读取为权威。",
+            "source": "KEEP_01",
+            "requirement_ids": [
+              "REQ-003"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/pipeline.py",
+              "docs/codex/adr/2026-06-06-narration-memory-boundary.md"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "持久化可靠性",
+        "name_en": "Persistence Reliability",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B2-D1-01",
+            "content": "最终输出文件证明 JSONL 持久化可 reload，坏行可审计恢复，写入有本进程保护。",
+            "source": "KEEP_02",
+            "requirement_ids": [
+              "REQ-001"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/memory.py",
+              "tests/scene/test_narration_memory_persistence.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "审计与失效",
+        "name_en": "Audit And Invalidation",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B3-D1-01",
+            "content": "最终输出文件证明 audit、forget/stale/redact、validity、supersedes 都可查询且默认不污染 retrieve。",
+            "source": "KEEP_03",
+            "requirement_ids": [
+              "REQ-002",
+              "REQ-004"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/memory.py",
+              "tests/scene/test_narration_memory_persistence.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "检索正确性",
+        "name_en": "Retrieval Correctness",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B4-D1-01",
+            "content": "最终输出文件证明 retrieve/search 按 session/module/kind/status/conflict 过滤并支持 explicit global seed。",
+            "source": "KEEP_04",
+            "requirement_ids": [
+              "REQ-003",
+              "REQ-004"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/memory.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "时序图事实",
+        "name_en": "Temporal Graph Facts",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B5-D1-01",
+            "content": "最终输出文件证明 graph facts 按 scope supersede，as-of-turn 使用半开 validity。",
+            "source": "KEEP_05",
+            "requirement_ids": [
+              "REQ-005"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/graph_memory.py",
+              "tests/scene/test_narration_graph_memory.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "图查询与 Schema",
+        "name_en": "Graph Query And Schema",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B6-D1-01",
+            "content": "最终输出文件证明 entities/facts/edges/schema_meta、FK/CHECK/index、search/audit/close 生命周期存在。",
+            "source": "KEEP_06",
+            "requirement_ids": [
+              "REQ-006"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/graph_memory.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Pipeline 集成",
+        "name_en": "Pipeline Integration",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B7-D1-01",
+            "content": "最终输出文件证明 NarrationPipeline 可选接入 graph_store 且 render 后 SessionMapState 不变。",
+            "source": "KEEP_07",
+            "requirement_ids": [
+              "REQ-003",
+              "REQ-005"
+            ],
+            "output_file_hints": [
+              "src/scenario/narration/pipeline.py",
+              "tests/scene/test_narration_pipeline.py"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "验证与 QA 证据",
+        "name_en": "Validation And QA Evidence",
+        "nodes": [
+          {
+            "depth": 1,
+            "id": "B8-D1-01",
+            "content": "最终 MCP artifacts 记录 focused/offline/compile/diff 检查、在线 quota 归因、QA 与两小时运行证据。",
+            "source": "KEEP_08",
+            "requirement_ids": [
+              "REQ-007",
+              "REQ-008"
+            ],
+            "output_file_hints": [
+              ".pipeline-runs/RUN-20260606085022-7f9bb239/artifacts/*"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "validation": {
+    "artifactType": "tree-rubrics",
+    "artifact": {
+      "version": "1.0",
+      "task_id": "GROUP-6-task",
+      "group_id": "GROUP-6",
+      "task_type": "validation_and_final_assessment",
+      "branches": [
+        {
+          "name": "非权威边界",
+          "name_en": "Non Authority Boundary",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B1-D1-01",
+              "content": "最终输出文件证明 memory/graph/NarrativeState 只辅助 prompt/audit，不被 runtime 读取为权威。",
+              "source": "KEEP_01",
+              "requirement_ids": [
+                "REQ-003"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/pipeline.py",
+                "docs/codex/adr/2026-06-06-narration-memory-boundary.md"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "持久化可靠性",
+          "name_en": "Persistence Reliability",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B2-D1-01",
+              "content": "最终输出文件证明 JSONL 持久化可 reload，坏行可审计恢复，写入有本进程保护。",
+              "source": "KEEP_02",
+              "requirement_ids": [
+                "REQ-001"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/memory.py",
+                "tests/scene/test_narration_memory_persistence.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "审计与失效",
+          "name_en": "Audit And Invalidation",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B3-D1-01",
+              "content": "最终输出文件证明 audit、forget/stale/redact、validity、supersedes 都可查询且默认不污染 retrieve。",
+              "source": "KEEP_03",
+              "requirement_ids": [
+                "REQ-002",
+                "REQ-004"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/memory.py",
+                "tests/scene/test_narration_memory_persistence.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "检索正确性",
+          "name_en": "Retrieval Correctness",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B4-D1-01",
+              "content": "最终输出文件证明 retrieve/search 按 session/module/kind/status/conflict 过滤并支持 explicit global seed。",
+              "source": "KEEP_04",
+              "requirement_ids": [
+                "REQ-003",
+                "REQ-004"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/memory.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "时序图事实",
+          "name_en": "Temporal Graph Facts",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B5-D1-01",
+              "content": "最终输出文件证明 graph facts 按 scope supersede，as-of-turn 使用半开 validity。",
+              "source": "KEEP_05",
+              "requirement_ids": [
+                "REQ-005"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/graph_memory.py",
+                "tests/scene/test_narration_graph_memory.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "图查询与 Schema",
+          "name_en": "Graph Query And Schema",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B6-D1-01",
+              "content": "最终输出文件证明 entities/facts/edges/schema_meta、FK/CHECK/index、search/audit/close 生命周期存在。",
+              "source": "KEEP_06",
+              "requirement_ids": [
+                "REQ-006"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/graph_memory.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Pipeline 集成",
+          "name_en": "Pipeline Integration",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B7-D1-01",
+              "content": "最终输出文件证明 NarrationPipeline 可选接入 graph_store 且 render 后 SessionMapState 不变。",
+              "source": "KEEP_07",
+              "requirement_ids": [
+                "REQ-003",
+                "REQ-005"
+              ],
+              "output_file_hints": [
+                "src/scenario/narration/pipeline.py",
+                "tests/scene/test_narration_pipeline.py"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "验证与 QA 证据",
+          "name_en": "Validation And QA Evidence",
+          "nodes": [
+            {
+              "depth": 1,
+              "id": "B8-D1-01",
+              "content": "最终 MCP artifacts 记录 focused/offline/compile/diff 检查、在线 quota 归因、QA 与两小时运行证据。",
+              "source": "KEEP_08",
+              "requirement_ids": [
+                "REQ-007",
+                "REQ-008"
+              ],
+              "output_file_hints": [
+                ".pipeline-runs/RUN-20260606085022-7f9bb239/artifacts/*"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
