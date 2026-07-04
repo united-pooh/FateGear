@@ -141,6 +141,18 @@ class PromptBuilder:
             pending_intents=intent_map,
         )
 
+        # 构造 KTSL 协议上下文（如有 KTSL 账本）
+        ktsl_context = None
+        if session.ktsl_ledger is not None:
+            from ..ktsl.prompt_adapter import KTSLPromptAdapter
+
+            scene = module.scene_map().get(scene_id)
+            ktsl_context = KTSLPromptAdapter().build_plan_context(
+                ledger=session.ktsl_ledger,
+                scene=scene,
+                intents=intent_map,
+            )
+
         return AgentPlanPrompt(
             session_id=session.session_id,
             turn_no=session.current_turn,
@@ -152,6 +164,7 @@ class PromptBuilder:
             keeper_private=keeper_private,
             narrative=narrative,
             pending_intents=pending_intent_summaries,
+            ktsl_context=ktsl_context,
         )
 
     def build_narrative_context(
