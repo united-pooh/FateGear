@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from .types import ModuleCondition, ModuleEffect
 from ..story.models import StoryStage, StoryTransition
+
+# ModuleKTSLSpec is needed at runtime for pydantic model_rebuild() to resolve
+# the forward-ref field on ModuleDefinition.  No circular-import risk since
+# ktsl.models does not import this module.
+from ..ktsl.models import ModuleKTSLSpec  # noqa: F401 — pydantic forward-ref resolution
 
 NarrativeVisibility = Literal["public", "keeper"]
 
@@ -94,6 +99,9 @@ class ModuleNPC(BaseModel):
     active_stage_ids: list[str] = Field(default_factory=list, max_length=20)
     tags: list[str] = Field(default_factory=list, max_length=20)
     visibility: NarrativeVisibility = "public"
+    default_scene_id: str = Field(default="", max_length=30)
+    characteristics: dict[str, int] = Field(default_factory=dict)
+    skills: dict[str, int] = Field(default_factory=dict)
 
 
 class ModuleLorebookEntry(BaseModel):
@@ -186,6 +194,12 @@ class ModuleDefinition(BaseModel):
         default_factory=ModuleNarrativeContext
     )
 
+    # KTSL optional spec (loaded from module.yaml "ktsl_spec" block)
+    ktsl_spec: Optional["ModuleKTSLSpec"] = Field(
+        default=None,
+        description="可选的 KTSL 协议规范；运行 wizard 时优先使用。",
+    )
+
     def scene_map(self) -> dict[str, ModuleScene]:
         return {scene.id: scene for scene in self.scenes}
 
@@ -206,3 +220,7 @@ class ModuleDefinition(BaseModel):
 
     def lorebook_entry_map(self) -> dict[str, ModuleLorebookEntry]:
         return {entry.id: entry for entry in self.narrative_context.lorebook_entries}
+
+
+# Resolve forward refs for ModuleDefinition (ModuleKTSLSpec is a forward-ref).
+ModuleDefinition.model_rebuild()
