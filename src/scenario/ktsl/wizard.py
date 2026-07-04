@@ -68,7 +68,7 @@ def build_spec_from_fixture(fixture: Any) -> ModuleKTSLSpec:
                     info_id=truth.id,
                     payload=truth.payload,
                     sensitivity="keeper",
-                    public_payload="",
+                    public_payload=_default_public_payload(truth.payload),
                     redaction=f"[KP-only] {truth.payload[:80]}",
                 )
             )
