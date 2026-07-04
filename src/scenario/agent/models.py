@@ -206,6 +206,12 @@ class AgentPlanPrompt(BaseModel):
     # 本轮待结算的意图列表
     pending_intents: list[PlayerIntentSummary] = Field(default_factory=list)
 
+    # 运行时注入的 KTSL 协议上下文（coupling/barrier/wait）；None 表示无 KTSL
+    ktsl_context: object = Field(
+        default=None,
+        description="运行时注入的 KTSL 协议上下文（coupling/barrier/wait）；None 表示无 KTSL。",
+    )
+
 
 # ---------------------------------------------------------------------------
 # Plan 阶段输出（KeeperAgentPlan）
@@ -355,6 +361,12 @@ class CommitResult(BaseModel):
 
     # 本轮叙事生成可参考的只读上下文
     narrative: NarrativeContextLayer = Field(default_factory=NarrativeContextLayer)
+
+    # FilterLayer 对每个 character→info 访问的 REDACT/ALLOW 决策表
+    ktsl_filter_decisions: list[object] = Field(
+        default_factory=list,
+        description="FilterLayer 对每个 character→info 访问的 REDACT/ALLOW 决策表。",
+    )
 
 
 # ---------------------------------------------------------------------------
