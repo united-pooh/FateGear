@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import (
+    ModuleBarrierSpec,
     ModuleCouplingSpec,
     ModuleInitialKnowledgeSpec,
     ModuleInfoLabelSpec,
@@ -76,6 +77,19 @@ def build_spec_from_fixture(fixture: Any) -> ModuleKTSLSpec:
     # --- couplings (left empty for the KP to fill in via wizard) ---
     couplings: list[ModuleCouplingSpec] = []
 
+    # --- barriers (mirror fixture barrier checkpoints as ModuleBarrierSpec) ---
+    barriers = [
+        ModuleBarrierSpec(
+            id=b.id,
+            scene_ids=list(b.scene_ids),
+            required_event_ids=list(b.required_event_ids),
+            required_info_ids=list(b.required_info_ids),
+            status=b.status,
+            reason=b.reason,
+        )
+        for b in fixture.barriers
+    ]
+
     # --- initial_knowledge ---
     initial_knowledge: list[ModuleInitialKnowledgeSpec] = []
     char_ids_from_events: set[str] = set()
@@ -104,6 +118,7 @@ def build_spec_from_fixture(fixture: Any) -> ModuleKTSLSpec:
         scenes=scenes,
         info_labels=info_labels,
         couplings=couplings,
+        barriers=barriers,
         initial_knowledge=initial_knowledge,
     )
 

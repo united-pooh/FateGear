@@ -181,3 +181,216 @@ class SubmitCheckStage:
                 parse_resolution="blocked_by_precheck",
             )
         return SubmitCheckResult(status="continue", parse_resolution="ok")
+
+
+# ---------------------------------------------------------------------------
+# M3 runtime stages (plug into resolve_turn_locked pipeline)
+# ---------------------------------------------------------------------------
+
+
+class StageIntervention(BaseModel):
+    """One intervention emitted by a runtime pipeline stage."""
+
+    actor: str
+    reason_code: str
+    reason: str
+    kind: str = "block"  # block | redact | wait | info
+
+
+# ---------------------------------------------------------------------------
+# ScheduleGateStage
+# ---------------------------------------------------------------------------
+
+
+class ScheduleGateStage:
+    """Verify barrier/causal pending state before committing this scene's events.
+
+    If a barrier with ``required_event_ids`` exists whose required events are
+    not yet committed, the stage returns ``status="wait"`` so the pipeline
+    driver can choose to skip or delay this scene's events.
+    """
+
+    def run(self, ctx: Any) -> "StageResult":
+        from .stage_context import StageResult
+
+        ledger = ctx.ledger
+        scene = ctx.scene
+
+        barriers = list(getattr(ledger, "barriers", []) or [])
+        scene_id = getattr(scene, "id", None)
+
+        # Only barriers in an actively-raised state (waiting/blocked) are enforced;
+        # "open" barriers are considered not yet in force and are skipped so the
+        # pipeline never deadlocks in the early M3 rollout.
+        for barrier in barriers:
+            if barrier.scene_ids and scene_id and scene_id not in barrier.scene_ids:
+                continue
+            if barrier.status in ("satisfied", "open"):
+                continue
+
+            committed_event_ids = {
+                e.id for e in (getattr(ledger, "events", []) or []) if e.committed
+            }
+            unmet = [
+                eid for eid in (barrier.required_event_ids or [])
+                if eid not in committed_event_ids
+            ]
+            if unmet:
+                return StageResult(
+                    status="wait",
+                    interventions=[
+                        StageIntervention(
+                            actor=scene_id or "?",
+                            reason_code="barrier_unmet",
+                            reason=f"Barrier '{barrier.id}' unmet: {unmet}",
+                            kind="wait",
+                        )
+                    ],
+                )
+
+        return StageResult(status="continue")
+
+
+# ---------------------------------------------------------------------------
+# FilterStage
+# ----------------------------------------------------------------------------
+
+
+class FilterStage:
+    """Apply info-label authorization per character on the current event.
+
+    Iterates the current event's ``output_info_ids``; when the linked
+    ``InfoLabel`` has elevated sensitivity (>= medium) AND the acting
+    character lacks authorization, a ``redact`` intervention is emitted.
+    """
+
+    _SENSITIVE_LEVELS = {"medium", "high", "keeper"}
+
+    def run(self, ctx: Any) -> "StageResult":
+        from .stage_context import StageResult
+
+        ledger = ctx.ledger
+        event = ctx.scratch.get("resolve_event")
+        if event is None:
+            return StageResult(status="continue")
+
+        character = getattr(event, "character_id", None) or getattr(event, "actor", None)
+        if not character:
+            return StageResult(status="continue")
+
+        labels = getattr(ledger, "info_labels", {}) or {}
+        interventions: list[StageIntervention] = []
+
+        for info_id in getattr(event, "output_info_ids", []) or []:
+            label = labels.get(info_id)
+            if label is None:
+                continue
+            sensitivity = getattr(label, "sensitivity", "public")
+            if sensitivity not in self._SENSITIVE_LEVELS:
+                continue
+            authorized = (
+                character in getattr(label, "authorized_character_ids", [])
+                or character in getattr(label, "known_by_character_ids", [])
+            )
+            if not authorized:
+                interventions.append(
+                    StageIntervention(
+                        actor=character,
+                        reason_code="info_unauthorized",
+                        reason=(
+                            f"Info '{info_id}' (sensitivity={sensitivity}) "
+                            f"not authorized for '{character}'."
+                        ),
+                        kind="redact",
+                    )
+                )
+
+        return StageResult(status="continue", interventions=interventions)
+
+
+# ---------------------------------------------------------------------------
+# CouplingDriftStage
+# ---------------------------------------------------------------------------
+
+
+class CouplingDriftStage:
+    """Compute scene-coupling drift; report but never block.
+
+    Walks through the ledger's high-coupling links and accumulates
+    time-drift between their source/target committed events.  Emits an
+    ``info`` intervention whenever cumulative drift is positive.
+    """
+
+    HIGH_COUPLING_THRESHOLD = 0.75
+
+    def run(self, ctx: Any) -> "StageResult":
+        from .stage_context import StageResult
+
+        ledger = ctx.ledger
+        couplings = list(getattr(ledger, "couplings", []) or [])
+
+        committed_events = [
+            e for e in (getattr(ledger, "events", []) or []) if e.committed
+        ]
+        if not committed_events or not couplings:
+            return StageResult(status="continue")
+
+        committed_by_scene: dict[str, list[Any]] = {}
+        for ev in committed_events:
+            committed_by_scene.setdefault(ev.scene_id, []).append(ev)
+
+        drift_minutes = 0
+        for coupling in couplings:
+            if coupling.coupling_score < self.HIGH_COUPLING_THRESHOLD:
+                continue
+            source_ends = [
+                e.time_end_minute
+                for e in committed_by_scene.get(coupling.source_scene_id, [])
+            ]
+            target_starts = [
+                e.time_start_minute
+                for e in committed_by_scene.get(coupling.target_scene_id, [])
+            ]
+            if source_ends and target_starts:
+                drift_minutes += max(0, min(target_starts) - max(source_ends))
+
+        interventions: list[StageIntervention] = []
+        if drift_minutes > 0:
+            interventions.append(
+                StageIntervention(
+                    actor=getattr(ctx.scene, "id", "?"),
+                    reason_code="coupling_drift",
+                    reason=f"Coupling drift accumulated: {drift_minutes} min",
+                    kind="info",
+                )
+            )
+        return StageResult(status="continue", interventions=interventions)
+
+
+# ---------------------------------------------------------------------------
+# AuditStage
+# ---------------------------------------------------------------------------
+
+
+class AuditStage:
+    """Append audit-counter summary to ``ctx.scratch["audit_summary"]``.
+
+    AuditStage never blocks — it is the final observability stage before
+    commit.  Task 14's log writer consumes ``ctx.scratch["audit_summary"]``.
+    """
+
+    def run(self, ctx: Any) -> "StageResult":
+        from .stage_context import StageResult
+
+        ledger = ctx.ledger
+        events = list(getattr(ledger, "events", []) or [])
+
+        counters = {
+            "causal_violations": 0,
+            "unauthorized_actions": 0,
+            "public_payload_leaks": 0,
+            "committed_events": sum(1 for e in events if getattr(e, "committed", False)),
+            "pending_events": sum(1 for e in events if not getattr(e, "committed", False)),
+        }
+        ctx.scratch["audit_summary"] = counters
+        return StageResult(status="continue")

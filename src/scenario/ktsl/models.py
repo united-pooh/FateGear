@@ -511,6 +511,15 @@ class ModuleInfoLabelSpec(BaseModel):
     declassification_condition: str = Field(default="", max_length=500)
 
 
+class ModuleBarrierSpec(BaseModel):
+    id: str = Field(..., min_length=1, max_length=80)
+    scene_ids: list[str] = Field(default_factory=list)
+    required_event_ids: list[str] = Field(default_factory=list)
+    required_info_ids: list[str] = Field(default_factory=list)
+    status: BarrierStatus = "open"
+    reason: str = Field(default="", max_length=1000)
+
+
 class ModuleCouplingSpec(BaseModel):
     source_scene_id: str
     target_scene_id: str
@@ -534,6 +543,7 @@ class ModuleKTSLSpec(BaseModel):
     scenes: list[ModuleSceneKTSLSpec] = Field(default_factory=list)
     info_labels: list[ModuleInfoLabelSpec] = Field(default_factory=list)
     couplings: list[ModuleCouplingSpec] = Field(default_factory=list)
+    barriers: list[ModuleBarrierSpec] = Field(default_factory=list)
     initial_knowledge: list[ModuleInitialKnowledgeSpec] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -567,6 +577,7 @@ class KTSLLedger(BaseModel):
     info_labels: dict[str, InfoLabel] = Field(default_factory=dict)
     couplings: list[SceneCoupling] = Field(default_factory=list)
     knowledge: dict[str, ActorKnowledgeState] = Field(default_factory=dict)
+    barriers: list[BarrierCheckpoint] = Field(default_factory=list)
     overrides: list[KTSLOverrideRecord] = Field(default_factory=list)
     narration_rules: KTSLPromptTemplateSet = Field(
         default_factory=KTSLPromptTemplateSet
@@ -582,6 +593,17 @@ class KTSLLedger(BaseModel):
         module_id: str,
         spec: ModuleKTSLSpec,
     ) -> "KTSLLedger":
+        barriers = [
+            BarrierCheckpoint(
+                id=b.id,
+                scene_ids=list(b.scene_ids),
+                required_event_ids=list(b.required_event_ids),
+                required_info_ids=list(b.required_info_ids),
+                status=b.status,
+                reason=b.reason,
+            )
+            for b in spec.barriers
+        ]
         scenes = {
             s.scene_id: SceneCard(
                 id=s.scene_id,
@@ -638,6 +660,7 @@ class KTSLLedger(BaseModel):
             scenes=scenes,
             info_labels=info_labels,
             couplings=couplings,
+            barriers=barriers,
             knowledge=knowledge,
         )
 
