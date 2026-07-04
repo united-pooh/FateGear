@@ -1390,6 +1390,30 @@ class SceneRuntime:
             apply_npc_patches(session, accepted)
             session.npc_patch_queue.clear()
 
+        # KTSL M3 log_writer hook — persist one decision bundle per turn.
+        if session.ktsl_ledger is not None:
+            from ..ktsl.log_writer import KTSLLogWriter
+
+            ledger = session.ktsl_ledger
+            audit_summary = {
+                "committed_events": sum(1 for e in ledger.events if e.committed),
+                "pending_events": sum(1 for e in ledger.events if not e.committed),
+                "info_count": len(ledger.info_labels),
+                "override_count": len(ledger.overrides),
+            }
+            stage_trace = [
+                {"stage": type(s).__name__, "status": "continue", "ms": 0.0}
+                for s in self._ktsl_stages
+            ]
+            KTSLLogWriter.write_turn(
+                base_dir=KTSLLogWriter.log_dir(session_id),
+                turn_no=snapshot.current_turn,
+                stage_trace=stage_trace,
+                interventions=[],
+                ledger_snapshot=ledger.snapshot(),
+                audit_snapshot=audit_summary,
+            )
+
         self._turn_history[session_id][resolution.turn_no] = resolution.model_copy(
             deep=True
         )

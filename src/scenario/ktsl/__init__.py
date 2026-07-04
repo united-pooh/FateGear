@@ -65,6 +65,7 @@ _EVALUATE_EXPORTS = {
     "results_payload",
 }
 _WIZARD_EXPORTS = {"WizardSession", "build_spec_from_fixture"}
+_LOG_WRITER_EXPORTS = {"KTSLLogWriter"}
 _LIVE_EVALUATE_EXPORTS = {
     "DEFAULT_DEEPSEEK_BASE_URL",
     "DEFAULT_DEEPSEEK_MODEL",
@@ -99,6 +100,11 @@ def __getattr__(name: str) -> object:
         return value
     if name in _WIZARD_EXPORTS:
         module = import_module(".wizard", __name__)
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _LOG_WRITER_EXPORTS:
+        module = import_module(".log_writer", __name__)
         value = getattr(module, name)
         globals()[name] = value
         return value
@@ -148,6 +154,7 @@ __all__ = [
     "SessionSummary",
     "Visibility",
     "WizardSession",
+    "KTSLLogWriter",
     "DEFAULT_DEEPSEEK_BASE_URL",
     "DEFAULT_DEEPSEEK_MODEL",
     "DEFAULT_LONGCAT_BASE_URL",
