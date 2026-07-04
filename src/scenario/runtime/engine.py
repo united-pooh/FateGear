@@ -28,9 +28,15 @@ from ..scene.models import SceneLink
 from ..scene.rules import SceneMovementRules
 from ..session.state import (
     IllegalMoveRiskState,
+    NPCSessionState,
     SceneInstanceState,
     SessionMapState,
     SessionPlayerState,
+)
+from ..npc_patches import (
+    NPCStatePatchProposal,
+    apply_npc_patches,
+    validate_npc_patch,
 )
 from ..story.models import StorySignal, StoryState
 from ..story.services import StoryStateService, TransitionValidator
@@ -39,6 +45,7 @@ from .contracts import (
     DiceRollAudit,
     FreeformIntent,
     IntentResolution,
+    KTSLBlockError,
     MoveIntent,
     ObserveIntent,
     RuntimeEvent,
@@ -47,6 +54,7 @@ from .contracts import (
     SceneIntent,
     TurnResolution,
 )
+from ..ktsl.stages import SubmitCheckStage
 from .movement_risk import (
     OFF_MAP_DECAY_PER_SAFE_TURN,
     off_map_penalty_tier,
@@ -59,6 +67,73 @@ if TYPE_CHECKING:
     from ..store import ScenarioStateStore
 
 logger = logging.getLogger(__name__)
+
+
+def validate_npc_patches(
+    session: object,
+    proposals: list[NPCStatePatchProposal],
+) -> tuple[list[NPCStatePatchProposal], list]:
+    """Batch-validate NPC state patches.
+
+    Returns ``(accepted, rejected)`` tuple mirroring the single-patch
+    ``validate_npc_patch`` semantics. Each rejected entry is the
+    ``NPCPatchRejection`` produced by the underlying validator.
+    """
+    accepted: list[NPCStatePatchProposal] = []
+    rejected: list = []
+    for proposal in proposals:
+        result = validate_npc_patch(session, proposal)
+        if result is None:
+            accepted.append(proposal)
+        else:
+            rejected.append(result)
+    return accepted, rejected
+
+
+def _ktsl_check_submit(
+    session: SessionMapState,
+    player_id: str,
+    validated: "SceneIntent",
+) -> None:
+    """Run KTSL submit-time pre-check (M2).
+
+    Skipped when ``session.ktsl_ledger is None``.  Raises
+    :class:`KTSLBlockError` if the stage blocks the intent.
+    """
+    ledger = session.ktsl_ledger
+    if ledger is None:
+        return
+
+    # Extract action text from the validated intent.
+    if isinstance(validated, FreeformIntent):
+        action_text = validated.text
+    elif isinstance(validated, MoveIntent):
+        action_text = f"move to {validated.target_scene_id}"
+    else:
+        action_text = getattr(validated, "action_id", "")
+
+    player_state = session.player_states.get(player_id)
+    scene_id = player_state.current_scene_id if player_state else ""
+
+    committed_event_ids = {e.id for e in ledger.events if e.committed}
+
+    stage = SubmitCheckStage(info_labels=ledger.info_labels)
+    report = stage.check(
+        action_text=action_text,
+        actor=player_id,
+        scene_id=scene_id,
+        committed_event_ids=committed_event_ids,
+        ledger_info_labels=None,
+        strict=True,
+    )
+
+    if report.status == "blocked":
+        messages = "; ".join(i.reason for i in report.interventions)
+        raise KTSLBlockError(
+            f"KTSL submit check blocked: {messages}",
+            reason_code=report.interventions[0].reason_code,
+        )
+
 
 if TYPE_CHECKING:
     from scenario.narration import KeeperNarrationRecord, NarrationPipeline
@@ -163,8 +238,79 @@ class SceneRuntime:
         )
         self._sessions[session_id] = session
         self._session_locks[session_id] = asyncio.Lock()
+        self._init_npc_states(module, session, player_ids=player_ids)
         self._persist_session(session)
         return session
+
+    # CoC 7e 人类角色八维特征默认值（均值 50）。
+    _COC_DEFAULT_CHARACTERISTICS: tuple[str, ...] = (
+        "STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU",
+    )
+
+    def _init_npc_states(
+        self,
+        module: ModuleDefinition,
+        session: SessionMapState,
+        player_ids: list[str],
+    ) -> None:
+        """初始化会话中所有 NPC 的持久状态。
+
+        对 ``module.npc_map()`` 中的每个 NPC：
+        - 默认场景优先使用 ``default_scene_id``，缺失时回退到
+          ``active_scene_ids[0]``；仍缺失则使用空字符串。
+        - ``characteristics`` 若未配置，按 CoC 7e 人类均值 50 填充八维。
+        - ``skills`` 若未配置则保留空字典（技能没有通用默认值）。
+        - ``visible_to_player_ids`` 由 ``ModuleNPC.visibility`` 决定：
+          * ``"public"`` (默认) → 全玩家可见；
+          * ``"keeper"`` 仅守密人可见，玩家侧在 selector 层过滤。
+
+        幂等保护：如果 ``session.npc_states`` 已存在条目则抛出 ``RuntimeError``，
+        避免对已初始化会话重复写入。
+        """
+        if session.npc_states:
+            raise RuntimeError(
+                f"会话 {session.session_id} 的 NPC 状态已初始化，"
+                "禁止重复调用 _init_npc_states。"
+            )
+
+        for npc in module.npc_map().values():
+            default_scene = npc.default_scene_id or (
+                npc.active_scene_ids[0] if npc.active_scene_ids else ""
+            )
+            if npc.characteristics:
+                characteristics = dict(npc.characteristics)
+            else:
+                characteristics = {
+                    key: 50 for key in self._COC_DEFAULT_CHARACTERISTICS
+                }
+            skills = dict(npc.skills) if npc.skills else {}
+
+            # ENGINE-002 phase-A seeding: public → all players; keeper → empty.
+            if getattr(npc, "visibility", "public") == "public":
+                visible_to_player_ids: set[str] = set(player_ids)
+            else:
+                visible_to_player_ids = set()
+
+            session.npc_states[npc.id] = NPCSessionState(
+                npc_id=npc.id,
+                module_id=module.module_id,
+                current_scene_id=default_scene,
+                visible_to_player_ids=visible_to_player_ids,
+                characteristics=characteristics,
+                skills=skills,
+                last_updated_turn=session.current_turn,
+            )
+            logger.info(
+                "npc_states initialized",
+                extra={
+                    "npc_id": npc.id,
+                    "module_id": module.module_id,
+                    "scene_id": default_scene,
+                    "visibility": getattr(npc, "visibility", "public"),
+                    "visible_to_player_ids": sorted(visible_to_player_ids),
+                    "producer": "session_init",
+                },
+            )
 
     def destroy_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
@@ -250,6 +396,10 @@ class SceneRuntime:
                     f"玩家 {player_id} 提交了不存在的动作: {validated.action_id}"
                 )
 
+        # KTSL submit-time pre-check (M2).  Skipped when ledger is None.
+        if session.ktsl_ledger is not None:
+            _ktsl_check_submit(session, player_id, validated)
+
         session.pending_intents[player_id] = validated.model_dump()
         self._persist_session(session)
 
@@ -312,7 +462,11 @@ class SceneRuntime:
         ):
             raise ValueError(f"会话 {session_id} 已进入结局，不能继续结算")
 
-        # 使用深拷贝快照做“判定输入”，避免中途写入影响同回合后续判定。
+        # ENGINE-001 step 1: 重置所有 NPC 派生缓存，确保 HP/MP/SAN/DB/Move 每回合重算。
+        for npc_state in session.npc_states.values():
+            npc_state.reset_derived_cache()
+
+        # 使用深拷贝快照做”判定输入”，避免中途写入影响同回合后续判定。
         snapshot = session.model_copy(deep=True)
         module = self._load_module(session.module_id)
         scene_by_id = module.scene_map()
@@ -1203,6 +1357,14 @@ class SceneRuntime:
             resolved_ending=resolved_ending,
             ending_result=ending_result,
         )
+        # ENGINE-001 step 2: 在同一个锁内排空 NPC 补丁队列，审计留待 D 阶段汇聚。
+        if session.npc_patch_queue:
+            accepted, rejected = validate_npc_patches(
+                session, session.npc_patch_queue
+            )
+            apply_npc_patches(session, accepted)
+            session.npc_patch_queue.clear()
+
         self._turn_history[session_id][resolution.turn_no] = resolution.model_copy(
             deep=True
         )

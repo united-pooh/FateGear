@@ -12,6 +12,15 @@ if TYPE_CHECKING:
     pass
 
 
+class KTSLBlockError(Exception):
+    """Raised when KTSL blocks an intent at submit time OR during resolve."""
+
+    def __init__(self, reason: str, *, reason_code: str = "") -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.reason_code = reason_code
+
+
 class MoveIntent(BaseModel):
     type: Literal["move"]
     target_scene_id: str = Field(..., min_length=1, max_length=30)

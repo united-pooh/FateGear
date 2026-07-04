@@ -1,11 +1,11 @@
 """Turn stage implementations used by the KTSL pipeline."""
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .models import ModuleKTSLSpec
+from .models import InfoLabel, ModuleKTSLSpec
 
 
 class SchemaValidationIssue(BaseModel):
@@ -67,3 +67,117 @@ class SchemaValidatorStage:
                 )
 
         return SchemaValidationReport(is_valid=not issues, issues=issues)
+
+
+class SubmitIntervention(BaseModel):
+    """A single problem detected during submit-time pre-check."""
+
+    actor: str
+    reason_code: str
+    reason: str
+
+
+class SubmitCheckResult(BaseModel):
+    """Outcome of the submit-time pre-check."""
+
+    status: Literal["continue", "blocked"]
+    interventions: list[SubmitIntervention] = Field(default_factory=list)
+    parse_resolution: str = "unresolved"
+
+
+class SubmitCheckStage:
+    """Lightweight submit-time check (single-player; no cross-player info).
+
+    1. Empty action text + strict → block with reason ``empty_action``.
+    2. Iterates ``required_info_ids``; if any label in ``ledger_info_labels``
+       has sensitivity >= medium AND the actor is not authorized → block.
+    3. Iterates ``dependencies``; any event id not in ``committed_event_ids``
+       → block.
+
+    Returns a :class:`SubmitCheckResult` with status and interventions.
+    When ``session.ktsl_ledger is None`` it should never be called.
+    """
+
+    # Sensitivity levels that require explicit authorization.
+    _SENSITIVE_LEVELS = {"medium", "high", "keeper"}
+
+    def __init__(
+        self,
+        *,
+        info_labels: dict[str, InfoLabel] | None = None,
+        causal_dependencies: list[Any] | None = None,
+    ) -> None:
+        self._info_labels = info_labels or {}
+        self._causal_dependencies = causal_dependencies or []
+
+    def check(
+        self,
+        *,
+        action_text: str,
+        actor: str,
+        scene_id: str,
+        committed_event_ids: set[str],
+        ledger_info_labels: dict[str, InfoLabel] | None = None,
+        strict: bool = False,
+        required_info_ids: list[str] | None = None,
+        dependencies: list[str] | None = None,
+    ) -> SubmitCheckResult:
+        interventions: list[SubmitIntervention] = []
+        labels = ledger_info_labels or self._info_labels or {}
+        req_info = required_info_ids or []
+        deps = dependencies or []
+
+        # 1. Empty-action check in strict mode
+        if strict and not action_text.strip():
+            return SubmitCheckResult(
+                status="blocked",
+                interventions=[
+                    SubmitIntervention(
+                        actor=actor,
+                        reason_code="empty_action",
+                        reason="Action description is empty.",
+                    )
+                ],
+                parse_resolution="blocked_by_precheck",
+            )
+
+        # 2. Per-info-label authorization check
+        for info_id in req_info:
+            label = labels.get(info_id)
+            if label is None:
+                continue
+            if label.sensitivity in self._SENSITIVE_LEVELS:
+                authorized = (
+                    actor in label.authorized_character_ids
+                    or actor in label.known_by_character_ids
+                )
+                if not authorized:
+                    interventions.append(
+                        SubmitIntervention(
+                            actor=actor,
+                            reason_code="info_unauthorized",
+                            reason=(
+                                f"Info '{info_id}' (sensitivity={label.sensitivity}) "
+                                f"not authorized for '{actor}'."
+                            ),
+                        )
+                    )
+
+        # 3. Causal-pending check (deps must be in committed_event_ids)
+        for dep in deps:
+            if dep not in committed_event_ids:
+                interventions.append(
+                    SubmitIntervention(
+                        actor=actor,
+                        reason_code="unmet_dependency",
+                        reason=f"Dependency event '{dep}' not committed.",
+                    )
+                )
+
+        if interventions:
+            return SubmitCheckResult(
+                status="blocked",
+                interventions=interventions,
+                parse_resolution="blocked_by_precheck",
+            )
+        return SubmitCheckResult(status="continue", parse_resolution="ok")
