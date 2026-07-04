@@ -185,7 +185,17 @@ class SceneRuntime:
             if plan_agent is not None or render_agent is not None
             else None
         )
+        # KTSL stage pipeline — empty by default (no KTSL overhead for existing games)
+        self._ktsl_stages: list[object] = []
         self._restore_persisted_state()
+
+    def register_ktsl_stages(self, stages: list[object]) -> None:
+        """Register KTSL TurnStage instances to run between plan and rule phases.
+
+        Each stage must implement ``run(ctx: StageContext) -> StageResult``.
+        The pipeline is skipped entirely when ``session.ktsl_ledger is None``.
+        """
+        self._ktsl_stages = list(stages)
 
     def create_session(
         self,
@@ -539,6 +549,21 @@ class SceneRuntime:
                     ),
                 )
             )
+
+            # ----- KTSL stage pipeline (M3) -----
+            if self._ktsl_stages and snapshot.ktsl_ledger is not None:
+                from ..ktsl.stage_context import StageContext
+
+                ctx = StageContext(snapshot=snapshot, ledger=snapshot.ktsl_ledger, event_log=event_log)
+                ctx.scene = scene_by_id.get(scene.id)
+                ctx.intents = list(intents)
+                for stage in self._ktsl_stages:
+                    result = stage.run(ctx)
+                    event_log.extend(result.to_events())
+                    if result.status == "blocked":
+                        ctx.mark_blocked(result.interventions)
+                        break
+                ctx.commit_scratch_to_ledger()
 
             # ------------------------------------------------------------------
             # Plan 阶段：调用 KeeperPlanAgent 产出结构化提议
