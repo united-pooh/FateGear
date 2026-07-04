@@ -105,6 +105,9 @@ class RuntimeEvent(BaseModel):
         "agent_effects_queued",
         "render_agent_called",
         "render_agent_skipped",
+        "ktsl_intervention_issued",
+        "ktsl_override_applied",
+        "ktsl_audit_updated",
     ]
     message: str
     turn_no: int
