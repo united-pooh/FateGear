@@ -52,3 +52,18 @@ class KTSLPromptAdapter:
                 continue
             per_character.setdefault(cid, []).append(d)
         return {"per_character_filter": per_character}
+
+    def build_redaction_notice(self, decision: Any) -> str:
+        """Produce a redacted-narration notice for a blocked character→info access.
+
+        Delegates to the ``redaction`` prompt template so the KP-facing text
+        stays consistent with paper §7.74 guidelines.
+        """
+        from .prompt_templates import render_redaction_notice
+
+        character_name = getattr(decision, "character_id", None) or "?"
+        info_id = getattr(decision, "info_id", None) or "?"
+        return render_redaction_notice(
+            character_name=character_name,
+            info_id=info_id,
+        )
