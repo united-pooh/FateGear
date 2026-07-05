@@ -1513,6 +1513,7 @@ class SceneRuntime:
                     recent_events=event_log,
                     pending_intents=pending_intents,
                     include_keeper=False,
+                    include_players=batch.player_ids,
                 )
                 if self._prompt_builder is not None
                 else None

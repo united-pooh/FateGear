@@ -423,6 +423,76 @@ def _validate_action_check_skill(
         )
 
 
+_ALLOWED_COC_KEYS: frozenset[str] = frozenset(
+    {"STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU"}
+)
+
+
+def _validate_npc_int_dict(
+    *,
+    npc_id: str,
+    data: dict[str, int],
+    source: Path,
+    owner_key: str,
+    allowed_keys: frozenset[str] | None = None,
+) -> None:
+    """Validate a module NPC int-valued attribute dict (characteristics / skills).
+
+    Args:
+        npc_id: the owning NPC id.
+        data: raw dict from the YAML module.
+        source: module file path (for error messages).
+        owner_key: either ``characteristics`` or ``skills``.
+        allowed_keys: if provided, each dict key must be in this frozenset.
+    """
+    owner = f"narrative_context.npcs[{npc_id}].{owner_key}"
+    for key, value in data.items():
+        if not isinstance(key, str) or not key:
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 {owner} 包含无效 key={key!r}"
+            )
+        if allowed_keys is not None and key not in allowed_keys:
+            kind = "CoC 属性" if owner_key == "characteristics" else owner_key
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 {owner} 使用了不允许的 {kind} key={key!r}"
+            )
+        if not isinstance(value, int) or not (0 <= value <= 100):
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 {owner}[{key!r}] 值 {value!r} 无效，"
+                "必须为 0..100 整数"
+            )
+
+
+def _validate_npc_characteristics(
+    *,
+    npc_id: str,
+    characteristics: dict[str, int],
+    source: Path,
+) -> None:
+    _validate_npc_int_dict(
+        npc_id=npc_id,
+        data=characteristics,
+        source=source,
+        owner_key="characteristics",
+        allowed_keys=_ALLOWED_COC_KEYS,
+    )
+
+
+def _validate_npc_skills(
+    *,
+    npc_id: str,
+    skills: dict[str, int],
+    source: Path,
+) -> None:
+    _validate_npc_int_dict(
+        npc_id=npc_id,
+        data=skills,
+        source=source,
+        owner_key="skills",
+        allowed_keys=None,
+    )
+
+
 def _validate_npc_refs(
     npcs: Sequence[str],
     *,
@@ -461,6 +531,21 @@ def _validate_narrative_context(
             source=source,
             owner=owner,
             stage_ids=story_stage_ids,
+        )
+        if npc.default_scene_id and npc.default_scene_id not in scene_ids:
+            raise ModuleValidationError(
+                f"模组文件 {source} 的 {owner} 引用了不存在的 default_scene_id="
+                f"{npc.default_scene_id!r}"
+            )
+        _validate_npc_characteristics(
+            npc_id=npc.id,
+            characteristics=npc.characteristics,
+            source=source,
+        )
+        _validate_npc_skills(
+            npc_id=npc.id,
+            skills=npc.skills,
+            source=source,
         )
 
     for entry in narrative.lorebook_entries:

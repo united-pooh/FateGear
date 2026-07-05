@@ -176,6 +176,7 @@ class PromptBuilder:
         recent_events: Sequence[object] | None = None,
         pending_intents: dict[str, dict[str, object]] | None = None,
         include_keeper: bool = True,
+        include_players: list[str] | None = None,
     ) -> NarrativeContextLayer:
         return self._narrative_selector.select(
             session=session,
@@ -184,6 +185,7 @@ class PromptBuilder:
             recent_events=recent_events or [],
             pending_intents=pending_intents,
             include_keeper=include_keeper,
+            include_players=include_players,
         )
 
     # ------------------------------------------------------------------
