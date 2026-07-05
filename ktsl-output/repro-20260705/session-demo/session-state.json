@@ -1,0 +1,172 @@
+{
+  "fixture_id": "library_sewer_church",
+  "committed_event_ids": [
+    "evt_library_decode_index",
+    "evt_sewer_trace_sigil",
+    "runtime_13f60483a7ea",
+    "runtime_a38e50876f5f"
+  ],
+  "knowledge_state": {
+    "ada": {
+      "character_id": "ada",
+      "known_info_ids": [
+        "info_archive_index"
+      ],
+      "observed_info_ids": [],
+      "authorized_info_ids": [
+        "info_archive_index"
+      ],
+      "acquired": [
+        {
+          "info_id": "info_archive_index",
+          "kind": "know",
+          "sensitivity": "medium",
+          "content_summary": "The archive index mentions a storm drain access.",
+          "source_event_id": "runtime_a38e50876f5f",
+          "source_scene_id": "scene_library",
+          "acquired_at_minute": 0
+        }
+      ]
+    },
+    "bram": {
+      "character_id": "bram",
+      "known_info_ids": [],
+      "observed_info_ids": [
+        "info_sewer_sigil"
+      ],
+      "authorized_info_ids": [
+        "info_archive_index",
+        "info_sewer_sigil"
+      ],
+      "acquired": [
+        {
+          "info_id": "info_sewer_sigil",
+          "kind": "obs",
+          "sensitivity": "low",
+          "content_summary": "A chalk mark resembles a church pattern.",
+          "source_event_id": "runtime_13f60483a7ea",
+          "source_scene_id": "scene_sewer",
+          "acquired_at_minute": 0
+        }
+      ]
+    },
+    "celia": {
+      "character_id": "celia",
+      "known_info_ids": [],
+      "observed_info_ids": [
+        "info_church_wax"
+      ],
+      "authorized_info_ids": [
+        "info_church_wax",
+        "info_confession"
+      ],
+      "acquired": []
+    }
+  },
+  "event_log": [
+    {
+      "id": "runtime_a38e50876f5f",
+      "scene_id": "scene_library",
+      "action_id": "runtime_action_a38e50876f5f",
+      "action_text": "Restricted archive index",
+      "actor": "ada",
+      "player_id": "",
+      "character_id": "ada",
+      "is_settleable": true,
+      "visibility": "public",
+      "status": "committed",
+      "committed": true,
+      "commit_index": 1,
+      "barrier_id": "",
+      "required_info_ids": [],
+      "observed_info_ids": [],
+      "known_info_ids": [],
+      "output_info_ids": [
+        "info_archive_index"
+      ],
+      "causal_dependency_ids": [],
+      "depends_on_event_ids": [],
+      "public_payload": "",
+      "private_payload": "",
+      "redaction": "",
+      "time_start_minute": 0,
+      "time_end_minute": 0,
+      "spotlight_start_minute": 0,
+      "spotlight_end_minute": 0,
+      "notes": ""
+    },
+    {
+      "id": "runtime_13f60483a7ea",
+      "scene_id": "scene_sewer",
+      "action_id": "runtime_action_13f60483a7ea",
+      "action_text": "Sluice chalk sigil",
+      "actor": "bram",
+      "player_id": "",
+      "character_id": "bram",
+      "is_settleable": true,
+      "visibility": "public",
+      "status": "committed",
+      "committed": true,
+      "commit_index": 2,
+      "barrier_id": "",
+      "required_info_ids": [
+        "info_archive_index"
+      ],
+      "observed_info_ids": [],
+      "known_info_ids": [],
+      "output_info_ids": [
+        "info_sewer_sigil"
+      ],
+      "causal_dependency_ids": [],
+      "depends_on_event_ids": [],
+      "public_payload": "",
+      "private_payload": "",
+      "redaction": "",
+      "time_start_minute": 0,
+      "time_end_minute": 0,
+      "spotlight_start_minute": 0,
+      "spotlight_end_minute": 0,
+      "notes": ""
+    }
+  ],
+  "violations": [
+    {
+      "id": "audit_causal_runtime_13f60483a7ea",
+      "metric": "causal_violation",
+      "run_mode": "ktsl_full",
+      "scene_id": "scene_sewer",
+      "event_id": "runtime_13f60483a7ea",
+      "info_id": "",
+      "player_id": "",
+      "character_id": "",
+      "severity": "error",
+      "message": "Causal violation: missing events=[], missing info=['info_archive_index']",
+      "caused_by_event_ids": [],
+      "caused_by_info_ids": [
+        "info_archive_index"
+      ]
+    }
+  ],
+  "metrics": {
+    "causal_violation_count": 1,
+    "unauthorized_action_count": 0,
+    "public_payload_leak_count": 0,
+    "spotlight_max_gap_minutes": 0,
+    "declassification_completeness": 1.0,
+    "retcon_count": 0,
+    "high_coupling_time_drift_minutes": 0,
+    "barrier_wait_minutes": 0,
+    "committed_event_count": 2,
+    "blocked_event_count": 0
+  },
+  "config": {
+    "session_id": "",
+    "fixture_id": "library_sewer_church",
+    "started_at": "2026-07-05T02:55:58Z",
+    "kp_name": "",
+    "default_visibility": "public",
+    "allow_override": true,
+    "notes": ""
+  },
+  "event_counter": 2
+}

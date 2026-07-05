@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KTSL Knowledge — Suprematist</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#FFF8F0;--paper:#FEF3C7;--sand:#F5E6D3;--primary:#E85D3A;--amber:#F59E0B;--gold:#FBBF24;--indigo:#1E3A5F;--forest:#2D6A4F;--brick:#DC2626;--ink:#292524;--muted:#78716C;--line:#D6C4A8}
+body{font-family:'Arial Black','Helvetica Neue',sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+body::before{content:'';position:fixed;top:10vh;left:400px;width:180px;height:180px;background:var(--primary);opacity:.06;border-radius:50%;z-index:0;pointer-events:none}
+body::after{content:'';position:fixed;bottom:10vh;right:-40px;width:240px;height:240px;background:var(--amber);opacity:.07;transform:rotate(20deg);z-index:0;pointer-events:none}
+.sidebar{position:fixed;top:0;left:0;width:64px;height:100vh;background:var(--indigo);z-index:100;display:flex;flex-direction:column;align-items:center;padding-top:20px;gap:4px}
+.sb-logo{width:40px;height:40px;background:var(--amber);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:var(--indigo);margin-bottom:24px}
+.sb-icon{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:18px;color:rgba(255,255,255,.6);cursor:pointer;position:relative}
+.sb-icon:hover,.sb-icon.active{color:var(--amber);background:rgba(255,255,255,.08)}
+.sb-icon.active::before{content:'';position:absolute;left:0;top:8px;width:3px;height:28px;background:var(--amber)}
+
+main{margin-left:64px;flex:1;padding:36px 40px 60px;position:relative;z-index:1}
+h1{font-size:22px;font-weight:900;margin-bottom:6px}
+.subtitle{font-family:sans-serif;font-size:11px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:28px}
+
+.toolbar{display:flex;gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap}
+.toolbar select,.toolbar input{border:2px solid var(--line);background:#FFF;padding:8px 12px;font-family:sans-serif;font-size:12px;color:var(--ink);outline:none}
+.toolbar select:focus,.toolbar input:focus{border-color:var(--indigo)}
+.toolbar input[type=text]{min-width:200px}
+.legend{display:flex;gap:14px;align-items:center;margin-left:auto;font-family:sans-serif;font-size:10px;color:var(--muted)}
+.legend-dot{width:10px;height:10px;border:2px solid var(--ink);display:inline-block;margin-right:4px;vertical-align:middle}
+.lg{background:var(--forest)}.ly{background:var(--gold)}.lr{background:var(--brick)}.lk{background:var(--ink)}
+
+/* Knowledge Matrix */
+.matrix{border:3px solid var(--ink);display:flex;flex-direction:column}
+.matrix-header{display:grid;grid-template-columns:200px 1fr;background:var(--paper);border-bottom:3px solid var(--ink)}
+.matrix-header .corner{border-right:3px solid var(--ink);padding:14px 16px;font-weight:900;font-size:11px;letter-spacing:2px;text-transform:uppercase}
+.char-col{padding:10px 12px;border-right:2px solid var(--line);text-align:center;font-weight:900;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.char-col .c-name{font-size:12px;font-weight:900}
+.char-col .c-count{font-family:sans-serif;font-size:9px;color:var(--muted);letter-spacing:1px}
+
+.matrix-row{display:grid;grid-template-columns:200px 1fr;border-bottom:2px solid var(--line)}
+.matrix-row:last-child{border-bottom:none}
+.row-label{padding:14px 16px;display:flex;flex-direction:column;justify-content:center;border-right:3px solid var(--ink);background:var(--sand)}
+.row-label .info-id{font-family:monospace;font-weight:900;font-size:11px;color:var(--indigo);margin-bottom:2px}
+.row-label .info-title{font-weight:700;font-size:12px;margin-bottom:4px}
+.row-label .info-sens{font-family:sans-serif;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+.sens-low{color:var(--forest)}.sens-med{color:#B45309}.sens-high{color:var(--brick)}.sens-keeper{color:var(--ink)}
+
+.row-cells{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+.cell{border-right:1px solid var(--line);padding:8px;min-height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;position:relative}
+.cell:last-child{border-right:none}
+
+/* Cell states */
+.cell-know{background:var(--forest);color:#FFF;text-align:center}
+.cell-obs{background:var(--gold);text-align:center}
+.cell-leak{background:var(--brick);color:#FFF;text-align:center}
+.cell-empty{background:#FAFAF8}
+.cell-keeper{background:var(--ink);color:#FFF;text-align:center}
+.cell-icon{font-size:14px;margin-bottom:2px}
+.cell-source{font-family:monospace;font-size:8px;opacity:.8;margin-top:2px}
+
+/* Selected cell detail (bottom) */
+.detail-panel{margin-top:30px;border:3px solid var(--indigo);background:#FFF;padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.detail-left .sel-id{font-family:monospace;font-weight:900;font-size:13px;color:var(--indigo);margin-bottom:8px}
+.detail-left .sel-title{font-weight:900;font-size:20px;margin-bottom:8px}
+.detail-left .sel-content{font-family:sans-serif;font-size:13px;line-height:1.6;color:var(--ink);background:var(--sand);border:1px solid var(--line);padding:12px;margin-bottom:12px}
+.detail-meta{font-family:sans-serif;font-size:11px;color:var(--muted);line-height:1.8}
+.detail-right .warn-title{font-size:10px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:var(--brick);margin-bottom:8px}
+.alert-item{background:var(--paper);border-left:4px solid var(--brick);padding:10px 14px;margin-bottom:8px;font-weight:700;font-size:12px;color:var(--brick)}
+.suggestion{font-family:sans-serif;font-size:12px;color:var(--forest);background:#FFF;border:1px solid var(--forest);padding:8px 12px;margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="sb-logo">K</div>
+  <div class="sb-icon">▦</div>
+  <div class="sb-icon">▶</div>
+  <div class="sb-icon">≡</div>
+  <div class="sb-icon active">⊞</div>
+  <div class="sb-icon">⊟</div>
+  <div class="sb-icon">◈</div>
+  <div class="sb-icon" style="margin-top:auto;margin-bottom:20px">⚙</div>
+</nav>
+
+<main>
+  <h1>Knowledge Map</h1>
+  <div class="subtitle">Character × Info Matrix · police_hospital · 15 info items</div>
+
+  <div class="toolbar">
+    <select><option>全部角色</option><option>佐藤</option><option>李</option><option>王</option><option>NPC_医生</option></select>
+    <select><option>全部敏感度</option><option>low</option><option>medium</option><option>high</option><option>keeper</option></select>
+    <input type="text" placeholder="搜索 info 内容...">
+    <div class="legend">
+      <span><span class="legend-dot lg"></span>知道</span>
+      <span><span class="legend-dot ly"></span>看到</span>
+      <span><span class="legend-dot lr"></span>泄露</span>
+    </div>
+  </div>
+
+  <div class="matrix">
+    <!-- Header Row: Characters -->
+    <div class="matrix-header">
+      <div class="corner">Info ╱ Character</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr)">
+        <div class="char-col"><div class="c-name">佐藤</div><div class="c-count">5 known</div></div>
+        <div class="char-col"><div class="c-name">李</div><div class="c-count">2 known</div></div>
+        <div class="char-col"><div class="c-name">李</div><div class="c-count">3 known</div></div>
+        <div class="char-col"><div class="c-name">NPC_医生</div><div class="c-count">4 known</div></div>
+      </div>
+    </div>
+
+    <!-- Row 1: info_01 (low) -->
+    <div class="matrix-row">
+      <div class="row-label">
+        <span class="info-id">info_01</span>
+        <span class="info-title">警察搜查令</span>
+        <span class="info-sens sens-low">LOW</span>
+      </div>
+      <div class="row-cells">
+        <div class="cell cell-know"><span class="cell-icon">📖</span>知道<span class="cell-source">init</span></div>
+        <div class="cell cell-know"><span class="cell-icon">📖</span>知道<span class="cell-source">init</span></div>
+        <div class="cell cell-know"><span class="cell-icon">📖</span>知道<span class="cell-source">init</span></div>
+        <div class="cell cell-empty"></div>
+      </div>
+    </div>
+
+    <!-- Row 2: info_07 (low) — key propagation path -->
+    <div class="matrix-row">
+      <div class="row-label" style="background:#FFF;border-left:6px solid var(--indigo)">
+        <span class="info-id">info_07</span>
+        <span class="info-title">档案记录</span>
+        <span class="info-sens sens-low">LOW</span>
+      </div>
+      <div class="row-cells">
+        <div class="cell cell-know"><span class="cell-icon">📖</span>知道<span class="cell-source">#S001</span></div>
+        <div class="cell cell-obs"><span class="cell-icon">👁</span>看到<span class="cell-source">#S003</span></div>
+        <div class="cell cell-empty"></div>
+        <div class="cell cell-empty"></div>
+      </div>
+    </div>
+
+    <!-- Row 3: info_09 (medium) -->
+    <div class="matrix-row">
+      <div class="row-label">
+        <span class="info-id">info_09</span>
+        <span class="info-title">医生深夜行踪</span>
+        <span class="info-sens sens-med">MEDIUM</span>
+      </div>
+      <div class="row-cells">
+        <div class="cell cell-empty"></div>
+        <div class="cell cell-know"><span class="cell-icon">📖</span>知道<span class="cell-source">#S002</span></div>
+        <div class="cell cell-empty"></div>
+        <div class="cell cell-empty"></div>
+      </div>
+    </div>
+
+    <!-- Row 4: info_12 (high) — LEAK! -->
+    <div class="matrix-row" style="outline:3px solid var(--brick);outline-offset:-3px">
+      <div class="row-label" style="background:var(--paper)">
+        <span class="info-id">info_12</span>
+        <span class="info-title">老宅地下室尸体</span>
+        <span class="info-sens sens-high">HIGH ⚠</span>
+      </div>
+      <div class="row-cells">
+        <div class="cell cell-know"><span class="cell-icon">📖</span>知道<span class="cell-source">#S005</span></div>
+        <div class="cell cell-leak"><span class="cell-icon">⚠</span><strong>泄露</strong><span class="cell-source">#S007</span></div>
+        <div class="cell cell-empty"></div>
+        <div class="cell cell-know"><span class="cell-icon">📖</span>知道<span class="cell-source">init</span></div>
+      </div>
+    </div>
+
+    <!-- Row 5: info_15 (keeper) -->
+    <div class="matrix-row">
+      <div class="row-label">
+        <span class="info-id">info_15</span>
+        <span class="info-title">真凶身份</span>
+        <span class="info-sens sens-keeper">KEEPER</span>
+      </div>
+      <div class="row-cells">
+        <div class="cell cell-empty"></div>
+        <div class="cell cell-empty"></div>
+        <div class="cell cell-empty"></div>
+        <div class="cell cell-keeper"><span class="cell-icon">🖤</span>keeper only</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detail Panel -->
+  <div class="detail-panel">
+    <div class="detail-left">
+      <div class="sel-id">info_12 × 李</div>
+      <div class="sel-title">老宅地下室有一具尸体</div>
+      <div class="sel-content">
+        "地下室的角落藏着一具穿着校服的女学生尸体已经3天了，手脚有被捆绑的痕迹，死因是窒息。身边散落着几张撕碎的日记纸片。"
+      </div>
+      <div class="detail-meta">
+        <strong>敏感度:</strong> HIGH<br>
+        <strong>应知道:</strong> 否（李 当前不应该知道这件事）<br>
+        <strong>获得方式:</strong> 暗示 (partial) — 从事件 #S007 佐藤的对话内容推断
+      </div>
+    </div>
+    <div class="detail-right">
+      <div class="warn-title">⚠ Leak Alert</div>
+      <div class="alert-item">1. 李 尚未被正式授权知道 info_12</div>
+      <div class="alert-item">2. 佐藤在事件 #S007 中的对话暗示了"地下室"和"尸体"</div>
+      <div class="alert-item">3. 根据 KTSL Filter 层规则，高敏感信息不应通过暗示方式传播</div>
+      <div class="suggestion">💡 建议: 让佐藤在接下来的对话中避免提及此信息，或 KP 主动发起 info_12 的正式解密流程</div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

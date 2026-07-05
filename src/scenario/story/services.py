@@ -16,6 +16,7 @@ class TransitionValidator:
         transitions: list[StoryTransition],
         signals: list[StorySignal],
         flags: set[str],
+        covered_clue_ids: set[str] | None = None,
     ) -> StoryTransition | None:
         """从当前阶段可用迁移中选出第一个可落地的迁移。
 
@@ -45,6 +46,11 @@ class TransitionValidator:
                 stage=stages[transition.target_stage_id],
                 flags=flags,
                 transition=transition,
+            ):
+                continue
+            if not self._target_stage_clues_covered(
+                stage=stages[transition.target_stage_id],
+                covered_clue_ids=covered_clue_ids,
             ):
                 continue
             return transition
@@ -90,6 +96,16 @@ class TransitionValidator:
             elif effect.type == "clear_flag":
                 projected_flags.discard(effect.flag)
         return self._required_flags_met(stage.required_flags, flags=projected_flags)
+
+    def _target_stage_clues_covered(
+        self,
+        *,
+        stage: StoryStage,
+        covered_clue_ids: set[str] | None,
+    ) -> bool:
+        if not stage.available_clues or covered_clue_ids is None:
+            return True
+        return all(clue_id in covered_clue_ids for clue_id in stage.available_clues)
 
 
 class StoryStateService:

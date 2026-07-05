@@ -22,6 +22,12 @@ from scenario.api import (  # noqa: E402
     ScenarioService,
     SubmitIntentRequest,
 )
+from scenario.auth import (  # noqa: E402
+    AuthError,
+    Principal,
+    auth_error_payload,
+    parse_authorization_header,
+)
 from scenario.runtime import SceneRuntime  # noqa: E402
 
 APP_SERVICE_KEY = web.AppKey("scenario_service", ScenarioService)
@@ -46,6 +52,8 @@ async def error_middleware(
         return web.json_response({"error": str(exc)}, status=404)
     except FileNotFoundError as exc:
         return web.json_response({"error": str(exc)}, status=404)
+    except AuthError as exc:
+        return web.json_response(auth_error_payload(exc), status=exc.status_code)
     except PermissionError as exc:
         return web.json_response({"error": str(exc)}, status=403)
     except json.JSONDecodeError as exc:
@@ -70,6 +78,16 @@ def _query_param(request: web.Request, key: str) -> str | None:
     query = getattr(request, "query", {})
     value = query.get(key)
     return str(value) if value is not None else None
+
+
+def _authorization_principal(
+    request: web.Request,
+    *,
+    required: bool = True,
+) -> Principal | None:
+    headers = getattr(request, "headers", {})
+    authorization = headers.get("Authorization") if headers is not None else None
+    return parse_authorization_header(authorization, required=required)
 
 
 async def _read_json_body(request: web.Request) -> dict[str, object]:
@@ -128,19 +146,23 @@ async def handle_get_session(request: web.Request) -> web.Response:
 async def handle_get_player_view(request: web.Request) -> web.Response:
     session_id = request.match_info["session_id"]
     player_id = request.match_info["player_id"]
+    principal = _authorization_principal(request, required=True)
     view = _service(request).get_player_view(
         session_id,
         player_id,
         requester_id=_query_param(request, "requester_id"),
+        principal=principal,
     )
     return web.json_response(view.model_dump())
 
 
 async def handle_get_keeper_view(request: web.Request) -> web.Response:
     session_id = request.match_info["session_id"]
+    principal = _authorization_principal(request, required=True)
     view = _service(request).get_keeper_view(
         session_id,
         requester_id=_query_param(request, "requester_id"),
+        principal=principal,
     )
     return web.json_response(view.model_dump())
 
@@ -174,6 +196,8 @@ async def handle_submit_text_intent(request: web.Request) -> web.Response:
 
 async def handle_resolve_turn(request: web.Request) -> web.Response:
     session_id = request.match_info["session_id"]
+    principal = _authorization_principal(request, required=True)
+    _service(request).require_keeper_access(session_id, principal=principal)
     payload = await _read_json_body(request)
     expected_turn = payload.get("expected_turn")
     if expected_turn is not None and not isinstance(expected_turn, int):
@@ -184,10 +208,12 @@ async def handle_resolve_turn(request: web.Request) -> web.Response:
     resolution = await _service(request).resolve_turn(
         session_id,
         expected_turn=expected_turn,
+        principal=principal,
     )
     view = _service(request).build_keeper_turn_view(
         resolution=resolution,
         requester_id=requester_id,
+        principal=principal,
     )
     return web.json_response(view.model_dump())
 

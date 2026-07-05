@@ -8,10 +8,11 @@ from scenario.agent.models import (
     PrivateClue,
     VisibleScope,
 )
+from scenario.clues import ClueGraph, ModuleClue, SessionClueState
 from scenario.runtime import DiceRollAudit, SceneBatchResolution, TurnResolution
 from scenario.runtime import SceneRuntime
 from scenario.session import SessionMapState
-from scenario.view import TurnViewBuilder
+from scenario.view import ScenarioViewBuilder, TurnViewBuilder
 from tests.scene.card_fixtures import build_player_cards
 
 
@@ -111,3 +112,80 @@ def test_keeper_turn_view_preserves_all_private_material() -> None:
     assert "keeper_hint" in payload
     assert "spot_hidden CHECK" in payload
     assert "SAN CHECK" in payload
+
+
+def test_runtime_views_filter_clue_graph_for_player_and_keeper() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1", "p2"],
+        player_cards=build_player_cards(["p1", "p2"]),
+    )
+    session.clue_graph = ClueGraph(
+        module_id="generic_mvp",
+        core_route_ids=["ritual", "sealed"],
+        clues=[
+            ModuleClue(
+                id="archive_index",
+                title="Archive index",
+                scene_id="foyer",
+                info_id="info_archive",
+                public_hint="The index points to a sealed door.",
+                private_payload="Keeper secret: mayor funded the ritual.",
+                route_ids=["ritual"],
+                visible_to_player_ids=["p1"],
+            ),
+            ModuleClue(
+                id="sealed_letter",
+                title="Sealed letter",
+                scene_id="foyer",
+                info_id="info_letter",
+                public_hint="The letter was lost.",
+                private_payload="Keeper secret: the letter names the killer.",
+                route_ids=["sealed"],
+            ),
+        ],
+    )
+    session.session_clues = SessionClueState(
+        clue_states={
+            "archive_index": "discovered",
+            "sealed_letter": "missed",
+        }
+    )
+    resolution = TurnResolution(
+        session_id=session.session_id,
+        turn_no=1,
+        next_turn=2,
+    )
+
+    turn_builder = TurnViewBuilder()
+    player_turn = turn_builder.build_player_turn_view(
+        resolution=resolution,
+        session=session,
+        player_id="p1",
+    )
+    keeper_turn = turn_builder.build_keeper_turn_view(
+        resolution=resolution,
+        session=session,
+    )
+    player_session = ScenarioViewBuilder().build_player_session_view(
+        runtime=runtime,
+        session=session,
+        module=runtime._load_module("generic_mvp"),  # noqa: SLF001
+        player_id="p1",
+    )
+    keeper_session = ScenarioViewBuilder().build_keeper_session_view(session=session)
+
+    player_payload = json.dumps(player_turn.model_dump(), ensure_ascii=False)
+    keeper_payload = json.dumps(keeper_turn.model_dump(), ensure_ascii=False)
+
+    assert [clue.clue_id for clue in player_turn.clues] == ["archive_index"]
+    assert [clue.clue_id for clue in player_session.clues] == ["archive_index"]
+    assert "The index points to a sealed door." in player_payload
+    assert "Keeper secret" not in player_payload
+    assert "private_payload" not in player_payload
+    assert "Keeper secret: mayor funded the ritual." in keeper_payload
+    assert keeper_turn.route_coverage["ritual"].is_covered is True
+    assert keeper_turn.route_coverage["sealed"].is_reachable is False
+    assert keeper_turn.disconnected_route_ids == ["sealed"]
+    assert keeper_session.disconnected_route_ids == ["sealed"]

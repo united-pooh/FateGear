@@ -8,12 +8,13 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from cards.domain.card import InvestigatorCard
 
+from ..clues import ClueGraph, SessionClueState
 from ..story.models import StoryState
 
 # KTSLLedger is needed at runtime for pydantic model_rebuild() to resolve the
@@ -305,6 +306,14 @@ class SessionMapState(BaseModel):
         default=None,
         description="KTSL 运行时账本；None 表示本场游戏不启用 KTSL 协议。",
     )
+    clue_graph: Optional[ClueGraph] = Field(
+        default=None,
+        description="当前会话绑定的线索图；None 表示本场游戏未启用线索图。",
+    )
+    session_clues: SessionClueState = Field(
+        default_factory=SessionClueState,
+        description="当前会话中的线索发现/错过/失败前进投递状态。",
+    )
 
 
 class SessionPlayerState(BaseModel):
@@ -341,6 +350,10 @@ class SessionPlayerState(BaseModel):
     illegal_move_risk: IllegalMoveRiskState = Field(
         default_factory=IllegalMoveRiskState,
         description="玩家越界移动风险状态，由运行时跨回合维护。",
+    )
+    resource_state: dict[str, int] = Field(
+        default_factory=dict,
+        description="会话权威可变资源；用于保存调查员卡当前结构未承载的 Luck 等资源。",
     )
 
     investigator: InvestigatorCard = Field(

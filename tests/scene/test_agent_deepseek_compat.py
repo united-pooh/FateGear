@@ -159,7 +159,19 @@ def test_plan_payload_normalizer_drops_invalid_proposed_effects() -> None:
     payload = _normalize_plan_payload(
         {
             "intent_summary": "ok",
-            "proposed_checks": [],
+            "proposed_checks": [
+                {
+                    "skill_key": "spot_hidden",
+                    "proposed_difficulty": "normal",
+                    "rationale": "缺少必要定位字段。",
+                },
+                {
+                    "player_id": "p1",
+                    "action_id": "freeform",
+                    "skill_key": "spot_hidden",
+                    "proposed_difficulty": "normal",
+                },
+            ],
             "proposed_effects": [
                 {"player_id": "p1", "effect": "氛围建议"},
                 {
@@ -173,6 +185,14 @@ def test_plan_payload_normalizer_drops_invalid_proposed_effects() -> None:
         }
     )
 
+    assert payload["proposed_checks"] == [
+        {
+            "player_id": "p1",
+            "action_id": "freeform",
+            "skill_key": "spot_hidden",
+            "proposed_difficulty": "normal",
+        }
+    ]
     assert payload["proposed_effects"] == [
         {
             "effect_type": "advance_clock",

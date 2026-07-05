@@ -1,7 +1,6 @@
 """Tests for KP language rule prompt templates."""
 from __future__ import annotations
 
-import pytest
 
 from scenario.ktsl.prompt_adapter import KTSLPromptAdapter
 from scenario.ktsl.prompt_templates import (

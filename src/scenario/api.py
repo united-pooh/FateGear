@@ -15,6 +15,12 @@ from pydantic import BaseModel, Field
 
 from .agent import IntentAgentDecision, IntentAgentPrompt
 from .audit import JsonlKPAuditLogger
+from .auth import (
+    Principal,
+    authorize_keeper_view,
+    authorize_player_view,
+    principal_from_requester_id,
+)
 from .intent import IntentNormalizer, NormalizedIntentResult, RawPlayerIntent
 from .io import MODULE_ROOT, load_module_by_id
 from .module.models import ModuleDefinition
@@ -38,6 +44,10 @@ class ModuleSummary(BaseModel):
 class CreatePartyRequest(BaseModel):
     module_id: str = Field(..., min_length=1, max_length=30)
     creator_id: str = Field(..., min_length=1, max_length=30)
+    enable_ktsl: bool = Field(
+        default=False,
+        description="创建会话时是否附加 KTSL ledger 并启用标准 runtime stages。",
+    )
 
 
 class JoinPartyRequest(BaseModel):
@@ -59,6 +69,7 @@ class PartySummary(BaseModel):
     session_id: str
     module_id: str
     owner_id: str
+    ktsl_enabled: bool = False
     current_turn: int
     current_stage_id: str
     resolved_ending: str | None = None
@@ -157,6 +168,7 @@ class ScenarioService:
                         module=module,
                     )
                 },
+                enable_ktsl=payload.enable_ktsl,
             )
             self._owner_by_session_id[session.session_id] = payload.creator_id
             party = self._build_party_summary(session)
@@ -166,6 +178,7 @@ class ScenarioService:
                 payload={
                     "module_id": session.module_id,
                     "owner_id": payload.creator_id,
+                    "enable_ktsl": payload.enable_ktsl,
                     "party": party.model_dump(mode="json"),
                 },
             )
@@ -244,6 +257,7 @@ class ScenarioService:
         session_id: str,
         *,
         expected_turn: int | None = None,
+        principal: Principal | None = None,
     ) -> TurnResolution:
         """结算当前会话的一个完整回合。"""
         session_before = self._runtime.get_session(session_id)
@@ -264,6 +278,7 @@ class ScenarioService:
             "turn_replayed" if is_replay else "turn_resolved",
             session_id=session_id,
             payload={
+                **self._principal_audit_metadata(principal),
                 "module_id": session.module_id,
                 "owner_id": self._session_owner_id(session),
                 "expected_turn": expected_turn,
@@ -283,6 +298,22 @@ class ScenarioService:
         """读取已结算回合结果。"""
         return self._runtime.get_turn_resolution(session_id, turn_no)
 
+    def require_keeper_access(
+        self,
+        session_id: str,
+        *,
+        requester_id: str | None = None,
+        principal: Principal | None = None,
+    ) -> None:
+        """Validate keeper/service access without mutating turn state."""
+        with self._lock:
+            session = self._runtime.get_session(session_id)
+            self._ensure_keeper_access(
+                session,
+                requester_id=requester_id,
+                principal=principal,
+            )
+
     def list_resolved_turns(self, session_id: str) -> list[int]:
         """列出已结算回合编号。"""
         return self._runtime.list_resolved_turns(session_id)
@@ -293,6 +324,7 @@ class ScenarioService:
         resolution: TurnResolution,
         player_id: str,
         requester_id: str | None = None,
+        principal: Principal | None = None,
     ) -> PlayerTurnView:
         """把内部 TurnResolution 投影为单个玩家可见的回合视图。"""
         with self._lock:
@@ -301,6 +333,7 @@ class ScenarioService:
                 session,
                 player_id=player_id,
                 requester_id=requester_id,
+                principal=principal,
             )
             return self._turn_view_builder.build_player_turn_view(
                 resolution=resolution,
@@ -313,11 +346,16 @@ class ScenarioService:
         *,
         resolution: TurnResolution,
         requester_id: str | None = None,
+        principal: Principal | None = None,
     ) -> KeeperTurnView:
         """把内部 TurnResolution 投影为守密人视图。"""
         with self._lock:
             session = self._runtime.get_session(resolution.session_id)
-            self._ensure_keeper_access(session, requester_id=requester_id)
+            self._ensure_keeper_access(
+                session,
+                requester_id=requester_id,
+                principal=principal,
+            )
             return self._turn_view_builder.build_keeper_turn_view(
                 resolution=resolution,
                 session=session,
@@ -334,87 +372,38 @@ class ScenarioService:
         session_id: str,
         request: RawPlayerIntent | dict[str, object],
     ) -> SubmitTextIntentResponse:
-        """提交自然语言意图；可明确归一化时自动写入 pending intent。"""
-        if self._intent_agent is not None:
-            try:
-                asyncio.get_running_loop()
-            except RuntimeError:
-                return asyncio.run(
-                    self.submit_text_intent_async(session_id, request)
-                )
-
+        """提交自然语言意图；必须由 Intent Agent 完成最终裁定。"""
         payload = (
             request
             if isinstance(request, RawPlayerIntent)
             else RawPlayerIntent.model_validate(request)
         )
-        with self._lock:
-            session = self._runtime.get_session(session_id)
-            module = load_module_by_id(session.module_id, module_root=self._module_root)
-            normalization = self._intent_normalizer.normalize(
-                runtime=self._runtime,
-                session=session,
-                module=module,
-                player_id=payload.player_id,
-                raw_text=payload.text,
-            )
-            if not normalization.accepted or normalization.intent_payload is None:
-                response = SubmitTextIntentResponse(
-                    accepted=False,
-                    normalization=normalization,
-                    party=self._build_party_summary(session),
-                )
-                self._write_kp_audit(
-                    "text_intent_submitted",
+        if self._intent_agent is None:
+            with self._lock:
+                session = self._runtime.get_session(session_id)
+                return self._reject_text_intent_without_agent_locked(
                     session_id=session_id,
-                    payload={
-                        "module_id": session.module_id,
-                        "turn_no": session.current_turn,
-                        "player_id": payload.player_id,
-                        "raw_text": payload.text,
-                        "accepted": False,
-                        "normalization": normalization.model_dump(mode="json"),
-                        "party": response.party.model_dump(mode="json")
-                        if response.party is not None
-                        else None,
-                    },
+                    payload=payload,
+                    session=session,
                 )
-                return response
-            self._runtime.submit_intent(
-                session_id,
-                payload.player_id,
-                normalization.intent_payload,
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(
+                self.submit_text_intent_async(session_id, payload)
             )
-            session = self._runtime.get_session(session_id)
-            response = SubmitTextIntentResponse(
-                accepted=True,
-                normalization=normalization,
-                party=self._build_party_summary(session),
-            )
-            self._write_kp_audit(
-                "text_intent_submitted",
-                session_id=session_id,
-                payload={
-                    "module_id": session.module_id,
-                    "turn_no": session.current_turn,
-                    "player_id": payload.player_id,
-                    "raw_text": payload.text,
-                    "accepted": True,
-                    "normalization": normalization.model_dump(mode="json"),
-                    "submitted_intent": normalization.intent_payload,
-                    "party": response.party.model_dump(mode="json")
-                    if response.party is not None
-                    else None,
-                },
-            )
-            return response
+        raise RuntimeError(
+            "submit_text_intent 需要调用 Intent Agent；"
+            "在异步上下文中请使用 submit_text_intent_async。"
+        )
 
     async def submit_text_intent_async(
         self,
         session_id: str,
         request: RawPlayerIntent | dict[str, object],
     ) -> SubmitTextIntentResponse:
-        """提交自然语言意图；灰区自由行动可交给 LLM 裁定。"""
+        """提交自然语言意图；必须由 Intent Agent 完成最终裁定。"""
         payload = (
             request
             if isinstance(request, RawPlayerIntent)
@@ -422,6 +411,12 @@ class ScenarioService:
         )
         with self._lock:
             session = self._runtime.get_session(session_id)
+            if self._intent_agent is None:
+                return self._reject_text_intent_without_agent_locked(
+                    session_id=session_id,
+                    payload=payload,
+                    session=session,
+                )
             module = load_module_by_id(session.module_id, module_root=self._module_root)
             normalization = self._intent_normalizer.normalize(
                 runtime=self._runtime,
@@ -448,14 +443,12 @@ class ScenarioService:
 
         if prompt is not None and self._intent_agent is not None:
             record = await self._intent_agent.call(prompt)
-            agent_fallback = bool(getattr(record.meta, "fallback_used", False))
-            if not (agent_fallback and normalization.accepted):
-                normalization = self._normalization_from_intent_decision(
-                    player_id=payload.player_id,
-                    raw_text=payload.text,
-                    decision=record.output,
-                    fallback=normalization,
-                )
+            normalization = self._normalization_from_intent_decision(
+                player_id=payload.player_id,
+                raw_text=payload.text,
+                decision=record.output,
+                fallback=normalization,
+            )
 
         with self._lock:
             session = self._runtime.get_session(session_id)
@@ -465,6 +458,31 @@ class ScenarioService:
                 session=session,
                 normalization=normalization,
             )
+
+    def _reject_text_intent_without_agent_locked(
+        self,
+        *,
+        session_id: str,
+        payload: RawPlayerIntent,
+        session: SessionMapState,
+    ) -> SubmitTextIntentResponse:
+        normalization = NormalizedIntentResult(
+            player_id=payload.player_id,
+            raw_text=payload.text,
+            accepted=False,
+            clarification_question=(
+                "自然语言意图判断需要启用 Intent Agent。"
+                "请改用结构化意图接口，或启用 agent 后再提交文本意图。"
+            ),
+            candidates=[],
+            match_basis=["agent_required"],
+        )
+        return self._finalize_text_intent_locked(
+            session_id=session_id,
+            payload=payload,
+            session=session,
+            normalization=normalization,
+        )
 
     def _finalize_text_intent_locked(
         self,
@@ -614,6 +632,22 @@ class ScenarioService:
                 match_basis=[f"llm:{matched_id}:{decision.confidence:.2f}"],
             )
 
+        if (
+            fallback.accepted
+            and fallback.matched_kind == "freeform"
+            and fallback.intent_payload is not None
+            and fallback.intent_payload.get("type") == "freeform"
+        ):
+            return fallback.model_copy(
+                update={
+                    "match_basis": [
+                        *fallback.match_basis,
+                        f"llm:clarify_ignored:{decision.confidence:.2f}",
+                    ],
+                    "confidence": max(fallback.confidence, decision.confidence),
+                }
+            )
+
         question = decision.clarification_question or fallback.clarification_question
         candidates = decision.candidates or fallback.candidates
         return NormalizedIntentResult(
@@ -632,6 +666,7 @@ class ScenarioService:
         player_id: str,
         *,
         requester_id: str | None = None,
+        principal: Principal | None = None,
     ) -> PlayerSessionView:
         """查询单个玩家当前可见会话视图。"""
         with self._lock:
@@ -640,6 +675,7 @@ class ScenarioService:
                 session,
                 player_id=player_id,
                 requester_id=requester_id,
+                principal=principal,
             )
             module = load_module_by_id(session.module_id, module_root=self._module_root)
             return self._scenario_view_builder.build_player_session_view(
@@ -654,11 +690,16 @@ class ScenarioService:
         session_id: str,
         *,
         requester_id: str | None = None,
+        principal: Principal | None = None,
     ) -> KeeperSessionView:
         """查询守密人当前会话视图。"""
         with self._lock:
             session = self._runtime.get_session(session_id)
-            self._ensure_keeper_access(session, requester_id=requester_id)
+            self._ensure_keeper_access(
+                session,
+                requester_id=requester_id,
+                principal=principal,
+            )
             return self._scenario_view_builder.build_keeper_session_view(
                 session=session
             )
@@ -699,6 +740,7 @@ class ScenarioService:
             session_id=session.session_id,
             module_id=session.module_id,
             owner_id=owner_id,
+            ktsl_enabled=session.ktsl_ledger is not None,
             current_turn=session.current_turn,
             current_stage_id=session.story_state.current_stage_id,
             resolved_ending=session.resolved_ending,
@@ -722,32 +764,71 @@ class ScenarioService:
             payload=payload,
         )
 
+    def _principal_audit_metadata(
+        self,
+        principal: Principal | None,
+    ) -> dict[str, object]:
+        if principal is None:
+            return {}
+        return {
+            "principal_id": principal.principal_id,
+            "principal_role": principal.role,
+            "principal_session_scope": principal.session_id,
+        }
+
     def _ensure_player_view_access(
         self,
         session: SessionMapState,
         *,
         player_id: str,
         requester_id: str | None,
+        principal: Principal | None,
     ) -> None:
-        if requester_id is None:
+        principal = self._resolve_access_principal(
+            session,
+            requester_id=requester_id,
+            principal=principal,
+        )
+        if principal is None:
             return
-        allowed = {player_id, self._session_owner_id(session)}
-        if requester_id not in allowed:
-            raise PermissionError(
-                f"玩家 {requester_id} 无权查看玩家 {player_id} 的会话视图"
-            )
+        authorize_player_view(
+            principal,
+            session_id=session.session_id,
+            target_player_id=player_id,
+        )
 
     def _ensure_keeper_access(
         self,
         session: SessionMapState,
         *,
         requester_id: str | None,
+        principal: Principal | None,
     ) -> None:
-        if requester_id is None:
+        principal = self._resolve_access_principal(
+            session,
+            requester_id=requester_id,
+            principal=principal,
+        )
+        if principal is None:
             return
-        owner_id = self._session_owner_id(session)
-        if requester_id != owner_id:
-            raise PermissionError(f"玩家 {requester_id} 无权查看守密人视图")
+        authorize_keeper_view(principal, session_id=session.session_id)
+
+    def _resolve_access_principal(
+        self,
+        session: SessionMapState,
+        *,
+        requester_id: str | None,
+        principal: Principal | None,
+    ) -> Principal | None:
+        if principal is not None:
+            return principal
+        if requester_id is None:
+            return None
+        return principal_from_requester_id(
+            requester_id,
+            session_id=session.session_id,
+            owner_id=self._session_owner_id(session),
+        )
 
     def _session_owner_id(self, session: SessionMapState) -> str:
         return self._owner_by_session_id.get(

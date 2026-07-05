@@ -1,10 +1,8 @@
 """Tests for KTSL stage pipeline registration + no-op default behavior."""
 from __future__ import annotations
 
-import pytest
 
 from scenario.runtime.engine import SceneRuntime
-from tests.scene.card_fixtures import build_player_cards
 
 
 class TestStagePipelineRegistration:

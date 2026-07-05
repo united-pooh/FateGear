@@ -5,9 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from scenario.npc_patches import NPCStatePatchProposal
 from scenario.runtime import RuntimeEvent, SceneRuntime, TurnResolution
 
 from tests.scene.card_fixtures import build_player_cards, build_test_card
+
+# CoC 7e 人类八维特征默认键
+_COC_DEFAULT_KEYS = {"STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU"}
 
 SCENE_LOG_DIR = Path(__file__).resolve().parents[2] / "log" / "scene"
 STORY_LOG_DIR = Path(__file__).resolve().parents[2] / "log" / "story"
@@ -1005,3 +1009,109 @@ def test_tokoyami_subset_multiplayer_shared_progression_and_logs() -> None:
         session=session,
         resolutions=resolutions,
     )
+
+
+# ---------------------------------------------------------------------------
+# _init_npc_states 幂等性测试（GROUP-7 / TASK-010）
+# ---------------------------------------------------------------------------
+
+
+def test_init_idempotent_raises_on_double_call() -> None:
+    """对同一会话重复调用 _init_npc_states 应抛出 RuntimeError。"""
+    runtime = _runtime_with_deterministic_success()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+
+    # 第一次调用已在 create_session 中完成，此时 npc_states 应非空。
+    assert session.npc_states
+
+    # 再次直接调用 helper 应触发幂等保护。
+    module = runtime._load_module(session.module_id)
+    with pytest.raises(RuntimeError, match="禁止重复调用"):
+        runtime._init_npc_states(module, session, player_ids=["p1"])
+
+
+# ---------------------------------------------------------------------------
+# ENGINE-001：resolve_turn 排空 npc_patch_queue
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_turn_drains_npc_patch_queue() -> None:
+    """清空附带 producer='session_init' 的补丁队列并写入 current_scene_id。"""
+    runtime = _runtime_with_deterministic_success()
+    player_ids = ["p1", "p2"]
+    session = runtime.create_session(
+        "tokoyami_subset",
+        player_ids,
+        player_cards=build_player_cards(player_ids),
+    )
+
+    # 助手初始在 car_4 (default_scene_id)，写个旧值一致的补丁。
+    attendant = session.npc_states["attendant"]
+    old_scene_id = attendant.current_scene_id
+    patched_scene_id = "car_3"
+    session.npc_patch_queue.append(
+        NPCStatePatchProposal(
+            npc_id="attendant",
+            path="current_scene_id",
+            old_value=old_scene_id,
+            new_value=patched_scene_id,
+            reason="test phase-A patch",
+            producer="session_init",
+        )
+    )
+
+    # 空转一次（无玩家意图仅推进时钟 / 排空队列）。
+    asyncio.run(runtime.resolve_turn(session.session_id))
+
+    assert session.npc_patch_queue == [], "补丁队列应在 resolve_turn 后排空"
+    assert (
+        session.npc_states["attendant"].current_scene_id == patched_scene_id
+    ), "accept 的补丁应写回 npc_states"
+
+
+# ---------------------------------------------------------------------------
+# ENGINE-002：visible_to_player_ids 由 npc.visibility 决定
+# ---------------------------------------------------------------------------
+
+
+def test_create_session_seeds_public_npc_visible_to_all_players() -> None:
+    """tokoyami_subset 的 attendant 是 public → 所有玩家可见。"""
+    runtime = _runtime_with_deterministic_success()
+    player_ids = ["p1", "p2"]
+    session = runtime.create_session(
+        "tokoyami_subset",
+        player_ids,
+        player_cards=build_player_cards(player_ids),
+    )
+
+    assert (
+        session.npc_states["attendant"].visible_to_player_ids == set(player_ids)
+    ), "public NPC 应对所有玩家可见"
+
+
+def test_create_session_seeds_keeper_npc_invisible_to_players() -> None:
+    """visibility='keeper' 的 NPC 对玩家不可见（仅守密人）。"""
+    runtime = _runtime_with_deterministic_success()
+    player_ids = ["p1", "p2"]
+    session = runtime.create_session(
+        "tokoyami_subset",
+        player_ids,
+        player_cards=build_player_cards(player_ids),
+    )
+
+    module = runtime._load_module(session.module_id)
+    # 模拟 visibility=keeper 的行为：重跑 _init_npc_states 之前修改模块。
+    for npc in module.narrative_context.npcs:
+        if npc.id == "attendant":
+            npc.visibility = "keeper"
+    # 重置 session 状态以便重复初始化
+    session.npc_states.clear()
+    runtime._init_npc_states(module, session, player_ids=player_ids)
+
+    assert (
+        session.npc_states["attendant"].visible_to_player_ids == set()
+    ), "keeper NPC 不应对任何玩家可见"

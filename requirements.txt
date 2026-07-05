@@ -7,3 +7,4 @@ pytest
 mypy
 ruff
 openai
+jinja2

@@ -1,4 +1,0 @@
-{
-  "command": "git diff --check -- src/scenario/narration tests/scene docs/codex .pipeline-runs/RUN-20260606085022-7f9bb239",
-  "result": "passed"
-}

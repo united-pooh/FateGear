@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KTSL Session Report — {{ report.fixture_title or report.fixture_id }}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --color-causal: #e74c3c;
+    --color-unauth: #e67e22;
+    --color-leak: #3498db;
+    --color-spot: #2ecc71;
+    --color-decl: #9b59b6;
+    --color-retcon: #f39c12;
+
+    --bg-card: #ffffff;
+    --bg-body: #f5f6f8;
+    --text-main: #1f2933;
+    --text-muted: #6b7280;
+    --border: #e5e7eb;
+    --ok: #2ecc71;
+    --warn: #f39c12;
+    --err: #e74c3c;
+  }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg-body);
+    color: var(--text-main);
+    line-height: 1.55;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 20px 60px; }
+
+  header.report-header {
+    background: linear-gradient(135deg, #1f2933 0%, #2d3748 100%);
+    color: #fff;
+    padding: 32px 0 24px;
+  }
+  header.report-header h1 { margin: 0 0 6px; font-size: 26px; }
+  header.report-header .meta { color: #cbd5e1; font-size: 14px; }
+  header.report-header .meta span { margin-right: 18px; }
+
+  section { margin-top: 32px; }
+  section h2 { border-bottom: 2px solid var(--border); padding-bottom: 6px; }
+
+  /* Metrics cards grid */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+  }
+  @media (max-width: 860px) {
+    .metrics-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+  .metric-card {
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: var(--bg-card);
+    border-left: 4px solid var(--color-causal);
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    transition: transform .15s;
+  }
+  .metric-card:hover { transform: translateY(-2px); }
+  .metric-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .metric-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .metric-card .sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  /* Color variants */
+  .card-causal { border-left-color: var(--color-causal); }
+  .card-causal .value { color: var(--color-causal); }
+  .card-unauth { border-left-color: var(--color-unauth); }
+  .card-unauth .value { color: var(--color-unauth); }
+  .card-leak { border-left-color: var(--color-leak); }
+  .card-leak .value { color: var(--color-leak); }
+  .card-spot { border-left-color: var(--color-spot); }
+  .card-spot .value { color: var(--color-spot); }
+  .card-decl { border-left-color: var(--color-decl); }
+  .card-decl .value { color: var(--color-decl); }
+  .card-retcon { border-left-color: var(--color-retcon); }
+  .card-retcon .value { color: var(--color-retcon); }
+
+  /* Violation timeline details */
+  details.violation {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    padding: 10px 14px;
+  }
+  details.violation > summary {
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+  }
+  details.violation > summary::-webkit-details-marker { display: none; }
+  details.violation > summary::before { content: "▶ "; font-size: 11px; color: var(--text-muted); }
+  details.violation[open] > summary::before { content: "▼ "; }
+  details.violation .detail-body { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 14px; }
+  .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    margin-right: 6px;
+  }
+  .badge-error { background: var(--err); }
+  .badge-warning { background: var(--warn); }
+  .badge-info { background: #6b7280; }
+  .overridden-tag { background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+
+  /* Knowledge map table */
+  table.knowledge { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.knowledge th, table.knowledge td { padding: 6px 8px; border: 1px solid var(--border); text-align: left; }
+  table.knowledge th { background: #f9fafb; }
+  .sens-low { background: #ecfdf5; }
+  .sens-medium { background: #fef3c7; }
+  .sens-high { background: #fee2e2; }
+  .sens-keeper { background: #1f2933; color: #fff; }
+  .sens-public { background: #f3f4f6; }
+
+  /* Scene timeline horizontal bars */
+  .scene-timeline { margin-bottom: 16px; }
+  .scene-timeline .scene-name { font-weight: 600; margin-bottom: 4px; }
+  .timeline-bar {
+    height: 22px;
+    background: #e5e7eb;
+    border-radius: 11px;
+    overflow: hidden;
+    display: flex;
+    margin-bottom: 4px;
+  }
+  .timeline-bar .fill { background: var(--color-spot); height: 100%; }
+  .timeline-bar .empty { background: transparent; }
+  .events-list { list-style: none; padding-left: 0; margin: 6px 0 0; }
+  .events-list li { padding: 4px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+  .events-list li:last-child { border-bottom: none; }
+  .status-committed { color: var(--ok); }
+  .status-blocked { color: var(--err); }
+  .status-retconned { color: var(--warn); }
+
+  /* Barrier / Coupling tables */
+  table.states-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.states-table th, table.states-table td { padding: 6px 8px; border: 1px solid var(--border); text-align: left; }
+  table.states-table th { background: #f9fafb; }
+  .status-satisfied { color: var(--ok); font-weight: 600; }
+  .status-waiting { color: var(--warn); font-weight: 600; }
+  .status-open { color: var(--text-muted); }
+  .status-blocked { color: var(--err); font-weight: 600; }
+
+  footer.report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header class="report-header">
+  <div class="container">
+    <h1>KTSL Session Report</h1>
+    <div class="meta">
+      <span><strong>Module:</strong> {{ report.fixture_title or report.fixture_id }}</span>
+      <span><strong>Fixture:</strong> {{ report.fixture_id }}</span>
+      {% if report.session_config %}
+      <span><strong>Session:</strong> {{ report.session_config.session_id }}</span>
+      {% if report.session_config.kp_name %}<span><strong>KP:</strong> {{ report.session_config.kp_name }}</span>{% endif %}
+      {% endif %}
+    </div>
+    <div class="meta">
+      <span><strong>Started:</strong> {{ report.started_at }}</span>
+      <span><strong>Ended:</strong> {{ report.ended_at }}</span>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Metrics Dashboard -->
+  <section id="metrics-dashboard">
+    <h2>📊 Metrics Dashboard</h2>
+    <div class="metrics-grid">
+      <div class="metric-card card-causal" data-metric="causal">
+        <div class="label">Causal Violations</div>
+        <div class="value">{{ report.metrics.causal_violation_count }}</div>
+        <div class="sub">total</div>
+      </div>
+      <div class="metric-card card-unauth" data-metric="unauth">
+        <div class="label">Unauthorized Actions</div>
+        <div class="value">{{ report.metrics.unauthorized_action_count }}</div>
+        <div class="sub">total</div>
+      </div>
+      <div class="metric-card card-leak" data-metric="leak">
+        <div class="label">Public Leaks</div>
+        <div class="value">{{ report.metrics.public_payload_leak_count }}</div>
+        <div class="sub">total</div>
+      </div>
+      <div class="metric-card card-spot" data-metric="spot">
+        <div class="label">Spotlight Max Gap</div>
+        <div class="value">{{ report.metrics.spotlight_max_gap_minutes }}</div>
+        <div class="sub">minutes</div>
+      </div>
+      <div class="metric-card card-decl" data-metric="decl">
+        <div class="label">Declassification</div>
+        <div class="value">{{ "%.2f"|format(report.metrics.declassification_completeness) }}</div>
+        <div class="sub">completeness</div>
+      </div>
+      <div class="metric-card card-retcon" data-metric="retcon">
+        <div class="label">Retcons</div>
+        <div class="value">{{ report.metrics.retcon_count }}</div>
+        <div class="sub">total</div>
+      </div>
+    </div>
+    <p style="margin-top:12px; color: var(--text-muted); font-size: 13px;">
+      Totals: events={{ report.total_events }} · committed={{ report.total_committed }} · blocked={{ report.total_blocked }} · overridden={{ report.total_overridden }}
+      · barrier wait={{ report.metrics.barrier_wait_minutes }} min · coupling drift={{ report.metrics.high_coupling_time_drift_minutes }} min
+    </p>
+  </section>
+
+  <!-- Violation Timeline -->
+  <section id="violation-timeline">
+    <h2>⚠️ Violation Timeline</h2>
+    {% if report.violation_timeline %}
+      {% for ve in report.violation_timeline %}
+      <details class="violation">
+        <summary>
+          <span class="badge badge-{{ ve.severity }}">{{ ve.severity|upper }}</span>
+          Event #{{ "%03d"|format(ve.event_index) }} · {{ ve.actor }} · {{ ve.scene_id }}
+          {% if ve.overridden %}<span class="overridden-tag">OVERRIDDEN</span>{% endif %}
+        </summary>
+        <div class="detail-body">
+          <div><strong>Action:</strong> {{ ve.action_text }}</div>
+          <div><strong>Metric:</strong> <code>{{ ve.metric }}</code></div>
+          <div><strong>Message:</strong> {{ ve.message }}</div>
+          <div><strong>Event ID:</strong> <code>{{ ve.event_id }}</code></div>
+        </div>
+      </details>
+      {% endfor %}
+    {% else %}
+      <p>No violations recorded. 🎉</p>
+    {% endif %}
+  </section>
+
+  <!-- Knowledge Map -->
+  <section id="knowledge-map">
+    <h2>🗺️ Character Knowledge Map</h2>
+    {% if report.final_knowledge_map %}
+      {% for char_id, items in report.final_knowledge_map.items() %}
+      <h3>{{ char_id }}</h3>
+      <table class="knowledge">
+        <thead>
+          <tr><th>info_id</th><th>kind</th><th>sensitivity</th><th>content_summary</th><th>source</th></tr>
+        </thead>
+        <tbody>
+        {% if items %}
+          {% for item in items %}
+          <tr class="sens-{{ item.sensitivity }}">
+            <td>
+              <code>{{ item.info_id }}</code>
+              {% if item.leaked %}<span class="badge badge-warning">LEAKED</span>{% endif %}
+            </td>
+            <td>{{ item.kind }}</td>
+            <td>{{ item.sensitivity }}</td>
+            <td>
+              <span title="{{ item.content_summary }}">{{ item.content_summary[:120] }}{% if item.content_summary|length > 120 %}…{% endif %}</span>
+            </td>
+            <td>{{ item.source_event_id }} ({{ item.source_scene_id }}) @ {{ item.acquired_at_minute }}min</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="5">No knowledge recorded.</td></tr>
+        {% endif %}
+        </tbody>
+      </table>
+      {% endfor %}
+    {% else %}
+      <p>_No character knowledge recorded._</p>
+    {% endif %}
+  </section>
+
+  <!-- Scene Timelines -->
+  <section id="scene-timelines">
+    <h2>🎬 Scene Timelines</h2>
+    {% if report.scene_timelines %}
+      {% for scene_id, events in report.scene_timelines.items() %}
+      <div class="scene-timeline">
+        <div class="scene-name">{{ scene_id }}{% if events|length > 0 %} ({{ events|length }} event{% if events|length != 1 %}s{% endif %}){% endif %}</div>
+        <ol class="events-list">
+          {% for ev in events %}
+          <li>
+            <span class="status-{{ ev.status }}">[{{ ev.status|title }}</span>
+            #{{ "%03d"|format(ev.event_index) }} · {{ ev.actor }} · {{ ev.action_text }} @ {{ ev.time_minute }}min
+            {% if ev.output_info_ids %} → output: {{ ev.output_info_ids|join(", ") }}{% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p>_No scene timelines available._</p>
+    {% endif %}
+  </section>
+
+  <!-- Barrier States -->
+  <section id="barrier-states">
+    <h2>🚧 Barrier States</h2>
+    {% if report.barrier_final_states %}
+    <table class="states-table">
+      <thead>
+        <tr><th>Barrier ID</th><th>Status</th><th>Required Events</th><th>Satisfied Events</th><th>Required Info</th><th>Satisfied Info</th></tr>
+      </thead>
+      <tbody>
+        {% for b in report.barrier_final_states %}
+        <tr>
+          <td><code>{{ b.barrier_id }}</code></td>
+          <td class="status-{{ b.status }}">{{ b.status|title }}</td>
+          <td>{{ b.required_event_ids|join(", ") or "—" }}</td>
+          <td>{{ b.satisfied_event_ids|join(", ") or "—" }}</td>
+          <td>{{ b.required_info_ids|join(", ") or "—" }}</td>
+          <td>{{ b.satisfied_info_ids|join(", ") or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>_No barriers configured._</p>
+    {% endif %}
+  </section>
+
+  <!-- Coupling States -->
+  <section id="coupling-states">
+    <h2>🔗 Coupling States</h2>
+    {% if report.coupling_final_states %}
+    <table class="states-table">
+      <thead>
+        <tr><th>Coupling ID</th><th>Source</th><th>Target</th><th>Mode</th><th>Drift (min)</th><th>Active</th></tr>
+      </thead>
+      <tbody>
+        {% for c in report.coupling_final_states %}
+        <tr>
+          <td><code>{{ c.coupling_id }}</code></td>
+          <td>{{ c.source_scene_id }}</td>
+          <td>{{ c.target_scene_id }}</td>
+          <td>{{ c.mode }}</td>
+          <td>{{ c.drift_minutes }}</td>
+          <td>{{ "✅" if c.active else "❌" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>_No couplings configured._</p>
+    {% endif %}
+  </section>
+
+</div>
+
+<footer class="report-footer">
+  Generated by KTSL toolchain · {{ now }}
+</footer>
+
+</body>
+</html>

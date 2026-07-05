@@ -1,6 +1,0 @@
-{
-  "command": "pytest tests/scene/test_narration_memory_persistence.py tests/scene/test_narration_pipeline.py -q",
-  "result": "10 passed in 0.24s",
-  "first_attempt": "1 failed, 9 passed; failure was test contract assumption that KeeperNarrationRecord had retrieved_memory_ids attribute",
-  "fix": "assert replay_input.packet.retrieved_memory_ids and source_event_ids in static draft to avoid fallback"
-}

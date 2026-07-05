@@ -14,9 +14,15 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from .model_client import (
+    AnthropicModelClient,
+    ModelClient,
+    OpenAICompatibleModelClient,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +33,13 @@ _DEEPSEEK_DEFAULT_PLANNER_TIMEOUT_SECONDS = 90.0
 _DEEPSEEK_DEFAULT_NARRATOR_TIMEOUT_SECONDS = 120.0
 _DEEPSEEK_DEFAULT_THINKING = "disabled"
 _OPENAI_DEFAULT_MODEL = "gpt-4o"
+_ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com"
+_ANTHROPIC_DEFAULT_MODEL = "claude-3-5-sonnet-latest"
 
 
 @dataclass(frozen=True)
 class OpenAIProviderConfig:
-    """单个 Agent 的 OpenAI 连接配置。
+    """单个 Agent 的模型端点连接配置。
 
     字段留空表示“未显式配置”，调用方可继续走 fallback。
     """
@@ -40,6 +48,8 @@ class OpenAIProviderConfig:
     base_url: str = ""
     organization: str = ""
     project: str = ""
+    endpoint_type: str = "auto"
+    anthropic_version: str = "2023-06-01"
 
 
 @dataclass(frozen=True)
@@ -68,6 +78,9 @@ class AgentSettings:
     narrator_provider: OpenAIProviderConfig
     planner: AgentModelConfig
     narrator: AgentModelConfig
+    anthropic_provider: OpenAIProviderConfig = field(
+        default_factory=OpenAIProviderConfig
+    )
     deepseek_thinking: str = _DEEPSEEK_DEFAULT_THINKING
 
 
@@ -195,11 +208,36 @@ def _read_deepseek_thinking(env_file_values: dict[str, str]) -> str:
     return _DEEPSEEK_DEFAULT_THINKING
 
 
+def _read_endpoint_type(
+    key: str,
+    *,
+    env_file_values: dict[str, str],
+    default: str = "auto",
+    aliases: tuple[str, ...] = (),
+) -> str:
+    raw = _read_str(
+        key,
+        env_file_values=env_file_values,
+        default=default,
+        aliases=aliases,
+    ).strip().lower()
+    normalized = raw.replace("_", "-")
+    if normalized in {"openai", "openai-compatible", "compatible", "deepseek"}:
+        return "openai_compatible"
+    if normalized in {"anthropic", "claude"}:
+        return "anthropic"
+    if normalized in {"auto", ""}:
+        return "auto"
+    logger.warning("Agent 端点类型 %s=%r 非法，回退为 %s", key, raw, default)
+    return default
+
+
 def _resolve_agent_provider(
     *,
     agent_prefix: str,
     env_file_values: dict[str, str],
     default_provider: OpenAIProviderConfig,
+    endpoint_defaults: dict[str, OpenAIProviderConfig] | None = None,
 ) -> OpenAIProviderConfig:
     """解析单个 Agent 的最终 Provider 配置。
 
@@ -212,26 +250,42 @@ def _resolve_agent_provider(
     - `PLANNER_AGENT_API_KEY` 只覆盖 Planner 的 key
     """
 
+    endpoint_type = _read_endpoint_type(
+        f"{agent_prefix}_PROVIDER",
+        env_file_values=env_file_values,
+        default=default_provider.endpoint_type,
+        aliases=(f"{agent_prefix}_ENDPOINT_TYPE",),
+    )
+    inherited_provider = default_provider
+    if endpoint_defaults and endpoint_type != default_provider.endpoint_type:
+        inherited_provider = endpoint_defaults.get(endpoint_type, default_provider)
+
     return OpenAIProviderConfig(
         api_key=_read_str(
             f"{agent_prefix}_API_KEY",
             env_file_values=env_file_values,
-            default=default_provider.api_key,
+            default=inherited_provider.api_key,
         ),
         base_url=_read_str(
             f"{agent_prefix}_BASE_URL",
             env_file_values=env_file_values,
-            default=default_provider.base_url,
+            default=inherited_provider.base_url,
         ),
         organization=_read_str(
             f"{agent_prefix}_ORGANIZATION",
             env_file_values=env_file_values,
-            default=default_provider.organization,
+            default=inherited_provider.organization,
         ),
         project=_read_str(
             f"{agent_prefix}_PROJECT",
             env_file_values=env_file_values,
-            default=default_provider.project,
+            default=inherited_provider.project,
+        ),
+        endpoint_type=endpoint_type,
+        anthropic_version=_read_str(
+            f"{agent_prefix}_ANTHROPIC_VERSION",
+            env_file_values=env_file_values,
+            default=inherited_provider.anthropic_version,
         ),
     )
 
@@ -248,26 +302,81 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
         "DEEPSEEK_API_KEY",
         env_file_values=env_file_values,
     )
+    anthropic_api_key = _read_str(
+        "ANTHROPIC_API_KEY",
+        env_file_values=env_file_values,
+    )
+    agent_api_key = _read_str(
+        "AGENT_API_KEY",
+        env_file_values=env_file_values,
+    )
+    openai_api_key = _read_str(
+        "OPENAI_API_KEY",
+        env_file_values=env_file_values,
+    )
+    explicit_agent_api_key = agent_api_key or openai_api_key
     deepseek_base_url = _read_str(
         "DEEPSEEK_BASE_URL",
         env_file_values=env_file_values,
         default=_DEEPSEEK_DEFAULT_BASE_URL if deepseek_api_key else "",
     )
+    agent_base_url = _read_str(
+        "AGENT_BASE_URL",
+        env_file_values=env_file_values,
+    )
+    openai_base_url = _read_str(
+        "OPENAI_BASE_URL",
+        env_file_values=env_file_values,
+    )
+    anthropic_base_url = _read_str(
+        "ANTHROPIC_BASE_URL",
+        env_file_values=env_file_values,
+        default=_ANTHROPIC_DEFAULT_BASE_URL if anthropic_api_key else "",
+    )
+    openai_compatible_default_key = (
+        agent_api_key or openai_api_key or deepseek_api_key
+    )
+    openai_compatible_default_base_url = (
+        agent_base_url
+        or openai_base_url
+        or (deepseek_base_url if deepseek_api_key and not explicit_agent_api_key else "")
+    )
+    anthropic_default_key = agent_api_key or anthropic_api_key
+    anthropic_default_base_url = agent_base_url or anthropic_base_url
+    legacy_default_api_key = _read_str(
+        "AGENT_API_KEY",
+        env_file_values=env_file_values,
+        default=openai_compatible_default_key,
+    )
+    default_endpoint_type = _read_endpoint_type(
+        "AGENT_PROVIDER",
+        env_file_values=env_file_values,
+        default=(
+            "deepseek"
+            if deepseek_api_key and not explicit_agent_api_key
+            else "anthropic"
+            if anthropic_api_key and not explicit_agent_api_key
+            else "auto"
+        ),
+        aliases=("AGENT_ENDPOINT_TYPE", "MODEL_PROVIDER"),
+    )
+    if default_endpoint_type == "deepseek":
+        default_endpoint_type = "openai_compatible"
+    default_api_key = (
+        anthropic_default_key
+        if default_endpoint_type == "anthropic"
+        else legacy_default_api_key
+    )
+    default_base_url = (
+        anthropic_default_base_url
+        if default_endpoint_type == "anthropic"
+        else openai_compatible_default_base_url
+    )
 
     # 共享默认配置：所有 Agent 默认先继承 AGENT_*。
     default_provider = OpenAIProviderConfig(
-        api_key=_read_str(
-            "AGENT_API_KEY",
-            env_file_values=env_file_values,
-            default=deepseek_api_key,
-            aliases=("OPENAI_API_KEY",),
-        ),
-        base_url=_read_str(
-            "AGENT_BASE_URL",
-            env_file_values=env_file_values,
-            default=deepseek_base_url,
-            aliases=("OPENAI_BASE_URL",),
-        ),
+        api_key=default_api_key,
+        base_url=default_base_url,
         organization=_read_str(
             "AGENT_ORGANIZATION",
             env_file_values=env_file_values,
@@ -277,6 +386,12 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
             "AGENT_PROJECT",
             env_file_values=env_file_values,
             aliases=("OPENAI_PROJECT",),
+        ),
+        endpoint_type=default_endpoint_type,
+        anthropic_version=_read_str(
+            "ANTHROPIC_VERSION",
+            env_file_values=env_file_values,
+            default="2023-06-01",
         ),
     )
     deepseek_provider = OpenAIProviderConfig(
@@ -291,20 +406,41 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
             aliases=("DEEPSEEK_API_BASE",),
         ),
     )
+    anthropic_provider = OpenAIProviderConfig(
+        api_key=_read_str(
+            "ANTHROPIC_API_KEY",
+            env_file_values=env_file_values,
+        ),
+        base_url=_read_str(
+            "ANTHROPIC_BASE_URL",
+            env_file_values=env_file_values,
+            default=_ANTHROPIC_DEFAULT_BASE_URL,
+        ),
+        endpoint_type="anthropic",
+        anthropic_version=_read_str(
+            "ANTHROPIC_VERSION",
+            env_file_values=env_file_values,
+            default="2023-06-01",
+        ),
+    )
     planner_provider = _resolve_agent_provider(
         agent_prefix="PLANNER_AGENT",
         env_file_values=env_file_values,
         default_provider=default_provider,
+        endpoint_defaults={"anthropic": anthropic_provider},
     )
     narrator_provider = _resolve_agent_provider(
         agent_prefix="NARRATOR_AGENT",
         env_file_values=env_file_values,
         default_provider=default_provider,
+        endpoint_defaults={"anthropic": anthropic_provider},
     )
     default_provider_kind = detect_provider_kind(client=default_provider)
     default_model = (
         _DEEPSEEK_DEFAULT_MODEL
         if default_provider_kind == "deepseek"
+        else _ANTHROPIC_DEFAULT_MODEL
+        if default_provider_kind == "anthropic"
         else _OPENAI_DEFAULT_MODEL
     )
     planner_timeout_default = (
@@ -379,6 +515,7 @@ def load_agent_settings(env_path: str | Path | None = None) -> AgentSettings:
         narrator_provider=narrator_provider,
         planner=planner,
         narrator=narrator,
+        anthropic_provider=anthropic_provider,
         deepseek_thinking=_read_deepseek_thinking(env_file_values),
     )
 
@@ -388,6 +525,7 @@ def select_provider_for_model(
     model_id: str,
     default_provider: OpenAIProviderConfig,
     deepseek_provider: OpenAIProviderConfig,
+    anthropic_provider: OpenAIProviderConfig | None = None,
 ) -> OpenAIProviderConfig:
     """根据模型名选择实际 Provider。
 
@@ -395,15 +533,57 @@ def select_provider_for_model(
     去请求 `deepseek-*` 模型。
     """
 
-    if detect_provider_kind(model_id=model_id) != "deepseek":
-        return default_provider
-    if not deepseek_provider.api_key:
-        return default_provider
-    return OpenAIProviderConfig(
-        api_key=deepseek_provider.api_key,
-        base_url=deepseek_provider.base_url or _DEEPSEEK_DEFAULT_BASE_URL,
-        organization=deepseek_provider.organization,
-        project=deepseek_provider.project,
+    provider_kind = detect_provider_kind(model_id=model_id)
+    if provider_kind == "deepseek" and deepseek_provider.api_key:
+        return OpenAIProviderConfig(
+            api_key=deepseek_provider.api_key,
+            base_url=deepseek_provider.base_url or _DEEPSEEK_DEFAULT_BASE_URL,
+            organization=deepseek_provider.organization,
+            project=deepseek_provider.project,
+            endpoint_type="openai_compatible",
+            anthropic_version=deepseek_provider.anthropic_version,
+        )
+    if (
+        provider_kind == "anthropic"
+        and anthropic_provider is not None
+        and anthropic_provider.api_key
+    ):
+        return anthropic_provider
+    return default_provider
+
+
+def build_model_client(
+    provider: OpenAIProviderConfig,
+    *,
+    model_id: str = "",
+    openai_client: Any = None,
+) -> ModelClient | None:
+    """Build a provider-neutral model client for one endpoint."""
+
+    if openai_client is not None:
+        provider_kind = detect_provider_kind(model_id=model_id, client=openai_client)
+        return OpenAICompatibleModelClient(
+            openai_client,
+            provider_kind=provider_kind,
+        )
+    provider_kind = detect_provider_kind(model_id=model_id, client=provider)
+    explicit_provider_kind = detect_provider_kind(client=provider)
+    if provider_kind == "anthropic" and explicit_provider_kind != "anthropic":
+        provider_kind = explicit_provider_kind
+    if provider_kind == "anthropic":
+        if not provider.api_key:
+            return None
+        return AnthropicModelClient(
+            api_key=provider.api_key,
+            base_url=provider.base_url or _ANTHROPIC_DEFAULT_BASE_URL,
+            anthropic_version=provider.anthropic_version,
+        )
+    raw_client = build_openai_client(provider)
+    if raw_client is None:
+        return None
+    return OpenAICompatibleModelClient(
+        raw_client,
+        provider_kind=detect_provider_kind(model_id=model_id, client=raw_client),
     )
 
 
@@ -435,14 +615,30 @@ def build_openai_client(provider: OpenAIProviderConfig) -> Any:  # noqa: ANN401
 def detect_provider_kind(*, model_id: str = "", client: Any = None) -> str:  # noqa: ANN401
     """根据模型名和客户端 base_url 推断 Provider 类型。
 
-    当前主要用于对 DeepSeek 做兼容分支：
-    - 若 base_url 指向 `deepseek.com`，视为 `deepseek`
-    - 若模型名以 `deepseek-` 开头，也视为 `deepseek`
-    - 其余情况默认视为 `openai_compatible`
+    返回值用于决定 response_format：
+    - ``deepseek``: DeepSeek 专属，需要 extra_body thinking 参数
+    - ``json_object_only``: 仅支持 ``{"type": "json_object"}``，不支持
+      OpenAI ``json_schema`` 结构化输出（如 LongCat 等兼容接口）
+    - ``openai_compatible``: 完整 OpenAI 特性，支持 json_schema
     """
 
     base_url = str(getattr(client, "base_url", "") or "").lower()
+    endpoint_type = str(getattr(client, "endpoint_type", "") or "").lower()
     model = model_id.lower()
+    if (
+        endpoint_type == "anthropic"
+        or "anthropic.com" in base_url
+        or model.startswith("claude")
+    ):
+        return "anthropic"
     if "deepseek.com" in base_url or model.startswith("deepseek-"):
         return "deepseek"
+    if "longcat" in base_url or model.startswith("longcat"):
+        return "json_object_only"
     return "openai_compatible"
+
+
+def supports_json_schema(provider_kind: str) -> bool:
+    """仅当 provider 支持 OpenAI json_schema 结构化输出时返回 True。"""
+
+    return provider_kind == "openai_compatible"

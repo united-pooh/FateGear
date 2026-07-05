@@ -161,8 +161,12 @@ venv.bak/
 # macOS
 .DS_Store
 
-# Local pipeline scratch workspace
+# Local pipeline scratch workspace / run artifacts
 .pipeline-workspace/
+.pipeline-runs/
+.pipeline-last-run-summary.json
+.codegraph/
+.playwright-cli/
 
 # Test runtime logs
 log/

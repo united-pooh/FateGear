@@ -150,6 +150,33 @@ def test_intent_normalizer_accepts_unexpected_low_risk_action_as_freeform() -> N
     assert result.candidates == ["尝试自由行动"]
 
 
+def test_intent_normalizer_accepts_loud_singing_as_freeform() -> None:
+    runtime = SceneRuntime()
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+    module = load_module_by_id("tokoyami_subset")
+
+    result = IntentNormalizer().normalize(
+        runtime=runtime,
+        session=session,
+        module=module,
+        player_id="p1",
+        raw_text="再放声高歌，歌颂亲爱的故乡",
+    )
+
+    assert result.accepted is True
+    assert result.intent_payload == {
+        "type": "freeform",
+        "text": "再放声高歌，歌颂亲爱的故乡",
+    }
+    assert result.matched_kind == "freeform"
+    assert result.matched_id == "freeform"
+    assert result.match_basis == ["freeform:freeform:0.77"]
+
+
 def test_intent_normalizer_accepts_observe_as_freeform_without_forcing_progression() -> None:
     runtime = SceneRuntime()
     session = runtime.create_session(

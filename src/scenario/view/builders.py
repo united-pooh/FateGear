@@ -84,6 +84,7 @@ class TurnViewBuilder:
                 if self._value(roll, "player_id", "") == player_id
                 and self._value(roll, "visibility", "public") == "public"
             ],
+            clues=self._player_clues(session, player_id=player_id),
         )
 
     def build_keeper_turn_view(
@@ -121,6 +122,39 @@ class TurnViewBuilder:
             scenes=scenes,
             event_log=resolution.event_log,
             dice_rolls=resolution.dice_rolls,
+            clues=self._keeper_clues(session),
+            route_coverage=self._route_coverage(session),
+            disconnected_route_ids=self._disconnected_route_ids(session),
+        )
+
+    def _player_clues(
+        self,
+        session: SessionMapState,
+        *,
+        player_id: str,
+    ) -> list[object]:
+        if session.clue_graph is None:
+            return []
+        return session.clue_graph.player_view(
+            session.session_clues,
+            player_id=player_id,
+        )
+
+    def _keeper_clues(self, session: SessionMapState) -> list[object]:
+        if session.clue_graph is None:
+            return []
+        return session.clue_graph.keeper_view(session.session_clues)
+
+    def _route_coverage(self, session: SessionMapState) -> dict[str, object]:
+        if session.clue_graph is None:
+            return {}
+        return session.clue_graph.core_route_coverage(session.session_clues)
+
+    def _disconnected_route_ids(self, session: SessionMapState) -> list[str]:
+        return sorted(
+            route_id
+            for route_id, coverage in self._route_coverage(session).items()
+            if not coverage.is_reachable
         )
 
     def _public_dialogues(self, narration: object) -> list[PublicDialogueView]:
@@ -230,6 +264,14 @@ class ScenarioViewBuilder:
             ],
             pending_intent_submitted=player_id in session.pending_intents,
             resolved_ending=session.resolved_ending,
+            clues=(
+                session.clue_graph.player_view(
+                    session.session_clues,
+                    player_id=player_id,
+                )
+                if session.clue_graph is not None
+                else []
+            ),
         )
 
     def build_keeper_session_view(
@@ -251,4 +293,25 @@ class ScenarioViewBuilder:
             completed_actions=sorted(session.completed_actions),
             pending_players=sorted(session.pending_intents),
             resolved_ending=session.resolved_ending,
+            clues=(
+                session.clue_graph.keeper_view(session.session_clues)
+                if session.clue_graph is not None
+                else []
+            ),
+            route_coverage=(
+                session.clue_graph.core_route_coverage(session.session_clues)
+                if session.clue_graph is not None
+                else {}
+            ),
+            disconnected_route_ids=(
+                sorted(
+                    route_id
+                    for route_id, coverage in session.clue_graph.core_route_coverage(
+                        session.session_clues
+                    ).items()
+                    if not coverage.is_reachable
+                )
+                if session.clue_graph is not None
+                else []
+            ),
         )

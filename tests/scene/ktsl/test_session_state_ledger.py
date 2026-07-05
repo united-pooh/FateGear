@@ -1,7 +1,6 @@
 """Tests for KTSLLedger integration with SessionMapState."""
 from __future__ import annotations
 
-import pytest
 
 from scenario.ktsl.models import KTSLLedger
 

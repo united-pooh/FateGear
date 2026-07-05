@@ -1,11 +1,9 @@
 """Tests for ktsl wizard."""
 from __future__ import annotations
 
-import pytest
-from unittest.mock import patch
 
 from scenario.ktsl.fixtures import build_library_sewer_church_fixture
-from scenario.ktsl.wizard import WizardSession, build_spec_from_fixture
+from scenario.ktsl.wizard import build_spec_from_fixture
 
 
 class TestBuildSpecFromFixture:

@@ -14,6 +14,8 @@ from .contracts import (
 from .events import unresolved_event_ids
 
 
+_WILDCARD_PLAYER_ID = "*"
+
 _MAP_PATHS = {
     "scene_mood",
     "npc_attitudes",
@@ -21,6 +23,7 @@ _MAP_PATHS = {
     "public_observations",
 }
 _LIST_PATHS = {"continuity_notes", "style_tags"}
+_ATTITUDES_PATH = "npc_attitudes"
 _AUTHORITATIVE_ROOTS = {
     "story_state",
     "story",
@@ -55,6 +58,12 @@ def is_allowed_narrative_path(path: str) -> bool:
     if not parts:
         return False
     if parts[0] in _MAP_PATHS:
+        if parts[0] == _ATTITUDES_PATH:
+            # Per-player slot: npc_attitudes.<npc_id>.<player_id>
+            if len(parts) == 3:
+                return bool(parts[1]) and bool(parts[2])
+            # Mass-broadcast alias: npc_attitudes.<npc_id>  (treats as '*')
+            return len(parts) == 2 and bool(parts[1])
         return len(parts) == 2 and bool(parts[1])
     if parts[0] in _LIST_PATHS:
         return len(parts) == 1
@@ -83,12 +92,34 @@ def apply_patch_to_state(
     next_state = state.model_copy(deep=True)
     parts = _parts(proposal.path)
     root = parts[0]
+    if root == _ATTITUDES_PATH:
+        return _apply_attitudes_patch(next_state, parts, proposal.new_value)
     if root in _MAP_PATHS:
         target: dict[str, str] = getattr(next_state, root)
         target[parts[1]] = proposal.new_value
     elif root in _LIST_PATHS:
         setattr(next_state, root, list(proposal.new_value))
     return next_state
+
+
+def _apply_attitudes_patch(
+    state: NarrativeState,
+    parts: list[str],
+    new_value: Any,
+) -> NarrativeState:
+    npc_id = parts[1]
+    bucket = state.npc_attitudes.setdefault(npc_id, {})
+    if len(parts) == 2:
+        # Mass-broadcast alias: update wildcard + every per-player slot atomically.
+        bucket[_WILDCARD_PLAYER_ID] = new_value
+        for player_id in list(bucket.keys()):
+            if player_id != _WILDCARD_PLAYER_ID:
+                bucket[player_id] = new_value
+    else:
+        # Per-player (or wildcard-bucket) direct hit.
+        player_id = parts[2]
+        bucket[player_id] = new_value
+    return state
 
 
 def validate_and_apply_patches(
@@ -158,11 +189,26 @@ def _validate_new_value(path: str, value: Any) -> str | None:
 def _get_path_value(state: NarrativeState, path: str) -> Any:
     parts = _parts(path)
     root = parts[0]
+    if root == _ATTITUDES_PATH:
+        return _get_attitudes_value(state, parts)
     if root in _MAP_PATHS:
         return getattr(state, root).get(parts[1])
     if root in _LIST_PATHS:
         return list(getattr(state, root))
     return None
+
+
+def _get_attitudes_value(state: NarrativeState, parts: list[str]) -> Any:
+    npc_id = parts[1]
+    bucket = state.npc_attitudes.get(npc_id, {})
+    if len(parts) == 2:
+        # 2-segment path reads the wildcard bucket (mass-broadcast alias).
+        return bucket.get(_WILDCARD_PLAYER_ID, "")
+    # 3-segment path: per-player slot with wildcard fallback.
+    player_id = parts[2]
+    if player_id in bucket:
+        return bucket[player_id]
+    return bucket.get(_WILDCARD_PLAYER_ID, "")
 
 
 def _root(path: str) -> str:

@@ -1,7 +1,6 @@
 """Tests for KTSL-specific RuntimeEvent types."""
 from __future__ import annotations
 
-import pytest
 from scenario.runtime.contracts import RuntimeEvent
 
 

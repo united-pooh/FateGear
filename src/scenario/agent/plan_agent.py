@@ -22,11 +22,12 @@ from ..context import NarrativeContextLayer
 from .base import AgentOutputError, BaseAgent
 from .config import (
     AgentSettings,
-    build_openai_client,
+    build_model_client,
     detect_provider_kind,
     load_agent_settings,
     select_provider_for_model,
 )
+from .model_client import ModelMessage, ModelRequest
 from .models import AgentPlanPrompt, KeeperAgentPlan
 
 logger = logging.getLogger(__name__)
@@ -342,6 +343,21 @@ def _normalize_plan_payload(data: object) -> object:
                 effect,
             )
         normalized["proposed_effects"] = retained_effects
+
+    proposed_checks = normalized.get("proposed_checks")
+    if isinstance(proposed_checks, list):
+        retained_checks: list[object] = []
+        for check in proposed_checks:
+            if not isinstance(check, dict):
+                continue
+            if all(check.get(key) for key in ("player_id", "action_id", "skill_key")):
+                retained_checks.append(check)
+                continue
+            logger.info(
+                "KeeperPlanAgent: 丢弃缺少 player_id/action_id/skill_key 的 proposed_check=%r。",
+                check,
+            )
+        normalized["proposed_checks"] = retained_checks
     return normalized
 
 
@@ -379,6 +395,7 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
         *,
         model_id: str | None = None,
         openai_client: Any = None,  # openai.AsyncOpenAI
+        model_client: Any = None,
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
@@ -392,8 +409,14 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
             model_id=self._model_id,
             default_provider=settings.planner_provider,
             deepseek_provider=settings.deepseek_provider,
+            anthropic_provider=settings.anthropic_provider,
         )
-        self._client = openai_client or build_openai_client(provider)
+        self._model_client = model_client or build_model_client(
+            provider,
+            model_id=self._model_id,
+            openai_client=openai_client,
+        )
+        self._client = getattr(self._model_client, "raw_client", self._model_client)
         self._temperature = (
             planner_config.temperature if temperature is None else temperature
         )
@@ -405,9 +428,12 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
             else timeout_seconds
         )
         self._deepseek_thinking = settings.deepseek_thinking
-        self._provider_kind = detect_provider_kind(
-            model_id=self._model_id,
-            client=self._client,
+        self._provider_kind = str(
+            getattr(
+                self._model_client,
+                "provider_kind",
+                detect_provider_kind(model_id=self._model_id, client=provider),
+            )
         )
 
     # ------------------------------------------------------------------
@@ -416,9 +442,9 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
 
     async def _call_llm(self, prompt: AgentPlanPrompt) -> str:
         """向 OpenAI 发起 structured output 调用，返回 JSON 字符串。"""
-        if self._client is None:
+        if self._model_client is None:
             logger.info(
-                "KeeperPlanAgent: openai_client 未配置，跳过 LLM 调用（降级模式）。"
+                "KeeperPlanAgent: model_client 未配置，跳过 LLM 调用（降级模式）。"
             )
             return ""
 
@@ -439,6 +465,22 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
                 ]
             )
             response_format = {"type": "json_object"}
+        elif self._provider_kind == "anthropic":
+            system_msg = "\n\n".join(
+                [
+                    system_msg,
+                    _DEEPSEEK_PLAN_JSON_EXAMPLE,
+                ]
+            )
+            user_msg = "\n\n".join(
+                [
+                    user_msg,
+                    "再次提醒：请只返回合法的 json object，不要输出 markdown 或额外解释。",
+                ]
+            )
+            response_format = {"type": "json_object"}
+        elif self._provider_kind == "json_object_only":
+            response_format = {"type": "json_object"}
         else:
             response_format = {
                 "type": "json_schema",
@@ -449,43 +491,46 @@ class KeeperPlanAgent(BaseAgent[AgentPlanPrompt, KeeperAgentPlan]):
                 },
             }
 
-        request_kwargs: dict[str, object] = {
-            "model": self._model_id,
-            "temperature": self._temperature,
-            "messages": [
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-            "response_format": response_format,
-            "presence_penalty": 1.0,  # 鼓励模型输出与上下文不同的内容
-        }
+        max_tokens: int | None = None
+        extra_body: dict[str, object] | None = None
         if self._top_p is not None:
-            request_kwargs["top_p"] = self._top_p
+            top_p = self._top_p
+        else:
+            top_p = None
         if self._top_k is not None:
             logger.debug(
                 "KeeperPlanAgent 配置了 top_k=%s，但当前 OpenAI Chat Completions 调用不会使用该参数。",
                 self._top_k,
             )
         if self._provider_kind == "deepseek":
-            request_kwargs["max_tokens"] = 1200
-            request_kwargs["extra_body"] = {
+            max_tokens = 1200
+            extra_body = {
                 "thinking": {"type": self._deepseek_thinking}
             }
+        elif self._provider_kind in {"json_object_only", "anthropic"}:
+            max_tokens = 1200
 
-        # OpenAI structured outputs（response_format）
-        response = await self._client.chat.completions.create(**request_kwargs)
+        response = await self._model_client.complete(
+            ModelRequest(
+                model=self._model_id,
+                temperature=self._temperature,
+                top_p=top_p,
+                max_tokens=max_tokens,
+                messages=[
+                    ModelMessage(role="system", content=system_msg),
+                    ModelMessage(role="user", content=user_msg),
+                ],
+                response_format=response_format,
+                presence_penalty=1.0,
+                extra_body=extra_body,
+            )
+        )
 
-        raw_content: str = response.choices[0].message.content or ""
-
-        # 记录 token 用量（留给 _on_call_end 使用；此处存入临时属性）
-        usage = getattr(response, "usage", None)
-        if usage is not None:
-            self._last_usage = {
-                "input_tokens": getattr(usage, "prompt_tokens", 0),
-                "output_tokens": getattr(usage, "completion_tokens", 0),
-            }
-
-        return raw_content
+        self._last_usage = {
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        }
+        return response.text
 
     def _parse_output(self, raw: str) -> KeeperAgentPlan:
         """将 JSON 字符串解析为 KeeperAgentPlan。"""

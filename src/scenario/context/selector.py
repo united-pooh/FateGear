@@ -31,6 +31,7 @@ class NarrativeContextSelector:
         recent_events: Sequence[object] | None = None,
         pending_intents: Mapping[str, Mapping[str, object]] | None = None,
         include_keeper: bool = True,
+        include_players: list[str] | None = None,
     ) -> NarrativeContextLayer:
         context = module.narrative_context
         stage_id = session.story_state.current_stage_id
@@ -50,11 +51,23 @@ class NarrativeContextSelector:
         skipped: dict[str, str] = {}
         selected_npcs = self._select_npcs(
             module=module,
+            session=session,
             scene_id=scene_id,
             stage_id=stage_id,
             include_keeper=include_keeper,
             skipped=skipped,
         )
+        if include_players is not None:
+            selected_npcs = [
+                npc for npc in selected_npcs
+                if self._npc_visible_to_players(
+                    npc_id=npc.npc_id,
+                    session=session,
+                    include_players=include_players,
+                    skipped=skipped,
+                    key=f"npc:{npc.npc_id}",
+                )
+            ]
         selected_lore = self._select_lore(
             module=module,
             scene_id=scene_id,
@@ -117,6 +130,7 @@ class NarrativeContextSelector:
         self,
         *,
         module: ModuleDefinition,
+        session: SessionMapState,
         scene_id: str,
         stage_id: str,
         include_keeper: bool,
@@ -127,15 +141,31 @@ class NarrativeContextSelector:
             if npc.visibility == "keeper" and not include_keeper:
                 skipped[f"npc:{npc.id}"] = "keeper_only"
                 continue
-            reason = self._npc_activation_reason(
-                scene_ids=npc.active_scene_ids,
-                stage_ids=npc.active_stage_ids,
-                scene_id=scene_id,
-                stage_id=stage_id,
+
+            npc_session = session.npc_states.get(npc.id)
+            authoritative_scene_id = (
+                npc_session.current_scene_id if npc_session is not None else ""
             )
-            if reason is None:
-                skipped[f"npc:{npc.id}"] = "scope_not_matched"
-                continue
+
+            if authoritative_scene_id:
+                # Authoritative placement branch — NPC is pinned to a concrete scene
+                # by the session runtime. Only select when it matches the requested scene.
+                if authoritative_scene_id != scene_id:
+                    skipped[f"npc:{npc.id}"] = "authoritative_out_of_scope"
+                    continue
+                reason = "authoritative_scene_placement"
+            else:
+                # Fallback to static module activation rules
+                reason = self._npc_activation_reason(
+                    scene_ids=npc.active_scene_ids,
+                    stage_ids=npc.active_stage_ids,
+                    scene_id=scene_id,
+                    stage_id=stage_id,
+                )
+                if reason is None:
+                    skipped[f"npc:{npc.id}"] = "scope_not_matched"
+                    continue
+
             selected.append(
                 SelectedNPCContext(
                     npc_id=npc.id,
@@ -152,6 +182,33 @@ class NarrativeContextSelector:
                 )
             )
         return selected
+
+    @staticmethod
+    def _npc_visible_to_players(
+        *,
+        npc_id: str,
+        session: SessionMapState,
+        include_players: list[str],
+        skipped: dict[str, str],
+        key: str,
+    ) -> bool:
+        """Per-player visibility filter.
+
+        When an authoritative visible_to_player_ids set is non-empty, select per-player.
+        When there is no per-player data (no session entry / empty set), be permissive
+        and include the NPC so backward-compatible behaviour is preserved.
+        """
+        npc_session = session.npc_states.get(npc_id)
+        if npc_session is None:
+            return True
+        visible_to = npc_session.visible_to_player_ids
+        if not visible_to:
+            return True
+        for player_id in include_players:
+            if player_id in visible_to:
+                return True
+        skipped[key] = "player_visibility_filtered"
+        return False
 
     def _npc_activation_reason(
         self,

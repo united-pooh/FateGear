@@ -40,9 +40,12 @@ class NarrativeState(BaseModel):
         default_factory=dict,
         description="Public mood/tone notes keyed by scene id.",
     )
-    npc_attitudes: dict[str, str] = Field(
+    npc_attitudes: dict[str, dict[str, str]] = Field(
         default_factory=dict,
-        description="Public NPC attitude notes keyed by NPC id.",
+        description=(
+            "Public NPC attitude notes keyed by NPC id, then by player id. "
+            'The default bucket uses player_id="*" for backward compatibility.'
+        ),
     )
     clue_emphasis: dict[str, str] = Field(
         default_factory=dict,

@@ -1,9 +1,0 @@
-{
-  "agent": "Copernicus docs worker via orchestrator",
-  "file": "docs/codex/plans/2026-06-06-narration-memory-persistence-and-graph.md",
-  "changes": [
-    "Marked completed validation/QA checklist items as checked.",
-    "Left final-assessment unchecked until active goal time reaches at least two hours.",
-    "Recorded full scene online 429 quota caveat."
-  ]
-}

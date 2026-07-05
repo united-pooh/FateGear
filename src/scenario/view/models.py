@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from ..clues import ClueRouteCoverage, KeeperClueView, PlayerClueView
+
 
 class PlayerActionView(BaseModel):
     action_id: str
@@ -62,6 +64,7 @@ class PlayerTurnView(BaseModel):
     resolved_ending: str | None = None
     scenes: list[PlayerSceneNarrationView] = Field(default_factory=list)
     dice_rolls: list[Any] = Field(default_factory=list)
+    clues: list[PlayerClueView] = Field(default_factory=list)
 
 
 class KeeperTurnView(BaseModel):
@@ -73,6 +76,9 @@ class KeeperTurnView(BaseModel):
     scenes: list[KeeperSceneNarrationView] = Field(default_factory=list)
     event_log: list[Any] = Field(default_factory=list)
     dice_rolls: list[Any] = Field(default_factory=list)
+    clues: list[KeeperClueView] = Field(default_factory=list)
+    route_coverage: dict[str, ClueRouteCoverage] = Field(default_factory=dict)
+    disconnected_route_ids: list[str] = Field(default_factory=list)
 
 
 class PlayerSessionView(BaseModel):
@@ -93,6 +99,7 @@ class PlayerSessionView(BaseModel):
     available_actions: list[PlayerActionView] = Field(default_factory=list)
     pending_intent_submitted: bool = False
     resolved_ending: str | None = None
+    clues: list[PlayerClueView] = Field(default_factory=list)
 
 
 class KeeperSessionView(BaseModel):
@@ -106,3 +113,6 @@ class KeeperSessionView(BaseModel):
     completed_actions: list[str] = Field(default_factory=list)
     pending_players: list[str] = Field(default_factory=list)
     resolved_ending: str | None = None
+    clues: list[KeeperClueView] = Field(default_factory=list)
+    route_coverage: dict[str, ClueRouteCoverage] = Field(default_factory=dict)
+    disconnected_route_ids: list[str] = Field(default_factory=list)

@@ -21,7 +21,6 @@ import argparse
 import cmd
 import json
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -32,14 +31,9 @@ from scenario.ktsl.fixtures import (
     list_ktsl_fixtures,
 )
 from scenario.ktsl.models import (
-    BarrierState,
-    CouplingState,
     KTSLFixture,
-    KnowledgeItem,
-    MetricSummary,
     RunMode,
     SessionConfig,
-    SessionSummary,
 )
 from scenario.publish_gate import PublishGate
 from scenario.report.html_renderer import HTMLRenderer
@@ -49,7 +43,6 @@ from scenario.report.session_reports import (
     CouplingStateView,
     EventSummary,
     KnowledgeItemView,
-    ModuleStaticCheck,
     PublishReport,
     PublishGateResult,
     SessionReport,
@@ -407,7 +400,6 @@ def _run_validate(fixture: KTSLFixture) -> ValidateReport:
                 )
 
     errors = [i for i in issues if i.level == "error"]
-    warnings = [i for i in issues if i.level == "warning"]
     is_valid = not errors
     return ValidateReport(
         fixture_id=fixture.id,
@@ -901,7 +893,6 @@ def cmd_replay(args: argparse.Namespace) -> int:
         print(f"[ERROR] State file not found: {state_path}", file=sys.stderr)
         return 2
 
-    from scenario.ktsl.fixtures import list_ktsl_fixtures
 
     # Peek fixture_id
     payload = json.loads(state_path.read_text(encoding="utf-8"))

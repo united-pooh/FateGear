@@ -7,6 +7,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Mapping
 from pathlib import Path
+from time import perf_counter
 from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
@@ -22,6 +23,7 @@ from ..agent.models import (
 from ..agent.plan_agent import KeeperPlanAgent
 from ..agent.prompt_builder import PromptBuilder
 from ..agent.render_agent import KeeperRenderAgent
+from ..clues import ROUTE_COVERING_STATES, ClueGraph, FailForwardPlan, ModuleClue
 from ..io.module_loader import MODULE_ROOT, load_module_by_id
 from ..module.models import ModuleAction, ModuleDefinition, ModuleScene
 from ..scene.models import SceneLink
@@ -54,7 +56,14 @@ from .contracts import (
     SceneIntent,
     TurnResolution,
 )
-from ..ktsl.stages import SubmitCheckStage
+from ..ktsl.models import KTSLLedger
+from ..ktsl.stages import (
+    AuditStage,
+    CouplingDriftStage,
+    FilterStage,
+    ScheduleGateStage,
+    SubmitCheckStage,
+)
 from .movement_risk import (
     OFF_MAP_DECAY_PER_SAFE_TURN,
     off_map_penalty_tier,
@@ -135,6 +144,45 @@ def _ktsl_check_submit(
         )
 
 
+def build_default_ktsl_stages() -> list[object]:
+    """Build the standard KTSL runtime stage chain."""
+    return [
+        ScheduleGateStage(),
+        FilterStage(),
+        CouplingDriftStage(),
+        AuditStage(),
+    ]
+
+
+def _serialize_ktsl_intervention(
+    intervention: object,
+    *,
+    stage: str,
+    scene_id: str,
+) -> dict[str, object]:
+    """Serialize a KTSL stage intervention for the per-turn decision bundle."""
+    if hasattr(intervention, "model_dump"):
+        payload = intervention.model_dump(  # type: ignore[attr-defined]
+            mode="json"
+        )
+    elif isinstance(intervention, dict):
+        payload = dict(intervention)
+    else:
+        payload = {
+            "actor": str(getattr(intervention, "actor", "")),
+            "reason_code": str(getattr(intervention, "reason_code", "")),
+            "reason": str(getattr(intervention, "reason", intervention)),
+            "kind": str(getattr(intervention, "kind", "info")),
+        }
+    payload.setdefault("actor", "")
+    payload.setdefault("reason_code", "")
+    payload.setdefault("reason", "")
+    payload.setdefault("kind", "info")
+    payload["stage"] = stage
+    payload["scene_id"] = scene_id
+    return payload
+
+
 if TYPE_CHECKING:
     from scenario.narration import KeeperNarrationRecord, NarrationPipeline
 
@@ -197,12 +245,18 @@ class SceneRuntime:
         """
         self._ktsl_stages = list(stages)
 
+    def register_default_ktsl_stages(self) -> None:
+        """Register the built-in Schedule/Filter/Coupling/Audit KTSL chain."""
+        self.register_ktsl_stages(build_default_ktsl_stages())
+
     def create_session(
         self,
         module_id: str,
         player_ids: list[str],
         *,
         player_cards: Mapping[str, InvestigatorCard],
+        enable_ktsl: bool = False,
+        ktsl_ledger: KTSLLedger | None = None,
     ) -> SessionMapState:
         """创建会话快照并初始化玩家、场景实例与时钟。"""
         if not player_ids:
@@ -223,6 +277,12 @@ class SceneRuntime:
             )
 
         module = self._load_module(module_id)
+        ledger = self._build_session_ktsl_ledger(
+            module,
+            enable_ktsl=enable_ktsl,
+            ktsl_ledger=ktsl_ledger,
+        )
+        clue_graph = self._build_session_clue_graph(module, ledger=ledger)
         session_id = uuid4().hex[:12]
         entry_scene_id = module.entry_scene_id
         player_states = {
@@ -245,12 +305,116 @@ class SceneRuntime:
             clock_values={clock.id: clock.start for clock in module.clocks},
             scene_instances=scene_instances,
             player_states=player_states,
+            ktsl_ledger=ledger,
+            clue_graph=clue_graph,
         )
+        if ledger is not None:
+            self._ensure_default_ktsl_stages()
         self._sessions[session_id] = session
         self._session_locks[session_id] = asyncio.Lock()
         self._init_npc_states(module, session, player_ids=player_ids)
         self._persist_session(session)
         return session
+
+    def _build_session_ktsl_ledger(
+        self,
+        module: ModuleDefinition,
+        *,
+        enable_ktsl: bool,
+        ktsl_ledger: KTSLLedger | None,
+    ) -> KTSLLedger | None:
+        """Return the ledger to attach to a new session, if KTSL is enabled."""
+        if ktsl_ledger is not None:
+            return ktsl_ledger.model_copy(deep=True)
+        if not enable_ktsl:
+            return None
+        if module.ktsl_spec is not None:
+            return KTSLLedger.from_module_spec(
+                module_id=module.module_id,
+                spec=module.ktsl_spec,
+            )
+        return KTSLLedger.empty(module_id=module.module_id)
+
+    def _build_session_clue_graph(
+        self,
+        module: ModuleDefinition,
+        *,
+        ledger: KTSLLedger | None,
+    ) -> ClueGraph | None:
+        """Build the smallest runtime clue graph available for a session.
+
+        Authored clue schemas are not yet part of ``ModuleDefinition``.  Until
+        then, KTSL info labels and action fail-forward hints are enough to give
+        runtime/view/KTSL one shared clue authorization surface.
+        """
+        clues: list[ModuleClue] = []
+        used_ids: set[str] = set()
+        module_scene_ids = {scene.id for scene in module.scenes}
+
+        if ledger is not None:
+            for info in sorted(ledger.info_labels.values(), key=lambda item: item.id):
+                scene_id = (
+                    info.scene_id
+                    if info.scene_id in module_scene_ids
+                    else module.entry_scene_id
+                )
+                clue_id = info.id
+                if clue_id in used_ids:
+                    clue_id = f"ktsl_{info.id}"[:80]
+                used_ids.add(clue_id)
+                clues.append(
+                    ModuleClue(
+                        id=clue_id,
+                        title=info.id,
+                        scene_id=scene_id,
+                        info_id=info.id,
+                        public_hint=info.public_payload or info.redaction,
+                        private_payload=info.payload,
+                        route_ids=[f"info:{info.id}"],
+                        output_info_ids=[info.id],
+                    )
+                )
+
+        core_route_ids: list[str] = []
+        for action in module.actions:
+            if not action.fail_forward_hint:
+                continue
+            clue_id = action.id
+            if clue_id in used_ids:
+                clue_id = f"action_{action.id}"[:80]
+            used_ids.add(clue_id)
+            output_info_ids = [
+                effect.flag
+                for effect in action.effects_on_success
+                if effect.type == "set_flag" and effect.flag
+            ]
+            clues.append(
+                ModuleClue(
+                    id=clue_id,
+                    title=action.name,
+                    scene_id=action.scene_id,
+                    info_id=action.id,
+                    public_hint=action.fail_forward_hint,
+                    route_ids=[action.id],
+                    fail_forward_hint=action.fail_forward_hint,
+                    fail_forward_route_ids=[action.id],
+                    output_info_ids=output_info_ids or [action.id],
+                )
+            )
+            core_route_ids.append(action.id)
+
+        if not clues:
+            return None
+        return ClueGraph(
+            module_id=module.module_id,
+            clues=clues,
+            core_route_ids=core_route_ids,
+        )
+
+    def _ensure_default_ktsl_stages(self) -> None:
+        """Install the standard stage chain when a KTSL session needs one."""
+        if not self._ktsl_stages:
+            self.register_default_ktsl_stages()
 
     # CoC 7e 人类角色八维特征默认值（均值 50）。
     _COC_DEFAULT_CHARACTERISTICS: tuple[str, ...] = (
@@ -466,6 +630,11 @@ class SceneRuntime:
                 f"会话 {session_id} 当前是第 {session.current_turn} 回合，"
                 f"不能提前结算第 {requested_turn} 回合"
             )
+        replay_resolution = self._turn_history.get(session_id, {}).get(requested_turn)
+        if replay_resolution is not None:
+            self._repair_session_from_replayed_turn(session, replay_resolution)
+            self._persist_session(session)
+            return replay_resolution.model_copy(deep=True)
         if (
             session.resolved_ending is not None
             or session.story_state.resolved_ending_id is not None
@@ -501,6 +670,8 @@ class SceneRuntime:
         ]
         dice_rolls: list[DiceRollAudit] = []
         agent_calls: list[AgentCallAudit] = []
+        ktsl_stage_trace: list[dict[str, object]] = []
+        ktsl_interventions: list[dict[str, object]] = []
 
         flag_sets: set[str] = set()
         flag_clears: set[str] = set()
@@ -551,16 +722,61 @@ class SceneRuntime:
             )
 
             # ----- KTSL stage pipeline (M3) -----
-            if self._ktsl_stages and snapshot.ktsl_ledger is not None:
+            if self._ktsl_stages and session.ktsl_ledger is not None:
                 from ..ktsl.stage_context import StageContext
 
-                ctx = StageContext(snapshot=snapshot, ledger=snapshot.ktsl_ledger, event_log=event_log)
+                ctx = StageContext(
+                    snapshot=snapshot,
+                    ledger=session.ktsl_ledger,
+                    event_log=event_log,
+                )
                 ctx.scene = scene_by_id.get(scene.id)
                 ctx.intents = list(intents)
                 for stage in self._ktsl_stages:
+                    stage_name = type(stage).__name__
+                    started_at = perf_counter()
                     result = stage.run(ctx)
+                    elapsed_ms = round((perf_counter() - started_at) * 1000, 3)
+                    serialized_interventions = [
+                        _serialize_ktsl_intervention(
+                            intervention,
+                            stage=stage_name,
+                            scene_id=scene.id,
+                        )
+                        for intervention in result.interventions
+                    ]
+                    ktsl_stage_trace.append(
+                        {
+                            "stage": stage_name,
+                            "scene_id": scene.id,
+                            "status": result.status,
+                            "ms": elapsed_ms,
+                            "player_ids": list(batch_player_ids),
+                            "intervention_count": len(serialized_interventions),
+                        }
+                    )
+                    ktsl_interventions.extend(serialized_interventions)
                     event_log.extend(result.to_events())
-                    if result.status == "blocked":
+                    for intervention_payload in serialized_interventions:
+                        event_log.append(
+                            RuntimeEvent(
+                                type="ktsl_intervention_issued",
+                                turn_no=snapshot.current_turn,
+                                scene_id=scene.id,
+                                scene_name=scene.name,
+                                player_id=str(intervention_payload.get("actor", "")),
+                                reason=str(intervention_payload.get("reason", "")),
+                                reason_code=str(
+                                    intervention_payload.get("reason_code", "")
+                                ),
+                                message=(
+                                    f"KTSL {stage_name} "
+                                    f"{intervention_payload.get('kind', 'info')}: "
+                                    f"{intervention_payload.get('reason', '')}"
+                                ),
+                            )
+                        )
+                    if result.status in {"blocked", "wait"}:
                         ctx.mark_blocked(result.interventions)
                         break
                 ctx.commit_scratch_to_ledger()
@@ -1026,6 +1242,17 @@ class SceneRuntime:
 
                 if not check_passed:
                     current_scene_name = scene_by_id[player_state.current_scene_id].name
+                    fail_forward_effects = (
+                        self._apply_fail_forward_for_failed_action(
+                            session=session,
+                            action=action,
+                            player_id=player_id,
+                            turn_no=snapshot.current_turn,
+                            scene_name=current_scene_name,
+                            event_log=event_log,
+                        )
+                    )
+                    failure_effects.extend(fail_forward_effects)
                     event_log.append(
                         RuntimeEvent(
                             type="action_resolved",
@@ -1058,6 +1285,11 @@ class SceneRuntime:
                     )
                     continue
 
+                self._mark_action_clue_discovered(
+                    session=session,
+                    action=action,
+                    turn_no=snapshot.current_turn,
+                )
                 scene_events.add(action.scene_id)
                 completed_actions.add(action.id)
                 scene_action_history[action.scene_id].add(action.id)
@@ -1221,6 +1453,7 @@ class SceneRuntime:
             transitions=module.story_transitions,
             signals=story_signals,
             flags=set(session.global_flags),
+            covered_clue_ids=self._covered_clue_ids(session),
         )
 
         new_stage: str | None = None
@@ -1401,15 +1634,12 @@ class SceneRuntime:
                 "info_count": len(ledger.info_labels),
                 "override_count": len(ledger.overrides),
             }
-            stage_trace = [
-                {"stage": type(s).__name__, "status": "continue", "ms": 0.0}
-                for s in self._ktsl_stages
-            ]
+            stage_trace = [dict(entry) for entry in ktsl_stage_trace]
             KTSLLogWriter.write_turn(
                 base_dir=KTSLLogWriter.log_dir(session_id),
                 turn_no=snapshot.current_turn,
                 stage_trace=stage_trace,
-                interventions=[],
+                interventions=ktsl_interventions,
                 ledger_snapshot=ledger.snapshot(),
                 audit_snapshot=audit_summary,
             )
@@ -1853,6 +2083,11 @@ class SceneRuntime:
             self._turn_history[session_id].update(
                 self._state_store.load_turns(session_id)
             )
+        if any(
+            session.ktsl_ledger is not None
+            for session in self._sessions.values()
+        ):
+            self._ensure_default_ktsl_stages()
 
     def _persist_session(self, session: SessionMapState) -> None:
         """保存最新权威会话快照。"""
@@ -1865,6 +2100,69 @@ class SceneRuntime:
         if self._state_store is None:
             return
         self._state_store.save_turn(resolution)
+
+    def _repair_session_from_replayed_turn(
+        self,
+        session: SessionMapState,
+        resolution: TurnResolution,
+    ) -> None:
+        """Fast-forward a stale session using an already persisted turn.
+
+        This handles the crash window where ``save_turn`` succeeded but the
+        following ``save_session`` did not.  The TurnResolution is the
+        authoritative record for replay, so only fields derivable from it are
+        repaired here before the session snapshot is saved again.
+        """
+        logger.warning(
+            "修复已落盘回合但会话未推进的不一致状态：session=%s turn=%s next=%s",
+            session.session_id,
+            resolution.turn_no,
+            resolution.next_turn,
+        )
+        session.pending_intents = {}
+        session.current_turn = resolution.next_turn
+        if resolution.clock_values:
+            session.clock_values = dict(resolution.clock_values)
+        session.triggered_clock_events.update(resolution.triggered_clock_events)
+        if resolution.current_stage_id:
+            session.story_state.current_stage_id = resolution.current_stage_id
+        if resolution.applied_story_transition_id is not None:
+            session.story_state.stage_entered_turn = resolution.next_turn
+        if resolution.resolved_ending is not None:
+            session.resolved_ending = resolution.resolved_ending
+            session.story_state.resolved_ending_id = resolution.resolved_ending
+
+        for event in resolution.event_log:
+            if event.type == "movement_committed" and event.player_id:
+                player_state = session.player_states.get(event.player_id)
+                if player_state is not None and event.to_scene_id:
+                    player_state.last_scene_id = (
+                        event.from_scene_id or player_state.current_scene_id
+                    )
+                    player_state.current_scene_id = event.to_scene_id
+            elif event.type == "flags_changed":
+                session.global_flags.update(event.added_flags)
+                session.global_flags.difference_update(event.removed_flags)
+
+        module = self._load_module(session.module_id)
+        action_by_id = module.action_map()
+        for batch in resolution.scene_batches:
+            for outcome in batch.outcomes:
+                if outcome.intent_type != "action" or not outcome.success:
+                    continue
+                action_id = outcome.action_id
+                if not action_id:
+                    continue
+                session.completed_actions.add(action_id)
+                action = action_by_id.get(action_id)
+                scene_id = action.scene_id if action is not None else outcome.scene_id
+                scene_state = session.scene_instances.get(scene_id)
+                if scene_state is None:
+                    continue
+                scene_state.has_event_occurred = True
+                scene_state.completed_action_ids.add(action_id)
+                if action is not None and action.marks_scene_cleared:
+                    scene_state.is_cleared = True
 
     def _resolve_runtime_freeform_risk(
         self,
@@ -2571,6 +2869,135 @@ class SceneRuntime:
                 )
             )
         return clues
+
+    def _action_clue_id(
+        self,
+        *,
+        graph: ClueGraph,
+        action: ModuleAction,
+    ) -> str:
+        clue_ids = {clue.id for clue in graph.clues}
+        if action.id in clue_ids:
+            return action.id
+        fallback = f"action_{action.id}"[:80]
+        if fallback in clue_ids:
+            return fallback
+        return ""
+
+    def _covered_clue_ids(self, session: SessionMapState) -> set[str] | None:
+        if session.clue_graph is None:
+            return None
+        return {
+            clue.id
+            for clue in session.clue_graph.clues
+            if session.session_clues.state_for(clue.id) in ROUTE_COVERING_STATES
+        }
+
+    def _mark_action_clue_discovered(
+        self,
+        *,
+        session: SessionMapState,
+        action: ModuleAction,
+        turn_no: int,
+    ) -> None:
+        graph = session.clue_graph
+        if graph is None:
+            return
+        clue_id = self._action_clue_id(graph=graph, action=action)
+        if not clue_id:
+            return
+        session.session_clues.mark(clue_id, "discovered", turn=turn_no)
+
+    def _apply_fail_forward_for_failed_action(
+        self,
+        *,
+        session: SessionMapState,
+        action: ModuleAction,
+        player_id: str,
+        turn_no: int,
+        scene_name: str,
+        event_log: list[RuntimeEvent],
+    ) -> list[str]:
+        if not action.fail_forward_hint or session.clue_graph is None:
+            return []
+        clue_id = self._action_clue_id(graph=session.clue_graph, action=action)
+        if not clue_id:
+            return []
+
+        plan = session.clue_graph.plan_fail_forward_delivery(
+            session.session_clues,
+            clue_id,
+        )
+        session.session_clues = session.session_clues.apply_fail_forward_plan(
+            plan,
+            turn=turn_no,
+        )
+        self._append_fail_forward_events(
+            plan=plan,
+            action=action,
+            player_id=player_id,
+            turn_no=turn_no,
+            scene_name=scene_name,
+            event_log=event_log,
+        )
+        return [f"fail_forward_clue:{delivery.clue_id}" for delivery in plan.deliveries]
+
+    def _append_fail_forward_events(
+        self,
+        *,
+        plan: FailForwardPlan,
+        action: ModuleAction,
+        player_id: str,
+        turn_no: int,
+        scene_name: str,
+        event_log: list[RuntimeEvent],
+    ) -> None:
+        if not plan.deliveries:
+            event_log.append(
+                RuntimeEvent(
+                    type="clue_fail_forward_delivered",
+                    turn_no=turn_no,
+                    player_id=player_id,
+                    scene_id=action.scene_id,
+                    scene_name=scene_name,
+                    action_id=action.id,
+                    action_name=action.name,
+                    clue_id=plan.missed_clue_id,
+                    success=False,
+                    reason="No fail-forward clue delivery was available.",
+                    reason_code="clue_graph_unresolved_route",
+                    route_ids=list(plan.unresolved_core_route_ids),
+                    message=(
+                        f"ClueGraph fail-forward 未能补偿动作「{action.name}」"
+                        f"失败后的核心路线：{plan.unresolved_core_route_ids}"
+                    ),
+                )
+            )
+            return
+
+        for delivery in plan.deliveries:
+            event_log.append(
+                RuntimeEvent(
+                    type="clue_fail_forward_delivered",
+                    turn_no=turn_no,
+                    player_id=player_id,
+                    scene_id=action.scene_id,
+                    scene_name=scene_name,
+                    action_id=action.id,
+                    action_name=action.name,
+                    clue_id=delivery.clue_id,
+                    info_id=delivery.info_id,
+                    route_ids=list(delivery.route_ids),
+                    success=True,
+                    reason=delivery.reason,
+                    reason_code=delivery.via,
+                    message=(
+                        f"ClueGraph fail-forward：动作「{action.name}」失败，"
+                        f"投递低精度线索 {delivery.clue_id} "
+                        f"以保持核心路线可达。"
+                    ),
+                )
+            )
 
     def _build_agent_call_audit(
         self,

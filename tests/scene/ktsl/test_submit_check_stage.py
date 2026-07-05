@@ -1,7 +1,6 @@
 """Tests for SubmitCheckStage — M2 intent pre-submission validation."""
 from __future__ import annotations
 
-import pytest
 
 from scenario.ktsl.models import InfoLabel
 from scenario.ktsl.stages import SubmitCheckResult, SubmitCheckStage, SubmitIntervention

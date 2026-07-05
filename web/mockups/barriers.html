@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KTSL Barriers — Suprematist</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#FFF8F0;--paper:#FEF3C7;--sand:#F5E6D3;--primary:#E85D3A;--amber:#F59E0B;--gold:#FBBF24;--indigo:#1E3A5F;--forest:#2D6A4F;--brick:#DC2626;--ink:#292524;--muted:#78716C;--line:#D6C4A8}
+body{font-family:'Arial Black','Helvetica Neue',sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+body::before{content:'';position:fixed;top:40vh;right:100px;width:100px;height:100px;background:var(--indigo);opacity:.06;transform:rotate(45deg);z-index:0;pointer-events:none}
+.sidebar{position:fixed;top:0;left:0;width:64px;height:100vh;background:var(--indigo);z-index:100;display:flex;flex-direction:column;align-items:center;padding-top:20px;gap:4px}
+.sb-logo{width:40px;height:40px;background:var(--amber);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:var(--indigo);margin-bottom:24px}
+.sb-icon{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:18px;color:rgba(255,255,255,.6);cursor:pointer;position:relative}
+.sb-icon:hover,.sb-icon.active{color:var(--amber);background:rgba(255,255,255,.08)}
+.sb-icon.active::before{content:'';position:absolute;left:0;top:8px;width:3px;height:28px;background:var(--amber)}
+
+main{margin-left:64px;flex:1;padding:36px 40px 60px;position:relative;z-index:1}
+h1{font-size:22px;font-weight:900;margin-bottom:6px}
+.subtitle{font-family:sans-serif;font-size:11px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:28px}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.col-header{font-size:10px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:var(--muted);margin-bottom:16px;padding-left:16px;position:relative}
+.col-header::before{content:'';position:absolute;left:0;top:50%;width:8px;height:8px;background:var(--primary);transform:translateY(-50%) rotate(45deg)}
+
+.card{border:2px solid var(--line);background:#FFF;margin-bottom:12px;position:relative}
+.card-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:2px solid var(--line)}
+.card-name{font-weight:900;font-size:13px;letter-spacing:.5px}
+.card-name .card-id{font-family:monospace;color:var(--indigo);font-weight:900;margin-right:6px}
+.status-badge{font-family:sans-serif;font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 10px;border:2px solid}
+.sat{background:var(--forest);color:#FFF;border-color:#1a4a35}
+.wait{background:var(--gold);color:var(--ink);border-color:#B45309}
+.block{background:var(--brick);color:#FFF;border-color:#991b1b}
+.lock{background:var(--sand);color:var(--muted);border-color:var(--line)}
+
+.card-body{padding:14px 18px}
+.cond-row{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:12px;border-bottom:1px solid var(--sand)}
+.cond-row:last-child{border-bottom:none}
+.cond-icon{font-size:14px;width:24px;text-align:center;flex-shrink:0}
+.cond-text{flex:1;font-family:sans-serif}
+.cond-status{font-weight:700;font-size:10px;letter-spacing:.5px}
+.ok-c{color:var(--forest)}.no-c{color:var(--brick)}
+
+.progress-track{height:4px;background:var(--sand);position:relative;overflow:hidden}
+.progress-fill{height:100%;background:var(--forest)}
+.progress-fill.half{background:var(--gold)}
+
+.scene-flow{display:flex;align-items:center;gap:4px;font-size:11px;margin-top:8px;font-family:monospace}
+.scene-node{border:1.5px solid var(--line);padding:2px 8px;background:var(--paper)}
+.scene-node.active{border-color:var(--forest);background:var(--forest);color:#FFF;font-weight:700}
+.scene-arrow{color:var(--muted);font-size:14px}
+
+/* Coupling specific */
+.coupling-score{font-family:monospace;font-size:24px;font-weight:900;line-height:1}
+.score-high{color:var(--primary)}.score-med{color:var(--amber)}.score-low{color:var(--forest)}
+.drift-bar{display:flex;align-items:center;gap:8px;margin-top:6px}
+.drift-bar .track{flex:1;height:6px;background:var(--sand);position:relative}
+.drift-bar .fill{height:100%}
+.drift-bar .label{font-family:monospace;font-size:10px;color:var(--muted)}
+
+.mode-tag{display:inline-block;font-family:sans-serif;font-size:9px;font-weight:700;letter-spacing:1px;border:1.5px solid var(--line);padding:1px 6px;margin-left:6px;color:var(--muted);vertical-align:middle}
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="sb-logo">K</div>
+  <div class="sb-icon">▦</div>
+  <div class="sb-icon">▶</div>
+  <div class="sb-icon">≡</div>
+  <div class="sb-icon">⊞</div>
+  <div class="sb-icon active">⊟</div>
+  <div class="sb-icon">◈</div>
+  <div class="sb-icon" style="margin-top:auto;margin-bottom:20px">⚙</div>
+</nav>
+
+<main>
+  <h1>Barriers & Couplings</h1>
+  <div class="subtitle">Runtime State · Session SESS-2026-07-04-A1F3</div>
+
+  <div class="two-col">
+    <!-- LEFT: Barriers -->
+    <div>
+      <div class="col-header">Barriers (3)</div>
+
+      <!-- B1: SATISFIED -->
+      <div class="card" style="border-color:var(--forest)">
+        <div class="card-header">
+          <span class="card-name"><span class="card-id">B1</span>hospital_records → street</span>
+          <span class="status-badge sat">SATISFIED ✓</span>
+        </div>
+        <div class="card-body">
+          <div class="cond-row"><span class="cond-icon">●</span><span class="cond-text">event #S001 "#E001 committed"</span><span class="cond-status ok-c">✓</span></div>
+          <div class="cond-row"><span class="cond-icon">●</span><span class="cond-text">event #S004 "#E004 committed"</span><span class="cond-status ok-c">✓</span></div>
+          <div style="margin-top:8px"><div class="progress-track"><div class="progress-fill" style="width:100%"></div></div></div>
+          <div class="scene-flow"><span class="scene-node">hospital_records</span><span class="scene-arrow">→</span><span class="scene-node active">street</span></div>
+        </div>
+      </div>
+
+      <!-- B2: WAITING -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-name"><span class="card-id">B2</span>street → old_house</span>
+          <span class="status-badge wait">WAITING</span>
+        </div>
+        <div class="card-body">
+          <div class="cond-row"><span class="cond-icon">○</span><span class="cond-text">event #E008 "李进入老宅"</span><span class="cond-status no-c">missing</span></div>
+          <div style="margin-top:8px"><div class="progress-track"><div class="progress-fill half" style="width:0%"></div></div></div>
+          <div class="scene-flow"><span class="scene-node active">street</span><span class="scene-arrow">→</span><span class="scene-node">old_house</span></div>
+        </div>
+      </div>
+
+      <!-- B3: WAITING (info-based) -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-name"><span class="card-id">B3</span>hospital_wing → old_house</span>
+          <span class="status-badge block">LOCKED</span>
+        </div>
+        <div class="card-body">
+          <div class="cond-row"><span class="cond-icon">○</span><span class="cond-text">info_07 "档案记录" committed</span><span class="cond-status no-c">missing info</span></div>
+          <div style="margin-top:8px"><div class="progress-track"><div class="progress-fill" style="width:0%;background:var(--brick)"></div></div></div>
+          <div class="scene-flow"><span class="scene-node">hospital_wing</span><span class="scene-arrow">→</span><span class="scene-node">old_house</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Couplings -->
+    <div>
+      <div class="col-header">Couplings (3)</div>
+
+      <!-- C1: ACTIVE high -->
+      <div class="card" style="border-color:var(--line)">
+        <div class="card-header">
+          <span class="card-name"><span class="card-id">C1</span>hospital ↔ street</span>
+          <span class="mode-tag">LINKED</span>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
+            <div class="coupling-score score-high">0.85</div>
+            <div>
+              <div style="font-size:11px;font-weight:700;margin-bottom:4px">High coupling</div>
+              <div style="font-family:sans-serif;font-size:10px;color:var(--muted)">Shared chars: 佐藤, 李</div>
+            </div>
+          </div>
+          <div class="drift-bar">
+            <span style="font-family:monospace;font-size:10px;color:var(--muted)">drift</span>
+            <div class="track"><div class="fill" style="width:33%;background:var(--gold)"></div></div>
+            <span style="font-family:monospace;font-size:11px;font-weight:700;color:#B45309">+5 min</span>
+          </div>
+          <div style="font-family:sans-serif;font-size:10px;color:var(--forest);margin-top:4px">✓ Within threshold (15min)</div>
+        </div>
+      </div>
+
+      <!-- C2: LOCKED -->
+      <div class="card" style="border-color:var(--line)">
+        <div class="card-header">
+          <span class="card-name"><span class="card-id">C2</span>street → old_house</span>
+          <span class="mode-tag">LOOSE</span>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
+            <div class="coupling-score score-low">0.40</div>
+            <div>
+              <div style="font-size:11px;font-weight:700;margin-bottom:4px">Low coupling</div>
+              <div style="font-family:sans-serif;font-size:10px;color:var(--muted)">Barrier B2 not met</div>
+            </div>
+          </div>
+          <div class="drift-bar">
+            <span style="font-family:monospace;font-size:10px;color:var(--muted)">drift</span>
+            <div class="track"><div class="fill" style="width:0%;background:var(--sand)"></div></div>
+            <span style="font-family:monospace;font-size:11px;color:var(--muted)">0 min</span>
+          </div>
+          <div style="font-family:sans-serif;font-size:10px;color:var(--muted);margin-top:4px">🔒 Locked until B2 satisfied</div>
+        </div>
+      </div>
+
+      <!-- C3: INDEPENDENT -->
+      <div class="card" style="border-color:var(--line);opacity:.6">
+        <div class="card-header">
+          <span class="card-name"><span class="card-id">C3</span>hospital_wing → hospital_records</span>
+          <span class="mode-tag">INDEPENDENT</span>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
+            <div class="coupling-score score-low">0.10</div>
+            <div>
+              <div style="font-size:11px;font-weight:700;margin-bottom:4px">Independent</div>
+              <div style="font-family:sans-serif;font-size:10px;color:var(--muted)">No active linkage</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

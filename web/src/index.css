@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #FFF8F0;
+  --paper: #FEF3C7;
+  --sand: #F5E6D3;
+  --primary: #E85D3A;
+  --amber: #F59E0B;
+  --gold: #FBBF24;
+  --indigo: #1E3A5F;
+  --forest: #2D6A4F;
+  --brick: #DC2626;
+  --ink: #292524;
+  --muted: #78716C;
+  --line: #D6C4A8;
+}
+
+body {
+  margin: 0;
+  font-family: 'Arial Black', 'Helvetica Neue', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* Suprematist floating accent shapes */
+.suprematist-accent::before {
+  content: '';
+  position: fixed;
+  top: -120px;
+  right: -80px;
+  width: 400px;
+  height: 400px;
+  background: var(--amber);
+  opacity: .18;
+  transform: rotate(18deg);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.suprematist-accent::after {
+  content: '';
+  position: fixed;
+  bottom: -60px;
+  left: 64px;
+  width: 260px;
+  height: 320px;
+  background: var(--primary);
+  opacity: .10;
+  transform: rotate(-12deg);
+  z-index: 0;
+  pointer-events: none;
+}

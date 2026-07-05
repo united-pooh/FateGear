@@ -304,3 +304,179 @@ def test_generic_mvp_runtime_online_agents_happy_path() -> None:
     assert all(batch.narration is not None for batch in narrated_batches)
     assert all(batch.narration.is_fallback is False for batch in narrated_batches)
     assert all(batch.narration.public_narration.strip() for batch in narrated_batches)
+
+
+# ---------------------------------------------------------------------------
+# GROUP-9 · TASK-015 / TASK-016 — NPC patch + A-phase producer-gate tests
+# ---------------------------------------------------------------------------
+
+
+def test_npc_patches_commit_atomic() -> None:
+    """TASK-015: accepted patch applies atomically to session.npc_states."""
+    from scenario.npc_patches import (
+        NPCStatePatchProposal,
+        apply_npc_patches,
+        validate_npc_patch,
+    )
+    from scenario.session.state import NPCSessionState, SessionMapState
+
+    def _story_stub():
+        from scenario.story.models import StoryState
+
+        return StoryState(current_stage_id="entry")
+
+    npc_id = "npc_alpha"
+    session = SessionMapState(
+        session_id="sess_atomic",
+        module_id="mod_x",
+        current_turn=3,
+        story_state=_story_stub(),
+        npc_states={
+            npc_id: NPCSessionState(
+                npc_id=npc_id,
+                module_id="mod_x",
+                current_scene_id="car_4",
+            )
+        },
+    )
+
+    proposal = NPCStatePatchProposal(
+        npc_id=npc_id,
+        path="current_scene_id",
+        old_value="car_4",
+        new_value="car_5",
+        reason="unit-test atomic commit",
+        producer="session_init",
+    )
+
+    rejection = validate_npc_patch(session, proposal)
+    assert rejection is None, f"expected acceptance, got: {rejection}"
+
+    accepted = [proposal]
+    apply_npc_patches(session, accepted)
+    assert session.npc_states[npc_id].current_scene_id == "car_5"
+
+
+def test_reject_stale_old_value() -> None:
+    """TASK-015: stale old_value must be rejected with a 'stale' reason."""
+    from scenario.npc_patches import (
+        NPCStatePatchProposal,
+        validate_npc_patch,
+    )
+    from scenario.session.state import NPCSessionState, SessionMapState
+
+    def _story_stub():
+        from scenario.story.models import StoryState
+
+        return StoryState(current_stage_id="entry")
+
+    npc_id = "npc_beta"
+    session = SessionMapState(
+        session_id="sess_stale",
+        module_id="mod_x",
+        story_state=_story_stub(),
+        npc_states={
+            npc_id: NPCSessionState(
+                npc_id=npc_id,
+                module_id="mod_x",
+                current_scene_id="car_4",
+            )
+        },
+    )
+
+    # Manually mutate the current scene behind the patch's back.
+    session.npc_states[npc_id].current_scene_id = "car_X"
+
+    stale_proposal = NPCStatePatchProposal(
+        npc_id=npc_id,
+        path="current_scene_id",
+        old_value="car_4",
+        new_value="car_5",
+        reason="stale patch should fail",
+        producer="session_init",
+    )
+    rejection = validate_npc_patch(session, stale_proposal)
+    assert rejection is not None, "expected rejection due to stale old_value"
+    assert "stale" in rejection.reason.lower()
+
+
+def test_A_phase_rejects_world_tick() -> None:
+    """TASK-016: producer='world_tick' must be rejected by the A-phase gate."""
+    from scenario.npc_patches import (
+        NPCStatePatchProposal,
+        validate_npc_patch,
+    )
+    from scenario.session.state import NPCSessionState, SessionMapState
+
+    def _story_stub():
+        from scenario.story.models import StoryState
+
+        return StoryState(current_stage_id="entry")
+
+    npc_id = "npc_gamma"
+    session = SessionMapState(
+        session_id="sess_phaseA",
+        module_id="mod_x",
+        story_state=_story_stub(),
+        npc_states={
+            npc_id: NPCSessionState(
+                npc_id=npc_id,
+                module_id="mod_x",
+                current_scene_id="car_1",
+            )
+        },
+    )
+
+    bad_proposal = NPCStatePatchProposal(
+        npc_id=npc_id,
+        path="current_scene_id",
+        old_value="car_1",
+        new_value="car_2",
+        reason="world_tick should be blocked",
+        producer="world_tick",
+    )
+    rejection = validate_npc_patch(session, bad_proposal)
+    assert rejection is not None, "expected world_tick producer to be rejected"
+    assert rejection.producer == "world_tick"
+    # Reason should flag producer-whitelist failure (mentions 'producer').
+    assert "producer" in rejection.reason.lower()
+
+
+def test_full_scene_runner_smoke() -> None:
+    """TASK-015 / smoke: SceneRuntime.resolve_turn must not grow npc_states."""
+    from cards import build_investigator_from_mapping, load_skill_template_mapping
+
+    from scenario.runtime import SceneRuntime
+
+    _SKILL_TEMPLATES = load_skill_template_mapping()
+    payload = _load_investigator_payload()
+    payload["玩家"] = "smoke-runner"
+    payload["姓名"] = "Smoke Runner"
+    card = build_investigator_from_mapping(
+        payload,
+        skill_templates=_SKILL_TEMPLATES,
+        skill_inputs=[
+            {"template_key": "spot_hidden", "value": 80},
+            {"template_key": "library_use", "value": 75},
+        ],
+    )
+
+    runtime = SceneRuntime(roll_provider=FixedRollProvider([4] * 32))
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards={"p1": card},
+    )
+    npc_count_before = len(session.npc_states)
+
+    # Submit a freeform intent in the entry scene and resolve one turn.
+    runtime.submit_intent(
+        session.session_id,
+        "p1",
+        {"type": "freeform", "text": "调查前厅"},
+    )
+    asyncio.run(runtime.resolve_turn(session.session_id))
+
+    assert len(session.npc_states) == npc_count_before, (
+        f"npc_states grew unexpectedly: {npc_count_before} -> {len(session.npc_states)}"
+    )

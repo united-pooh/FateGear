@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KTSL Session — Suprematist</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#FFF8F0;--paper:#FEF3C7;--sand:#F5E6D3;--primary:#E85D3A;--amber:#F59E0B;--gold:#FBBF24;--indigo:#1E3A5F;--forest:#2D6A4F;--brick:#DC2626;--ink:#292524;--muted:#78716C;--line:#D6C4A8}
+body{font-family:'Arial Black','Helvetica Neue',sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+body::before{content:'';position:fixed;top:-60px;left:300px;width:200px;height:500px;background:var(--amber);opacity:.08;transform:rotate(-15deg);z-index:0;pointer-events:none}
+body::after{content:'';position:fixed;top:50vh;right:-60px;width:300px;height:300px;background:var(--primary);opacity:.06;border-radius:50%;z-index:0;pointer-events:none}
+.sidebar{position:fixed;top:0;left:0;width:64px;height:100vh;background:var(--indigo);z-index:100;display:flex;flex-direction:column;align-items:center;padding-top:20px;gap:4px}
+.sb-logo{width:40px;height:40px;background:var(--amber);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:var(--indigo);margin-bottom:24px}
+.sb-icon{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:18px;color:rgba(255,255,255,.6);cursor:pointer;position:relative}
+.sb-icon:hover,.sb-icon.active{color:var(--amber);background:rgba(255,255,255,.08)}
+.sb-icon.active::before{content:'';position:absolute;left:0;top:8px;width:3px;height:28px;background:var(--amber)}
+
+main{margin-left:64px;flex:1;padding:36px 40px 60px;position:relative;z-index:1;display:flex;flex-direction:column;max-height:100vh}
+
+.top-bar{justify-content:space-between;align-items:center;margin-bottom:24px}
+.top-bar h1{font-size:22px;font-weight:900}
+.top-bar h1 .scene-name{background:var(--paper);border:2px solid var(--line);padding:2px 10px;font-size:14px;font-family:monospace;margin-left:8px;vertical-align:middle}
+
+/* Event stream (scrollable) */
+.events-scroll{flex:1;overflow-y:auto;padding-right:8px;margin-bottom:16px;display:flex;flex-direction:column;gap:14px}
+.event-card{border:2px solid var(--line);background:#FFF;padding:16px;position:relative}
+.event-card.warn{border-left:6px solid var(--gold);border-color:var(--gold)}
+.event-card.ok{border-left:6px solid var(--forest)}
+.event-card-header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.event-num{font-family:monospace;font-weight:900;font-size:13px;color:var(--indigo);background:var(--paper);border:1.5px solid var(--line);padding:2px 8px}
+.event-actor{font-weight:900;font-size:14px}
+.event-scene{font-family:monospace;font-size:11px;background:var(--sand);padding:2px 8px;color:var(--muted);border:1px solid var(--line)}
+.event-status{font-size:10px;font-weight:900;letter-spacing:1px;margin-left:auto}
+.event-status.ok{color:var(--forest)}.event-status.warn{color:#B45309}
+.event-action{font-size:14px;margin-bottom:8px;line-height:1.5}
+.event-meta{font-family:sans-serif;font-size:11px;color:var(--muted)}
+.event-meta .info-flow{display:inline-block;background:var(--sand);border:1px solid var(--line);padding:1px 6px;margin-right:6px;margin-top:4px}
+.warn-box{margin-top:10px;background:var(--paper);border:2px solid var(--gold);padding:10px 14px;font-family:sans-serif;font-size:12px;color:#B45309;font-weight:700}
+.warn-actions{display:flex;gap:8px;margin-top:8px}
+.warn-btn{padding:6px 14px;font-size:11px;font-weight:700;border:2px solid var(--ink);cursor:pointer;font-family:sans-serif}
+.warn-btn:hover{background:var(--indigo);color:var(--bg)}
+
+/* Action submit bar (fixed bottom) */
+.submit-bar{border:3px solid var(--ink);background:var(--paper);padding:16px;display:flex;gap:12px;align-items:end}
+.submit-field{flex:1}
+.submit-field label{display:block;font-size:10px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.submit-field input,.submit-field select{width:100%;border:2px solid var(--line);background:#FFF;padding:10px 12px;font-size:13px;font-family:sans-serif;color:var(--ink);outline:none}
+.submit-field input:focus,.submit-field select:focus{border-color:var(--indigo)}
+.submit-action-field{flex:2}
+.submit-btn{padding:10px 28px;background:var(--primary);color:#FFF;border:none;font-weight:900;font-size:14px;cursor:pointer;letter-spacing:1px;font-family:'Arial Black',sans-serif;transition:all .12s}
+.submit-btn:hover{background:var(--indigo);transform:translate(-2px,-2px);box-shadow:4px 4px 0 var(--amber)}
+
+/* Suprematist accent */
+main::before{content:'';position:absolute;top:80px;right:40px;width:0;height:0;border-left:30px solid transparent;border-right:30px solid transparent;border-bottom:50px solid var(--primary);opacity:.08;z-index:-1}
+</style>
+</head>
+<body>
+<div style="position:fixed;top:20vh;right:80px;width:80px;height:80px;background:var(--amber);opacity:.10;transform:rotate(25deg);z-index:0;pointer-events:none"></div>
+
+<nav class="sidebar">
+  <div class="sb-logo">K</div>
+  <div class="sb-icon">▦</div>
+  <div class="sb-icon active">▶</div>
+  <div class="sb-icon">≡</div>
+  <div class="sb-icon">⊞</div>
+  <div class="sb-icon">⊟</div>
+  <div class="sb-icon">◈</div>
+  <div class="sb-icon" style="margin-top:auto;margin-bottom:20px">⚙</div>
+</nav>
+
+<main>
+  <div style="display:flex" class="top-bar">
+    <h1>Session: police_hospital <span class="scene-name">street</span></h1>
+    <div style="display:flex;gap:20px;align-items:center">
+      <div style="text-align:center"><div style="font-size:18px;font-weight:900;color:var(--indigo)">8</div><div style="font-family:sans-serif;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Events</div></div>
+      <div style="width:1px;height:30px;background:var(--line)"></div>
+      <div style="text-align:center"><div style="font-size:18px;font-weight:900;color:var(--forest)">OK</div><div style="font-family:sans-serif;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Status</div></div>
+    </div>
+  </div>
+
+  <div class="events-scroll">
+    <!-- Event 1: OK -->
+    <div class="event-card ok">
+      <div class="event-card-header">
+        <span class="event-num">#S001</span>
+        <span class="event-actor">佐藤</span>
+        <span class="event-scene">hospital_records</span>
+        <span class="event-status ok">✓ COMMITTED</span>
+      </div>
+      <div class="event-action">"翻找档案柜里的人事记录"</div>
+      <div class="event-meta">
+        <span class="info-flow">→ info_07 档案记录 (low)</span>
+        <span class="info-flow">→ barrier B1 progress 1/2</span>
+      </div>
+    </div>
+
+    <!-- Event 2: OK -->
+    <div class="event-card ok">
+      <div class="event-card-header">
+        <span class="event-num">#S002</span>
+        <span class="event-actor">李</span>
+        <span class="event-scene">street</span>
+        <span class="event-status ok">✓ COMMITTED</span>
+      </div>
+      <div class="event-action">"跟踪下班的医生来到街角"</div>
+      <div class="event-meta">
+        <span class="info-flow">→ info_09 医生深夜行踪 (medium)</span>
+      </div>
+    </div>
+
+    <!-- Event 3: WARN -->
+    <div class="event-card warn">
+      <div class="event-card-header">
+        <span class="event-num">#S003</span>
+        <span class="event-actor">李</span>
+        <span class="event-scene">street</span>
+        <span class="event-status warn">⚠ FLAGGED</span>
+      </div>
+      <div class="event-action">"躲在暗处偷听佐藤和医生的对话"</div>
+      <div class="event-meta">
+        <span class="info-flow">→ info_07-summary 佐藤在找某物 (low, partial)</span>
+        <span class="info-flow" style="border-color:var(--brick);color:var(--brick)">⚠ hint: info_12 尸体位置 (high)</span>
+      </div>
+      <div class="warn-box">⚠ 潜在泄露: 李 可能从对话内容推断出信息_12（高敏感）。当前未正式授权。</div>
+      <div class="warn-actions">
+        <button class="warn-btn">OVERRIDE</button>
+        <button class="warn-btn">ROLLBACK</button>
+        <button class="warn-btn">ALLOW+FLAG</button>
+      </div>
+    </div>
+
+    <!-- Event 4: OK -->
+    <div class="event-card ok">
+      <div class="event-card-header">
+        <span class="event-num">#S004</span>
+        <span class="event-actor">佐藤</span>
+        <span class="event-scene">hospital_records</span>
+        <span class="event-status ok">✓ COMMITTED</span>
+      </div>
+      <div class="event-action">"追问医生关于深夜值班名单的事情"</div>
+      <div class="event-meta">
+        <span class="info-flow">→ barrier B1 satisfied ✓</span>
+        <span class="info-flow">→ coupling C1 triggered</span>
+      </div>
+    </div>
+
+    <!-- Event 5: empty placeholder for upcoming -->
+    <div style="border:2px dashed var(--line);background:var(--sand);padding:30px;text-align:center;font-family:sans-serif;font-size:12px;color:var(--muted)">
+      等待下一个行动...
+    </div>
+  </div>
+
+  <div class="submit-bar">
+    <div class="submit-action-field">
+      <label>行动描述</label>
+      <input type="text" placeholder='例: 佐藤 "翻找档案柜"' >
+    </div>
+    <div class="submit-field">
+      <label>角色</label>
+      <select><option>佐藤</option><option>李</option><option>王</option></select>
+    </div>
+    <div class="submit-field">
+      <label>场景</label>
+      <select><option>hospital_records</option><option>street</option><option>hospital_wing</option><option>old_house 🔒</option></select>
+    </div>
+    <div class="submit-field">
+      <label>可见性</label>
+      <select><option>public</option><option>private</option><option>keeper</option></select>
+    </div>
+    <button class="submit-btn">提交 →</button>
+  </div>
+</main>
+</body>
+</html>

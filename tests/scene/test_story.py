@@ -105,6 +105,56 @@ def test_transition_validator_can_unlock_target_stage_with_transition_effects() 
     assert matched.id == "unlock_access"
 
 
+def test_transition_validator_requires_declared_clue_coverage_when_provided() -> None:
+    validator = TransitionValidator()
+    story_state = StoryState(current_stage_id="investigation")
+    stages = {
+        "investigation": StoryStage(id="investigation", name="调查中"),
+        "ritual_route": StoryStage(
+            id="ritual_route",
+            name="仪式路线",
+            available_clues=["archive_index"],
+        ),
+    }
+    transition = StoryTransition(
+        id="to_ritual_route",
+        source_stage_id="investigation",
+        target_stage_id="ritual_route",
+        trigger_type="action_succeeded",
+        trigger_value="inspect_archive",
+    )
+    signals = [
+        StorySignal(
+            type="action_succeeded",
+            turn_no=2,
+            player_id="p1",
+            scene_id="library",
+            action_id="inspect_archive",
+        )
+    ]
+
+    blocked = validator.can_transition(
+        story_state=story_state,
+        stages=stages,
+        transitions=[transition],
+        signals=signals,
+        flags=set(),
+        covered_clue_ids=set(),
+    )
+    matched = validator.can_transition(
+        story_state=story_state,
+        stages=stages,
+        transitions=[transition],
+        signals=signals,
+        flags=set(),
+        covered_clue_ids={"archive_index"},
+    )
+
+    assert blocked is None
+    assert matched is not None
+    assert matched.id == "to_ritual_route"
+
+
 def test_story_state_service_marks_terminal_stage_as_resolved_ending() -> None:
     service = StoryStateService()
     story_state = StoryState(current_stage_id="breakthrough", stage_entered_turn=4)

@@ -90,6 +90,10 @@ narrative_context:
 
     assert definition.narrative_context.worldview_brief.startswith("末班车")
     assert definition.npc_map()["attendant"].name == "沉默的乘务员"
+    assert definition.npc_map()["attendant"].role == "引导者"
+    assert definition.npc_map()["attendant"].default_scene_id == ""
+    assert definition.npc_map()["attendant"].characteristics == {}
+    assert definition.npc_map()["attendant"].skills == {}
     assert definition.lorebook_entry_map()["night_train_signal"].priority == 200
     assert definition.narrative_context.prose_controls.paragraph_limit == 2
 
@@ -366,6 +370,220 @@ narrative_context:
     ],
 )
 def test_loader_rejects_invalid_module_definitions(
+    tmp_path: Path,
+    payload: str,
+    expected_message: str,
+) -> None:
+    module_file = tmp_path / "module.yaml"
+    module_file.write_text(payload.strip(), encoding="utf-8")
+
+    with pytest.raises(ModuleValidationError, match=expected_message):
+        load_module_definition(module_file)
+
+
+def test_loader_accepts_npc_characteristics_and_skills(tmp_path: Path) -> None:
+    module_file = tmp_path / "module.yaml"
+    module_file.write_text(
+        """
+module_id: npc_stats_ok
+title: NPC 属性测试
+version: 1
+entry_scene_id: start
+entry_stage_id: intro
+flags: [ready]
+scenes:
+  - id: start
+    name: 起点
+links: []
+actions: []
+clocks: []
+story_stages:
+  - id: intro
+    name: 开场
+story_transitions: []
+endings: []
+narrative_context:
+  npcs:
+    - id: investigator
+      name: 调查员
+      role: 主角
+      default_scene_id: start
+      characteristics:
+        STR: 50
+        CON: 60
+        SIZ: 55
+        DEX: 70
+        APP: 65
+        INT: 80
+        POW: 45
+        EDU: 75
+      skills:
+        spot_hidden: 60
+        persuade: 55
+        cthulhu_mythos: 10
+        library_use: 70
+""".strip(),
+        encoding="utf-8",
+    )
+
+    definition = load_module_definition(module_file)
+    npc = definition.npc_map()["investigator"]
+    assert npc.default_scene_id == "start"
+    assert npc.characteristics == {
+        "STR": 50, "CON": 60, "SIZ": 55, "DEX": 70,
+        "APP": 65, "INT": 80, "POW": 45, "EDU": 75,
+    }
+    assert npc.skills == {
+        "spot_hidden": 60, "persuade": 55,
+        "cthulhu_mythos": 10, "library_use": 70,
+    }
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_message"),
+    [
+        (
+            """
+module_id: invalid_default_scene
+title: 坏默认场景
+version: 1
+entry_scene_id: start
+entry_stage_id: intro
+flags: [ready]
+scenes:
+  - id: start
+    name: 起点
+links: []
+actions: []
+clocks: []
+story_stages:
+  - id: intro
+    name: 开场
+story_transitions: []
+endings: []
+narrative_context:
+  npcs:
+    - id: guide
+      name: 向导
+      default_scene_id: nowhere
+""",
+            "default_scene_id=",
+        ),
+        (
+            """
+module_id: invalid_unknown_coc_key
+title: 坏 CoC 属性 key
+version: 1
+entry_scene_id: start
+entry_stage_id: intro
+flags: [ready]
+scenes:
+  - id: start
+    name: 起点
+links: []
+actions: []
+clocks: []
+story_stages:
+  - id: intro
+    name: 开场
+story_transitions: []
+endings: []
+narrative_context:
+  npcs:
+    - id: guide
+      name: 向导
+      characteristics:
+        XYZ: 50
+""",
+            "不允许的 CoC 属性",
+        ),
+        (
+            """
+module_id: invalid_coc_value_too_large
+title: CoC 属性超限
+version: 1
+entry_scene_id: start
+entry_stage_id: intro
+flags: [ready]
+scenes:
+  - id: start
+    name: 起点
+links: []
+actions: []
+clocks: []
+story_stages:
+  - id: intro
+    name: 开场
+story_transitions: []
+endings: []
+narrative_context:
+  npcs:
+    - id: guide
+      name: 向导
+      characteristics:
+        STR: 150
+""",
+            "STR",
+        ),
+        (
+            """
+module_id: invalid_coc_value_negative
+title: CoC 属性负值
+version: 1
+entry_scene_id: start
+entry_stage_id: intro
+flags: [ready]
+scenes:
+  - id: start
+    name: 起点
+links: []
+actions: []
+clocks: []
+story_stages:
+  - id: intro
+    name: 开场
+story_transitions: []
+endings: []
+narrative_context:
+  npcs:
+    - id: guide
+      name: 向导
+      characteristics:
+        STR: -5
+""",
+            "STR",
+        ),
+        (
+            """
+module_id: invalid_skill_value
+title: 坏技能值
+version: 1
+entry_scene_id: start
+entry_stage_id: intro
+flags: [ready]
+scenes:
+  - id: start
+    name: 起点
+links: []
+actions: []
+clocks: []
+story_stages:
+  - id: intro
+    name: 开场
+story_transitions: []
+endings: []
+narrative_context:
+  npcs:
+    - id: guide
+      name: 向导
+      skills:
+        spot_hidden: 200
+""",
+            "spot_hidden",
+        ),
+    ],
+)
+def test_loader_rejects_invalid_npc_stats(
     tmp_path: Path,
     payload: str,
     expected_message: str,

@@ -5,8 +5,7 @@ import pytest
 
 from scenario.ktsl.fixtures import build_library_sewer_church_fixture
 from scenario.ktsl.models import (
-    KTSLLedger, ModuleKTSLSpec, ModuleSceneKTSLSpec,
-    ModuleInfoLabelSpec, ModuleInitialKnowledgeSpec,
+    KTSLLedger,
 )
 from scenario.ktsl.wizard import build_spec_from_fixture
 from scenario.ktsl.stages import (

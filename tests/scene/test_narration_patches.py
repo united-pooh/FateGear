@@ -102,6 +102,48 @@ def test_rejects_old_value_mismatch_authoritative_path_and_unknown_event() -> No
     assert "list[str]" in result.rejected_patches[3].reason
 
 
+def test_attitudes_per_player_slot_wildcard_fallback_and_broadcast_alias() -> None:
+    """npc_attitudes supports per-player direct hit, wildcard broadcast alias,
+    and wildcard-bucket fallback on old_value compare."""
+    event_refs = _event_refs()
+    eid = event_refs[1].event_id
+    # Pre-seed wildcard bucket for attendant via prior mass-broadcast alias.
+    state = NarrativeState(
+        npc_attitudes={"attendant": {"*": "中立", "p1": "友好"}}
+    )
+
+    # Per-player direct hit on p2: old_value wildcard fallback ('*' == '中立').
+    proposal_p2 = NarrationPatchProposal(
+        path="npc_attitudes.attendant.p2",
+        old_value="中立",
+        new_value="怀疑",
+        reason="p2 acted suspiciously.",
+        source_event_ids=[eid],
+    )
+    result = validate_and_apply_patches(state, [proposal_p2], event_refs)
+    assert result.rejected_patches == []
+    assert result.state.npc_attitudes["attendant"]["p2"] == "怀疑"
+    # p1 unchanged by the per-player patch.
+    assert result.state.npc_attitudes["attendant"]["p1"] == "友好"
+    # Wildcard bucket still intact.
+    assert result.state.npc_attitudes["attendant"]["*"] == "中立"
+
+    # Mass-broadcast alias (2-segment) updates both '*' and every per-player slot.
+    proposal_broadcast = NarrationPatchProposal(
+        path="npc_attitudes.attendant",
+        old_value="中立",
+        new_value="震惊",
+        reason="Public shock moment.",
+        source_event_ids=[eid],
+    )
+    result2 = validate_and_apply_patches(result.state, [proposal_broadcast], event_refs)
+    assert result2.rejected_patches == []
+    bucket = result2.state.npc_attitudes["attendant"]
+    assert bucket["*"] == "震惊"
+    assert bucket["p1"] == "震惊"
+    assert bucket["p2"] == "震惊"
+
+
 def test_rejects_scope_allowlist_and_range_limits_without_mutating_state() -> None:
     event_refs = _event_refs()
     state = NarrativeState(scene_mood={"foyer": "安静"})

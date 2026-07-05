@@ -1,7 +1,6 @@
 """Tests for PromptBuilder injecting KTSL context into AgentPlanPrompt."""
 from __future__ import annotations
 
-import pytest
 
 from scenario.agent.models import AgentPlanPrompt
 from scenario.agent.prompt_builder import PromptBuilder

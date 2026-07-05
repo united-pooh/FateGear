@@ -180,6 +180,52 @@ def test_action_check_failure_does_not_apply_success_effects() -> None:
     assert roll.success_level == "fail"
 
 
+def test_failed_core_investigation_delivers_fail_forward_clue() -> None:
+    card = build_investigator_from_mapping(
+        _load_investigator_payload(),
+        skill_templates=load_skill_template_mapping(),
+        skill_inputs=[{"template_key": "spot_hidden", "value": 10}],
+    )
+    runtime = SceneRuntime(roll_provider=lambda: 90)
+    session = runtime.create_session(
+        "generic_mvp",
+        ["p1"],
+        player_cards={"p1": card},
+    )
+
+    _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "move", "target_scene_id": "storage"}},
+    )
+    resolution = _submit_and_resolve(
+        runtime,
+        session_id=session.session_id,
+        intents={"p1": {"type": "action", "action_id": "find_key"}},
+    )
+    outcome = resolution.scene_batches[0].outcomes[0]
+    fail_forward_events = [
+        event
+        for event in resolution.event_log
+        if event.type == "clue_fail_forward_delivered"
+    ]
+
+    assert outcome.success is False
+    assert "key_found" not in session.global_flags
+    assert "find_key" not in session.completed_actions
+    assert session.clue_graph is not None
+    assert session.session_clues.state_for("find_key") == "delivered_by_fail_forward"
+    assert session.session_clues.delivered_by_fail_forward == ["find_key"]
+    assert "fail_forward_clue:find_key" in outcome.effects_applied
+    assert fail_forward_events
+    assert fail_forward_events[0].clue_id == "find_key"
+    assert fail_forward_events[0].info_id == "find_key"
+    assert fail_forward_events[0].reason_code == "missed_hint"
+    assert session.clue_graph.core_route_coverage(session.session_clues)[
+        "find_key"
+    ].is_covered
+
+
 def test_freeform_intent_can_receive_dynamic_check_without_advancing_story() -> None:
     planner = _FreeformCheckPlanner()
     runtime = SceneRuntime(roll_provider=lambda: 1, plan_agent=planner)

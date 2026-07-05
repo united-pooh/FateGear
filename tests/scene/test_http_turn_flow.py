@@ -17,11 +17,13 @@ class _FakeRequest:
         payload: dict[str, object] | None = None,
         match_info: dict[str, str] | None = None,
         query: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.app = app
         self._payload = payload
         self.match_info = match_info or {}
         self.query = query or {}
+        self.headers = headers or {}
 
     @property
     def can_read_body(self) -> bool:
@@ -74,12 +76,16 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
             )
         )
         text_submitted = json.loads(text_submit_response.text)
+        keeper_headers = {
+            "Authorization": f"Bearer dev:keeper:keeper:{created['session_id']}:-"
+        }
 
         resolve_response = await main.handle_resolve_turn(
             _FakeRequest(
                 app=app,
                 match_info={"session_id": created["session_id"]},
                 payload={"expected_turn": 1},
+                headers=keeper_headers,
             )
         )
         resolved = json.loads(resolve_response.text)
@@ -88,6 +94,7 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
                 app=app,
                 match_info={"session_id": created["session_id"]},
                 payload={"expected_turn": 1},
+                headers=keeper_headers,
             )
         )
         replayed = json.loads(replay_response.text)
@@ -98,6 +105,7 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
                     "session_id": created["session_id"],
                     "player_id": "keeper",
                 },
+                headers=keeper_headers,
             )
         )
         player_view = json.loads(player_view_response.text)
@@ -105,6 +113,7 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
             _FakeRequest(
                 app=app,
                 match_info={"session_id": created["session_id"]},
+                headers=keeper_headers,
             )
         )
         keeper_view = json.loads(keeper_view_response.text)
@@ -119,11 +128,9 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
         assert keeper_view_response.status == 200
         assert [player["player_id"] for player in joined["players"]] == ["keeper", "p2"]
         assert submitted["pending_players"] == ["keeper"]
-        assert text_submitted["accepted"] is True
-        assert text_submitted["normalization"]["intent_payload"] == {
-            "type": "move",
-            "target_scene_id": "storage",
-        }
+        assert text_submitted["accepted"] is False
+        assert text_submitted["normalization"]["intent_payload"] is None
+        assert text_submitted["normalization"]["match_basis"] == ["agent_required"]
         assert resolved["turn_no"] == 1
         assert resolved["next_turn"] == 2
         assert replayed["turn_no"] == 1
@@ -134,6 +141,31 @@ def test_http_turn_flow_supports_submit_intent_and_resolve() -> None:
         assert player_view["player_id"] == "keeper"
         assert player_view["current_scene_id"] == "storage"
         assert keeper_view["player_scene_ids"]["keeper"] == "storage"
+
+    asyncio.run(run())
+
+
+def test_http_create_session_enable_ktsl_returns_enabled_summary() -> None:
+    async def run() -> None:
+        service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+        app = main.create_app(service)
+
+        create_response = await main.handle_create_session(
+            _FakeRequest(
+                app=app,
+                payload={
+                    "module_id": "generic_mvp",
+                    "creator_id": "keeper",
+                    "enable_ktsl": True,
+                },
+            )
+        )
+        created = json.loads(create_response.text)
+        session = service._runtime.get_session(created["session_id"])
+
+        assert create_response.status == 201
+        assert created["ktsl_enabled"] is True
+        assert session.ktsl_ledger is not None
 
     asyncio.run(run())
 
@@ -152,7 +184,11 @@ def test_http_view_handlers_reject_wrong_requester_scope() -> None:
                 _FakeRequest(
                     app=app,
                     match_info={"session_id": created.session_id},
-                    query={"requester_id": "p2"},
+                    headers={
+                        "Authorization": (
+                            f"Bearer dev:player:p2:{created.session_id}:p2"
+                        )
+                    },
                 )
             )
         with pytest.raises(PermissionError, match="无权查看玩家"):
@@ -163,7 +199,11 @@ def test_http_view_handlers_reject_wrong_requester_scope() -> None:
                         "session_id": created.session_id,
                         "player_id": "keeper",
                     },
-                    query={"requester_id": "p2"},
+                    headers={
+                        "Authorization": (
+                            f"Bearer dev:player:p2:{created.session_id}:p2"
+                        )
+                    },
                 )
             )
 

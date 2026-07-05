@@ -108,6 +108,7 @@ class RuntimeEvent(BaseModel):
         "ktsl_intervention_issued",
         "ktsl_override_applied",
         "ktsl_audit_updated",
+        "clue_fail_forward_delivered",
     ]
     message: str
     turn_no: int
@@ -149,6 +150,9 @@ class RuntimeEvent(BaseModel):
     story_transition_id: str = Field(default="")
     source_stage_id: str = Field(default="")
     target_stage_id: str = Field(default="")
+    clue_id: str = Field(default="")
+    info_id: str = Field(default="")
+    route_ids: list[str] = Field(default_factory=list)
 
     def to_log_line(self) -> str:
         return self.message

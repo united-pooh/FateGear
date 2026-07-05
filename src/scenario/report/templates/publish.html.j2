@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KTSL Publish Report — {{ report.fixture_title or report.fixture_id }}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+    background: #f5f6f8;
+    color: #1f2933;
+    line-height: 1.55;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 20px 60px; }
+
+  header.report-header {
+    background: linear-gradient(135deg, #1f2933 0%, #2d3748 100%);
+    color: #fff;
+    padding: 32px 0 24px;
+  }
+  header.report-header h1 { margin: 0 0 6px; font-size: 26px; }
+  header.report-header .meta { color: #cbd5e1; font-size: 14px; }
+  header.report-header .meta span { margin-right: 18px; }
+
+  .verdict {
+    text-align: center;
+    padding: 28px 0;
+    border-radius: 10px;
+    margin: 24px 0;
+    font-size: 40px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    color: #fff;
+  }
+  .verdict.pass { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+  .verdict.fail { background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%); }
+
+  section { margin-top: 32px; }
+  section h2 { border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; }
+
+  table.comparison { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
+  table.comparison th, table.comparison td { padding: 8px 10px; border: 1px solid #e5e7eb; text-align: center; }
+  table.comparison th { background: #f9fafb; }
+  table.comparison td:first-child { text-align: left; font-weight: 600; }
+  .cell-pass { background: #ecfdf5; }
+  .cell-fail { background: #fee2e2; font-weight: 700; }
+  .verdict-row { font-weight: 700; }
+  .verdict-pass { color: #059669; }
+  .verdict-fail { color: #b91c1c; }
+
+  /* Radar chart layout */
+  .radar-container { text-align: center; margin: 24px 0; }
+  .radar-container svg { max-width: 480px; }
+
+  .issues-list { list-style: none; padding: 0; }
+  .issues-list li {
+    background: #fff;
+    border-left: 4px solid #6b7280;
+    padding: 10px 14px;
+    margin-bottom: 6px;
+    border-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.05);
+  }
+  .issues-list li.fail { border-left-color: #ef4444; }
+  .issues-list li.warn { border-left-color: #f59e0b; }
+  .issues-list code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+
+  footer.report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+    color: #6b7280;
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header class="report-header">
+  <div class="container">
+    <h1>KTSL Publish Gate Report</h1>
+    <div class="meta">
+      <span><strong>Module:</strong> {{ report.fixture_title or report.fixture_id }}</span>
+      <span><strong>Fixture:</strong> {{ report.fixture_id }}</span>
+      <span><strong>Criteria:</strong> v{{ report.criteria_version }}</span>
+    </div>
+    <div class="meta">
+      <span><strong>Evaluated at:</strong> {{ report.evaluated_at }}</span>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- VERDICT -->
+  <div class="verdict {{ "pass" if report.overall_pass else "fail" }}">
+    {{ "✅ PASS" if report.overall_pass else "❌ FAIL" }}
+  </div>
+
+  <!-- Radar chart (6 axes for each mode) -->
+  <section id="radar">
+    <h2>📡 Metrics Radar</h2>
+    <div class="radar-container">
+      {{ radar_svg | safe }}
+    </div>
+  </section>
+
+  <!-- Mode comparison table -->
+  <section id="mode-comparison">
+    <h2>Mode Comparison</h2>
+    <table class="comparison">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          {% for mr in report.per_mode %}<th><code>{{ mr.mode }}</code></th>{% endfor %}
+          <th>Threshold</th>
+          <th>Verdict</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in metric_rows %}
+        <tr>
+          <td>{{ row.label }}</td>
+          {% for cell in row.cells %}
+          <td class="{{ "cell-pass" if cell.pass else "cell-fail" }}">{{ cell.value }}</td>
+          {% endfor %}
+          <td>{{ row.threshold }}</td>
+          <td>—</td>
+        </tr>
+        {% endfor %}
+        <tr class="verdict-row">
+          <td>Verdict</td>
+          {% for mr in report.per_mode %}
+          <td class="{{ "verdict-pass" if mr.passed else "verdict-fail" }}">
+            {{ "✅ PASS" if mr.passed else "❌ FAIL" }}
+          </td>
+          {% endfor %}
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Failures -->
+  <section id="failures">
+    <h2>🛑 Failures</h2>
+    {% set failures = [] %}
+    {% for mr in report.per_mode %}{% for f in mr.failures %}{{ failures.append((mr.mode, f)) }}{% endfor %}{% endfor %}
+    {% if failures %}
+    <ul class="issues-list">
+      {% for mode, f in failures %}
+      <li class="fail"><code>{{ mode }}</code>: {{ f }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p>_No failures._</p>
+    {% endif %}
+  </section>
+
+  <!-- Warnings -->
+  <section id="warnings">
+    <h2>⚠️ Warnings</h2>
+    {% set warnings = [] %}
+    {% for mr in report.per_mode %}{% for w in mr.warnings %}{{ warnings.append((mr.mode, w)) }}{% endfor %}{% endfor %}
+    {% if warnings %}
+    <ul class="issues-list">
+      {% for mode, w in warnings %}
+      <li class="warn"><code>{{ mode }}</code>: {{ w }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p>_No warnings._</p>
+    {% endif %}
+  </section>
+
+</div>
+
+<footer class="report-footer">
+  Generated by KTSL toolchain · {{ now }}
+</footer>
+
+</body>
+</html>

@@ -15,7 +15,7 @@ def test_planner_agent_reads_defaults_from_environment(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("PLANNER_AGENT_API_KEY", raising=False)
     planner_module = sys.modules[KeeperPlanAgent.__module__]
-    monkeypatch.setattr(planner_module, "build_openai_client", lambda provider: None)
+    monkeypatch.setattr(planner_module, "build_model_client", lambda provider, **_: None)
 
     agent = KeeperPlanAgent()
 
@@ -37,7 +37,7 @@ def test_narrator_agent_reads_defaults_from_environment(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("NARRATOR_AGENT_API_KEY", raising=False)
     narrator_module = sys.modules[KeeperRenderAgent.__module__]
-    monkeypatch.setattr(narrator_module, "build_openai_client", lambda provider: None)
+    monkeypatch.setattr(narrator_module, "build_model_client", lambda provider, **_: None)
 
     agent = KeeperRenderAgent()
 
@@ -65,16 +65,16 @@ def test_agent_settings_use_shared_provider_as_default_and_allow_overrides(
     narrator_module = sys.modules[KeeperRenderAgent.__module__]
     captured: dict[str, object] = {}
 
-    def _capture_planner(provider):
+    def _capture_planner(provider, **_):
         captured["planner"] = provider
         return object()
 
-    def _capture_narrator(provider):
+    def _capture_narrator(provider, **_):
         captured["narrator"] = provider
         return object()
 
-    monkeypatch.setattr(planner_module, "build_openai_client", _capture_planner)
-    monkeypatch.setattr(narrator_module, "build_openai_client", _capture_narrator)
+    monkeypatch.setattr(planner_module, "build_model_client", _capture_planner)
+    monkeypatch.setattr(narrator_module, "build_model_client", _capture_narrator)
 
     planner = KeeperPlanAgent()
     narrator = KeeperRenderAgent()
@@ -93,6 +93,7 @@ def test_agent_settings_use_shared_provider_as_default_and_allow_overrides(
     assert narrator_provider.organization == "shared-org"
     assert narrator_provider.project == "shared-project"
 
+
 def test_agent_settings_accept_deepseek_api_key_defaults(monkeypatch) -> None:
     monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
     monkeypatch.delenv("AGENT_API_KEY", raising=False)
@@ -110,16 +111,16 @@ def test_agent_settings_accept_deepseek_api_key_defaults(monkeypatch) -> None:
     narrator_module = sys.modules[KeeperRenderAgent.__module__]
     captured: dict[str, object] = {}
 
-    def _capture_planner(provider):
+    def _capture_planner(provider, **_):
         captured["planner"] = provider
         return object()
 
-    def _capture_narrator(provider):
+    def _capture_narrator(provider, **_):
         captured["narrator"] = provider
         return object()
 
-    monkeypatch.setattr(planner_module, "build_openai_client", _capture_planner)
-    monkeypatch.setattr(narrator_module, "build_openai_client", _capture_narrator)
+    monkeypatch.setattr(planner_module, "build_model_client", _capture_planner)
+    monkeypatch.setattr(narrator_module, "build_model_client", _capture_narrator)
 
     planner = KeeperPlanAgent()
     narrator = KeeperRenderAgent()
@@ -147,11 +148,119 @@ def test_agent_settings_accept_deepseek_thinking_override(monkeypatch) -> None:
 
     planner_module = sys.modules[KeeperPlanAgent.__module__]
     narrator_module = sys.modules[KeeperRenderAgent.__module__]
-    monkeypatch.setattr(planner_module, "build_openai_client", lambda provider: object())
-    monkeypatch.setattr(narrator_module, "build_openai_client", lambda provider: object())
+    monkeypatch.setattr(planner_module, "build_model_client", lambda provider, **_: object())
+    monkeypatch.setattr(narrator_module, "build_model_client", lambda provider, **_: object())
 
     assert KeeperPlanAgent()._deepseek_thinking == "enabled"
     assert KeeperRenderAgent()._deepseek_thinking == "enabled"
+
+
+def test_agent_settings_accept_anthropic_provider(monkeypatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.delenv("AGENT_API_KEY", raising=False)
+    monkeypatch.delenv("AGENT_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("PLANNER_AGENT_MODEL", raising=False)
+
+    planner_module = sys.modules[KeeperPlanAgent.__module__]
+    captured: dict[str, object] = {}
+
+    def _capture_planner(provider, **_):
+        captured["planner"] = provider
+        return object()
+
+    monkeypatch.setattr(planner_module, "build_model_client", _capture_planner)
+
+    agent = KeeperPlanAgent()
+    planner_provider = captured["planner"]
+
+    assert agent.model_id == "claude-3-5-sonnet-latest"
+    assert agent._provider_kind == "anthropic"
+    assert planner_provider.api_key == "anthropic-key"
+    assert planner_provider.base_url == "https://api.anthropic.com"
+    assert planner_provider.endpoint_type == "anthropic"
+
+
+def test_explicit_openai_provider_wins_over_anthropic_default(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.delenv("AGENT_PROVIDER", raising=False)
+    monkeypatch.delenv("AGENT_ENDPOINT_TYPE", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setenv("PLANNER_AGENT_MODEL", "gpt-4o")
+
+    planner_module = sys.modules[KeeperPlanAgent.__module__]
+    captured: dict[str, object] = {}
+
+    def _capture_planner(provider, **_):
+        captured["planner"] = provider
+        return object()
+
+    monkeypatch.setattr(planner_module, "build_model_client", _capture_planner)
+
+    agent = KeeperPlanAgent()
+    planner_provider = captured["planner"]
+
+    assert agent.model_id == "gpt-4o"
+    assert agent._provider_kind == "openai_compatible"
+    assert planner_provider.api_key == "openai-key"
+    assert planner_provider.endpoint_type == "auto"
+
+
+def test_claude_model_prefers_anthropic_provider(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setenv("PLANNER_AGENT_MODEL", "claude-3-5-sonnet-latest")
+    monkeypatch.delenv("AGENT_PROVIDER", raising=False)
+    monkeypatch.delenv("AGENT_ENDPOINT_TYPE", raising=False)
+
+    planner_module = sys.modules[KeeperPlanAgent.__module__]
+    captured: dict[str, object] = {}
+
+    def _capture_planner(provider, **_):
+        captured["planner"] = provider
+        return object()
+
+    monkeypatch.setattr(planner_module, "build_model_client", _capture_planner)
+
+    agent = KeeperPlanAgent()
+    planner_provider = captured["planner"]
+
+    assert agent.model_id == "claude-3-5-sonnet-latest"
+    assert agent._provider_kind == "anthropic"
+    assert planner_provider.api_key == "anthropic-key"
+    assert planner_provider.endpoint_type == "anthropic"
+
+
+def test_agent_provider_override_inherits_anthropic_endpoint(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.longcat.chat/anthropic")
+    monkeypatch.setenv("PLANNER_AGENT_PROVIDER", "anthropic")
+    monkeypatch.setenv("PLANNER_AGENT_MODEL", "longcat-2.0-pro")
+    monkeypatch.delenv("AGENT_PROVIDER", raising=False)
+    monkeypatch.delenv("AGENT_ENDPOINT_TYPE", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    planner_module = sys.modules[KeeperPlanAgent.__module__]
+    captured: dict[str, object] = {}
+
+    def _capture_planner(provider, **_):
+        captured["planner"] = provider
+        return object()
+
+    monkeypatch.setattr(planner_module, "build_model_client", _capture_planner)
+
+    agent = KeeperPlanAgent()
+    planner_provider = captured["planner"]
+
+    assert agent.model_id == "longcat-2.0-pro"
+    assert agent._provider_kind == "anthropic"
+    assert planner_provider.api_key == "anthropic-key"
+    assert planner_provider.base_url == "https://api.longcat.chat/anthropic"
+    assert planner_provider.endpoint_type == "anthropic"
 
 
 def test_deepseek_model_prefers_deepseek_provider(monkeypatch) -> None:
@@ -163,11 +272,11 @@ def test_deepseek_model_prefers_deepseek_provider(monkeypatch) -> None:
     planner_module = sys.modules[KeeperPlanAgent.__module__]
     captured: dict[str, object] = {}
 
-    def _capture_planner(provider):
+    def _capture_planner(provider, **_):
         captured["planner"] = provider
         return object()
 
-    monkeypatch.setattr(planner_module, "build_openai_client", _capture_planner)
+    monkeypatch.setattr(planner_module, "build_model_client", _capture_planner)
 
     agent = KeeperPlanAgent(model_id="deepseek-v4-flash")
 

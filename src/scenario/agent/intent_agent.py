@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import ValidationError
@@ -11,10 +12,12 @@ from pydantic import ValidationError
 from .base import AgentOutputError, BaseAgent
 from .config import (
     AgentSettings,
-    build_openai_client,
+    build_model_client,
     detect_provider_kind,
     load_agent_settings,
+    select_provider_for_model,
 )
+from .model_client import ModelMessage, ModelRequest
 from .models import IntentAgentDecision, IntentAgentPrompt
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,61 @@ _SYSTEM_PROMPT = """\
 6. 不要把 freeform 改写成可用移动/动作；菜单动作由确定性层负责。
 7. 如果 freeform 有风险，risk_hint 应提示 KP 可以使用暗骰、幸运、侦查、聆听、潜行、伤害、SAN 或威胁时钟等方式裁定。
 """
+
+
+def _normalize_intent_decision_payload(data: object) -> object:
+    if not isinstance(data, Mapping):
+        return data
+
+    normalized = dict(data)
+    for key in (
+        "intent_type",
+        "freeform_kind",
+        "intended_target",
+        "risk_hint",
+        "clarification_question",
+        "rationale",
+    ):
+        if normalized.get(key) is None:
+            normalized[key] = ""
+    if normalized.get("candidates") is None:
+        normalized["candidates"] = []
+    if normalized.get("confidence") is None:
+        normalized["confidence"] = 0.0
+    if normalized.get("intent_type"):
+        return normalized
+
+    if "clarification_question" not in normalized and "question" in data:
+        normalized["clarification_question"] = str(data.get("question") or "")
+
+    intent_payload = data.get("intent_payload") or data.get("payload")
+    payload = intent_payload if isinstance(intent_payload, Mapping) else {}
+    matched = str(data.get("matched") or "")
+    matched_kind = str(
+        data.get("matched_kind")
+        or (matched.split(":", 1)[0] if matched else "")
+        or payload.get("type")
+        or ""
+    ).lower()
+    accepted = bool(data.get("accepted", False))
+
+    if accepted and matched_kind in {"freeform", "observe", "perception"}:
+        normalized["intent_type"] = "freeform"
+        if float(normalized.get("confidence") or 0.0) <= 0.0:
+            normalized["confidence"] = 0.5
+        normalized["freeform_kind"] = str(
+            data.get("freeform_kind") or payload.get("freeform_kind") or "generic"
+        )
+        normalized["intended_target"] = str(
+            data.get("intended_target") or payload.get("intended_target") or ""
+        )
+        normalized["risk_hint"] = str(
+            data.get("risk_hint") or payload.get("risk_hint") or ""
+        )
+        return normalized
+
+    normalized["intent_type"] = "clarify"
+    return normalized
 
 
 def _build_intent_user_message(prompt: IntentAgentPrompt) -> str:
@@ -106,6 +164,7 @@ class KeeperIntentAgent(BaseAgent[IntentAgentPrompt, IntentAgentDecision]):
         *,
         model_id: str | None = None,
         openai_client: Any = None,
+        model_client: Any = None,
         temperature: float | None = None,
         top_p: float | None = None,
         timeout_seconds: float | None = None,
@@ -114,7 +173,18 @@ class KeeperIntentAgent(BaseAgent[IntentAgentPrompt, IntentAgentDecision]):
         settings = config or load_agent_settings()
         planner_config = settings.planner
         super().__init__(model_id=model_id or planner_config.model)
-        self._client = openai_client or build_openai_client(settings.planner_provider)
+        provider = select_provider_for_model(
+            model_id=self._model_id,
+            default_provider=settings.planner_provider,
+            deepseek_provider=settings.deepseek_provider,
+            anthropic_provider=settings.anthropic_provider,
+        )
+        self._model_client = model_client or build_model_client(
+            provider,
+            model_id=self._model_id,
+            openai_client=openai_client,
+        )
+        self._client = getattr(self._model_client, "raw_client", self._model_client)
         self._temperature = 0.2 if temperature is None else temperature
         self._top_p = planner_config.top_p if top_p is None else top_p
         self.timeout_seconds = (
@@ -123,15 +193,18 @@ class KeeperIntentAgent(BaseAgent[IntentAgentPrompt, IntentAgentDecision]):
             else timeout_seconds
         )
         self._deepseek_thinking = settings.deepseek_thinking
-        self._provider_kind = detect_provider_kind(
-            model_id=self._model_id,
-            client=self._client,
+        self._provider_kind = str(
+            getattr(
+                self._model_client,
+                "provider_kind",
+                detect_provider_kind(model_id=self._model_id, client=provider),
+            )
         )
 
     async def _call_llm(self, prompt: IntentAgentPrompt) -> str:
-        if self._client is None:
+        if self._model_client is None:
             logger.info(
-                "KeeperIntentAgent: openai_client 未配置，跳过 LLM 调用（降级模式）。"
+                "KeeperIntentAgent: model_client 未配置，跳过 LLM 调用（降级模式）。"
             )
             return ""
 
@@ -147,6 +220,17 @@ class KeeperIntentAgent(BaseAgent[IntentAgentPrompt, IntentAgentDecision]):
                 ]
             )
             response_format = {"type": "json_object"}
+        elif self._provider_kind == "anthropic":
+            system_msg = "\n\n".join([system_msg, _DEEPSEEK_INTENT_JSON_EXAMPLE])
+            user_msg = "\n\n".join(
+                [
+                    user_msg,
+                    "再次提醒：只返回合法 json object，不要输出 markdown 或额外解释。",
+                ]
+            )
+            response_format = {"type": "json_object"}
+        elif self._provider_kind == "json_object_only":
+            response_format = {"type": "json_object"}
         else:
             response_format = {
                 "type": "json_schema",
@@ -157,38 +241,46 @@ class KeeperIntentAgent(BaseAgent[IntentAgentPrompt, IntentAgentDecision]):
                 },
             }
 
-        request_kwargs: dict[str, object] = {
-            "model": self._model_id,
-            "temperature": self._temperature,
-            "messages": [
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-            "response_format": response_format,
-        }
+        max_tokens: int | None = None
+        extra_body: dict[str, object] | None = None
         if self._top_p is not None:
-            request_kwargs["top_p"] = self._top_p
+            top_p = self._top_p
+        else:
+            top_p = None
         if self._provider_kind == "deepseek":
-            request_kwargs["max_tokens"] = 700
-            request_kwargs["extra_body"] = {
+            max_tokens = 700
+            extra_body = {
                 "thinking": {"type": self._deepseek_thinking}
             }
+        elif self._provider_kind in {"json_object_only", "anthropic"}:
+            max_tokens = 700
 
-        response = await self._client.chat.completions.create(**request_kwargs)
-        raw_content: str = response.choices[0].message.content or ""
-        usage = getattr(response, "usage", None)
-        if usage is not None:
-            self._last_usage = {
-                "input_tokens": getattr(usage, "prompt_tokens", 0),
-                "output_tokens": getattr(usage, "completion_tokens", 0),
-            }
-        return raw_content
+        response = await self._model_client.complete(
+            ModelRequest(
+                model=self._model_id,
+                temperature=self._temperature,
+                top_p=top_p,
+                max_tokens=max_tokens,
+                messages=[
+                    ModelMessage(role="system", content=system_msg),
+                    ModelMessage(role="user", content=user_msg),
+                ],
+                response_format=response_format,
+                extra_body=extra_body,
+            )
+        )
+        self._last_usage = {
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        }
+        return response.text
 
     def _parse_output(self, raw: str) -> IntentAgentDecision:
         if not raw:
             raise AgentOutputError("LLM 返回空内容。")
         try:
-            return IntentAgentDecision.model_validate(json.loads(raw))
+            data = _normalize_intent_decision_payload(json.loads(raw))
+            return IntentAgentDecision.model_validate(data)
         except (json.JSONDecodeError, ValidationError) as exc:
             raise AgentOutputError(f"IntentAgentDecision 解析失败：{exc}") from exc
 

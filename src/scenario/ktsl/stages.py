@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from .models import InfoLabel, ModuleKTSLSpec
+from .stage_context import StageResult
 
 
 class SchemaValidationIssue(BaseModel):
@@ -211,8 +212,6 @@ class ScheduleGateStage:
     """
 
     def run(self, ctx: Any) -> "StageResult":
-        from .stage_context import StageResult
-
         ledger = ctx.ledger
         scene = ctx.scene
 
@@ -267,8 +266,6 @@ class FilterStage:
     _SENSITIVE_LEVELS = {"medium", "high", "keeper"}
 
     def run(self, ctx: Any) -> "StageResult":
-        from .stage_context import StageResult
-
         ledger = ctx.ledger
         event = ctx.scratch.get("resolve_event")
         if event is None:
@@ -324,8 +321,6 @@ class CouplingDriftStage:
     HIGH_COUPLING_THRESHOLD = 0.75
 
     def run(self, ctx: Any) -> "StageResult":
-        from .stage_context import StageResult
-
         ledger = ctx.ledger
         couplings = list(getattr(ledger, "couplings", []) or [])
 
@@ -380,8 +375,6 @@ class AuditStage:
     """
 
     def run(self, ctx: Any) -> "StageResult":
-        from .stage_context import StageResult
-
         ledger = ctx.ledger
         events = list(getattr(ledger, "events", []) or [])
 

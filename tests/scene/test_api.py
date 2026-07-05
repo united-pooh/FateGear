@@ -37,6 +37,45 @@ class _FreeformIntentAgent:
         return record
 
 
+class _OffMapIntentAgent:
+    def __init__(self) -> None:
+        self.records: list[_IntentRecord] = []
+
+    async def call(self, prompt: Any) -> _IntentRecord:
+        record = _IntentRecord(
+            prompt=prompt,
+            output=IntentAgentDecision(
+                intent_type="freeform",
+                confidence=0.88,
+                freeform_kind="off_map_move",
+                intended_target="七号车厢",
+                risk_hint="玩家正在尝试前往当前场景图外的区域。",
+                rationale="目标地点不在可移动场景列表中。",
+            ),
+        )
+        self.records.append(record)
+        return record
+
+
+class _ClarifyIntentAgent:
+    def __init__(self) -> None:
+        self.records: list[_IntentRecord] = []
+
+    async def call(self, prompt: Any) -> _IntentRecord:
+        record = _IntentRecord(
+            prompt=prompt,
+            output=IntentAgentDecision(
+                intent_type="clarify",
+                confidence=0.2,
+                clarification_question="请明确你要移动、调查，还是执行自由行动。",
+                candidates=["移动到「储藏室」", "执行「搜索钥匙」"],
+                rationale="原文缺少可执行目标。",
+            ),
+        )
+        self.records.append(record)
+        return record
+
+
 def test_scenario_service_lists_sample_modules() -> None:
     service = ScenarioService()
 
@@ -158,7 +197,7 @@ def test_scenario_service_replays_expected_turn() -> None:
     assert service.get_turn_resolution(created.session_id, 1).turn_no == 1
 
 
-def test_scenario_service_submit_text_intent_accepts_clear_move() -> None:
+def test_scenario_service_submit_text_intent_requires_agent_when_disabled() -> None:
     service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
 
@@ -168,16 +207,19 @@ def test_scenario_service_submit_text_intent_accepts_clear_move() -> None:
     )
     latest = service.get_party(created.session_id)
 
-    assert response.accepted is True
-    assert response.normalization.intent_payload == {
-        "type": "move",
-        "target_scene_id": "storage",
-    }
-    assert latest.pending_players == ["keeper"]
+    assert response.accepted is False
+    assert response.normalization.intent_payload is None
+    assert response.normalization.match_basis == ["agent_required"]
+    assert "需要启用 Intent Agent" in response.normalization.clarification_question
+    assert latest.pending_players == []
 
 
 def test_scenario_service_submit_text_intent_accepts_observe() -> None:
-    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    intent_agent = _FreeformIntentAgent()
+    service = ScenarioService(
+        runtime=SceneRuntime(roll_provider=lambda: 1),
+        intent_agent=intent_agent,
+    )
     created = service.create_party(
         {"module_id": "tokoyami_subset", "creator_id": "keeper"}
     )
@@ -189,13 +231,13 @@ def test_scenario_service_submit_text_intent_accepts_observe() -> None:
     resolution = asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
     latest = service.get_party(created.session_id)
 
+    assert len(intent_agent.records) == 1
     assert response.accepted is True
-    assert response.normalization.intent_payload == {
-        "type": "freeform",
-        "text": "我只是想确认一下什么情况",
-    }
+    assert response.normalization.intent_payload is not None
+    assert response.normalization.intent_payload["type"] == "freeform"
+    assert response.normalization.intent_payload["freeform_kind"] == "generic"
     assert response.normalization.matched_kind == "freeform"
-    assert response.normalization.matched_id == "observe"
+    assert response.normalization.matched_id == "llm_freeform"
     assert resolution.scene_batches[0].outcomes[0].intent_type == "freeform"
     assert (
         resolution.scene_batches[0].outcomes[0].freeform_text
@@ -207,7 +249,11 @@ def test_scenario_service_submit_text_intent_accepts_observe() -> None:
 
 
 def test_scenario_service_submit_text_intent_accepts_freeform_non_progression() -> None:
-    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    intent_agent = _FreeformIntentAgent()
+    service = ScenarioService(
+        runtime=SceneRuntime(roll_provider=lambda: 1),
+        intent_agent=intent_agent,
+    )
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
 
     response = service.submit_text_intent(
@@ -217,16 +263,50 @@ def test_scenario_service_submit_text_intent_accepts_freeform_non_progression() 
     resolution = asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
     latest = service.get_party(created.session_id)
 
+    assert len(intent_agent.records) == 1
+    assert response.accepted is True
+    assert response.normalization.intent_payload is not None
+    assert response.normalization.intent_payload["type"] == "freeform"
+    assert response.normalization.intent_payload["freeform_kind"] == "generic"
+    assert response.normalization.matched_id == "llm_freeform"
+    assert resolution.scene_batches[0].outcomes[0].intent_type == "freeform"
+    assert resolution.scene_batches[0].outcomes[0].freeform_text == "我开始跳舞"
+    assert resolution.scene_batches[0].outcomes[0].freeform_kind == "generic"
+    assert resolution.scene_batches[0].outcomes[0].effects_applied == []
+    assert latest.players[0].current_scene_id == "foyer"
+
+
+def test_scenario_service_preserves_freeform_when_intent_agent_clarifies() -> None:
+    intent_agent = _ClarifyIntentAgent()
+    service = ScenarioService(
+        runtime=SceneRuntime(roll_provider=lambda: 1),
+        intent_agent=intent_agent,
+    )
+    created = service.create_party(
+        {"module_id": "tokoyami_subset", "creator_id": "keeper"}
+    )
+
+    response = service.submit_text_intent(
+        created.session_id,
+        {"player_id": "keeper", "text": "再放声高歌，歌颂亲爱的故乡"},
+    )
+    latest = service.get_party(created.session_id)
+
+    assert len(intent_agent.records) == 1
+    assert intent_agent.records[0].prompt.deterministic_accepted is True
+    assert intent_agent.records[0].prompt.deterministic_matched_kind == "freeform"
     assert response.accepted is True
     assert response.normalization.intent_payload == {
         "type": "freeform",
-        "text": "我开始跳舞",
+        "text": "再放声高歌，歌颂亲爱的故乡",
     }
+    assert response.normalization.matched_kind == "freeform"
     assert response.normalization.matched_id == "freeform"
-    assert resolution.scene_batches[0].outcomes[0].intent_type == "freeform"
-    assert resolution.scene_batches[0].outcomes[0].freeform_text == "我开始跳舞"
-    assert resolution.scene_batches[0].outcomes[0].effects_applied == []
-    assert latest.players[0].current_scene_id == "foyer"
+    assert response.normalization.match_basis == [
+        "freeform:freeform:0.77",
+        "llm:clarify_ignored:0.20",
+    ]
+    assert latest.pending_players == ["keeper"]
 
 
 def test_scenario_service_uses_intent_agent_for_ambiguous_freeform_action() -> None:
@@ -273,7 +353,11 @@ def test_scenario_service_uses_intent_agent_for_ambiguous_freeform_action() -> N
 
 
 def test_scenario_service_submit_text_intent_accepts_off_map_move_as_freeform() -> None:
-    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    intent_agent = _OffMapIntentAgent()
+    service = ScenarioService(
+        runtime=SceneRuntime(roll_provider=lambda: 1),
+        intent_agent=intent_agent,
+    )
     created = service.create_party(
         {"module_id": "tokoyami_subset", "creator_id": "keeper"}
     )
@@ -290,6 +374,7 @@ def test_scenario_service_submit_text_intent_accepts_off_map_move_as_freeform() 
     resolution = asyncio.run(service.resolve_turn(created.session_id, expected_turn=2))
     latest = service.get_party(created.session_id)
 
+    assert len(intent_agent.records) == 1
     assert response.accepted is True
     assert response.normalization.matched_id == "off_map_move"
     assert response.normalization.intent_payload is not None
@@ -304,7 +389,11 @@ def test_scenario_service_submit_text_intent_accepts_off_map_move_as_freeform() 
 
 
 def test_scenario_service_submit_text_intent_preserves_deferred_observe() -> None:
-    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    intent_agent = _FreeformIntentAgent()
+    service = ScenarioService(
+        runtime=SceneRuntime(roll_provider=lambda: 1),
+        intent_agent=intent_agent,
+    )
     created = service.create_party(
         {"module_id": "tokoyami_subset", "creator_id": "keeper"}
     )
@@ -316,6 +405,7 @@ def test_scenario_service_submit_text_intent_preserves_deferred_observe() -> Non
     resolution = asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
     latest = service.get_party(created.session_id)
 
+    assert len(intent_agent.records) == 0
     assert response.accepted is True
     assert response.normalization.intent_payload == {
         "type": "move",
@@ -337,7 +427,11 @@ def test_scenario_service_submit_text_intent_preserves_deferred_observe() -> Non
 
 
 def test_scenario_service_submit_text_intent_clarifies_unclear_input() -> None:
-    service = ScenarioService(runtime=SceneRuntime(roll_provider=lambda: 1))
+    intent_agent = _ClarifyIntentAgent()
+    service = ScenarioService(
+        runtime=SceneRuntime(roll_provider=lambda: 1),
+        intent_agent=intent_agent,
+    )
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
 
     response = service.submit_text_intent(
@@ -346,9 +440,12 @@ def test_scenario_service_submit_text_intent_clarifies_unclear_input() -> None:
     )
     latest = service.get_party(created.session_id)
 
+    assert len(intent_agent.records) == 1
     assert response.accepted is False
     assert response.normalization.intent_payload is None
-    assert response.normalization.clarification_question
+    assert response.normalization.clarification_question == (
+        "请明确你要移动、调查，还是执行自由行动。"
+    )
     assert latest.pending_players == []
 
 

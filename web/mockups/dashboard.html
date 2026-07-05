@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KTSL Dashboard — Suprematist</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#FFF8F0;--paper:#FEF3C7;--sand:#F5E6D3;
+  --primary:#E85D3A;--amber:#F59E0B;--gold:#FBBF24;
+  --indigo:#1E3A5F;--forest:#2D6A4F;--brick:#DC2626;
+  --ink:#292524;--muted:#78716C;--line:#D6C4A8;
+}
+body{font-family:'Arial Black','Helvetica Neue',sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;top:-120px;right:-80px;width:400px;height:400px;background:var(--amber);opacity:.18;transform:rotate(18deg);z-index:0;pointer-events:none}
+body::after{content:'';position:fixed;bottom:-60px;left:64px;width:260px;height:320px;background:var(--primary);opacity:.10;transform:rotate(-12deg);z-index:0;pointer-events:none}
+
+/* Sidebar */
+.sidebar{position:fixed;top:0;left:0;width:64px;height:100vh;background:var(--indigo);z-index:100;display:flex;flex-direction:column;align-items:center;padding-top:20px;gap:4px}
+.sb-logo{width:40px;height:40px;background:var(--amber);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:var(--indigo);margin-bottom:24px}
+.sb-icon{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:18px;color:rgba(255,255,255,.6);cursor:pointer;transition:all .15s;position:relative}
+.sb-icon:hover,.sb-icon.active{color:var(--amber);background:rgba(255,255,255,.08)}
+.sb-icon.active::before{content:'';position:absolute;left:0;top:8px;width:3px;height:28px;background:var(--amber)}
+
+/* Main */
+main{margin-left:64px;flex:1;padding:36px 40px 60px;position:relative;z-index:1}
+.header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:36px;position:relative}
+.header::after{content:'';position:absolute;top:-36px;right:60px;width:80px;height:120px;background:var(--primary);opacity:.12;transform:rotate(6deg);z-index:-1}
+.header-left h1{font-size:28px;font-weight:900;letter-spacing:-.5px;line-height:1.1}
+.header-left .subtitle{font-family:sans-serif;font-size:12px;color:var(--muted);font-weight:400;letter-spacing:2px;text-transform:uppercase;margin-top:4px}
+.header-left .session-tag{display:inline-block;margin-top:8px;background:var(--paper);border:1.5px solid var(--line);font-family:monospace;font-size:11px;padding:3px 10px;color:var(--muted)}
+.header-right{display:flex;gap:24px;align-items:center}
+.sc{text-align:center}
+.sc .val{font-size:22px;font-weight:900;line-height:1;color:var(--indigo)}
+.sc .lbl{font-family:sans-serif;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+
+/* Section labels */
+.sec-label{font-size:10px;font-weight:900;letter-spacing:4px;text-transform:uppercase;color:var(--muted);margin-bottom:16px;position:relative;padding-left:20px}
+.sec-label::before{content:'';position:absolute;left:0;top:50%;width:10px;height:10px;background:var(--primary);transform:translateY(-50%) rotate(45deg)}
+
+/* Metrics 6-card grid */
+.grid6{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:40px}
+.mc{padding:18px 16px 16px;position:relative;cursor:default;transition:transform .15s;border:2px solid}
+.mc:hover{transform:translate(-2px,-2px)}
+.mc::after{content:'';position:absolute;top:-4px;right:-4px;width:16px;height:16px;transform:rotate(45deg)}
+.mc-0{background:#FEF3C7;border-color:#F59E0B}.mc-0::after{background:var(--gold)}
+.mc-1{background:#FFF;border-color:var(--primary)}.mc-1::after{background:var(--primary)}
+.mc-2{background:#FEF3C7;border-color:#D97706}.mc-2::after{background:var(--amber)}
+.mc-3{background:#FFF;border-color:var(--indigo)}.mc-3::after{background:var(--indigo)}
+.mc-4{background:#FEF3C7;border-color:var(--forest)}.mc-4::after{background:var(--forest)}
+.mc-5{background:#FFF;border-color:var(--ink)}.mc-5::after{background:var(--ink)}
+.mc-icon{font-size:24px;margin-bottom:8px;display:block}
+.mc-name{font-size:11px;font-weight:900;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;font-family:sans-serif;color:var(--muted)}
+.mc-val{font-size:36px;font-weight:900;line-height:1;letter-spacing:-1px}
+.mc-0 .mc-val{color:#B45309}.mc-1 .mc-val{color:var(--primary)}.mc-2 .mc-val{color:#B45309}
+.mc-3 .mc-val{color:var(--indigo)}.mc-4 .mc-val{color:var(--forest)}.mc-5 .mc-val{color:var(--ink)}
+.mc-status{font-size:10px;font-weight:700;margin-top:6px;letter-spacing:1px}
+.st-ok{color:var(--forest)}.st-warn{color:#B45309}.st-err{color:var(--brick)}
+
+/* Alerts */
+.al{margin-bottom:40px}
+.al-list{display:flex;flex-direction:column;gap:0}
+.al-row{display:flex;align-items:center;padding:14px 16px;background:#FFF;border:1.5px solid var(--line);margin-top:-1.5px;transition:background .12s}
+.al-row:hover{background:var(--paper)}
+.al-bar{width:5px;align-self:stretch;margin:-14px 14px -14px -16px;flex-shrink:0}
+.al-bar.w{background:var(--gold)}.al-bar.o{background:var(--forest)}.al-bar.e{background:var(--brick)}
+.al-body{flex:1}
+.al-text{font-weight:700;font-size:13px}
+.al-text .eid{font-family:monospace;font-weight:900;color:var(--indigo);margin-right:6px}
+.al-sub{font-weight:400!important;font-size:12px!important;font-family:sans-serif;color:var(--muted);margin-top:2px}
+.al-time{font-family:monospace;font-size:11px;color:var(--muted)}
+
+/* Actions */
+.ac{margin-bottom:40px}
+.ac-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.ac-btn{padding:22px 16px;border:2.5px solid var(--ink);background:#FFF;font-size:14px;font-weight:900;cursor:pointer;text-align:center;transition:all .12s;letter-spacing:.5px}
+.ac-btn:hover{background:var(--indigo);color:var(--bg);transform:translate(-3px,-3px);box-shadow:6px 6px 0 var(--amber)}
+.ac-btn:active{transform:translate(0,0);box-shadow:none}
+.ac-btn .bi{display:block;font-size:28px;margin-bottom:8px}
+
+/* Scenes */
+.scenes-list{display:flex;flex-direction:column;gap:8px}
+.s-row{display:flex;align-items:center;gap:16px;padding:14px 20px;background:#FFF;border:2px solid var(--line)}
+.s-name{font-weight:900;font-size:13px;width:160px;flex-shrink:0;letter-spacing:.5px}
+.s-track{flex:1;height:14px;background:var(--sand);border:1.5px solid var(--line);position:relative;overflow:hidden}
+.s-fill{height:100%;border-right:2px solid var(--ink)}
+.s-fill.green{background:var(--forest)}.s-fill.amber{background:var(--gold)}.s-fill.gray{background:#A8A29E;opacity:.4}
+.s-info{font-family:sans-serif;font-size:11px;color:var(--muted);width:260px;flex-shrink:0;text-align:right}
+.s-lock{font-size:18px;margin-left:auto}
+
+/* Floating */
+.float-cross{position:fixed;pointer-events:none;z-index:0;opacity:.07}
+.float-cross.c1{top:30vh;right:200px;width:60px;height:60px;background:var(--primary);transform:rotate(45deg)}
+.float-cross.c2{bottom:20vh;right:350px;width:40px;height:40px;background:var(--indigo);border-radius:50%}
+
+@media(max-width:1100px){.grid6{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.grid6{grid-template-columns:repeat(2,1fr)}.ac-grid{grid-template-columns:repeat(2,1fr)}.sc:not(:first-child){display:none}}
+</style>
+</head>
+<body>
+<div class="float-cross c1"></div>
+<div class="float-cross c2"></div>
+
+<nav class="sidebar">
+  <div class="sb-logo">K</div>
+  <div class="sb-icon active">▦</div>
+  <div class="sb-icon">▶</div>
+  <div class="sb-icon">≡</div>
+  <div class="sb-icon">⊞</div>
+  <div class="sb-icon">⊟</div>
+  <div class="sb-icon">◈</div>
+  <div class="sb-icon" style="margin-top:auto;margin-bottom:20px">⚙</div>
+</nav>
+
+<main>
+  <header class="header">
+    <div class="header-left">
+      <h1>警察·医院·老宅</h1>
+      <div class="subtitle">KTSL Session Dashboard</div>
+      <div class="session-tag">SESS-2026-07-04-A1F3</div>
+    </div>
+    <div class="header-right">
+      <div class="sc"><div class="val">42</div><div class="lbl">Minutes</div></div>
+      <div class="sc"><div class="val">8</div><div class="lbl">Events</div></div>
+      <div class="sc"><div class="val">2/4</div><div class="lbl">Scenes</div></div>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-label">Protocol Compliance</div>
+    <div class="grid6">
+      <div class="mc mc-0"><span class="mc-icon">⏱︎</span><div class="mc-name">因果违反</div><div class="mc-val">0</div><div class="mc-status st-ok">✓ NORMAL</div></div>
+      <div class="mc mc-1"><span class="mc-icon">🛡</span><div class="mc-name">未授权</div><div class="mc-val">1</div><div class="mc-status st-warn">⚠ WARNING</div></div>
+      <div class="mc mc-2"><span class="mc-icon">💧</span><div class="mc-name">信息泄露</div><div class="mc-val">0</div><div class="mc-status st-ok">✓ NORMAL</div></div>
+      <div class="mc mc-3"><span class="mc-icon">◎</span><div class="mc-name">Spot Gap</div><div class="mc-val">25'</div><div class="mc-status st-ok">✓ NORMAL</div></div>
+      <div class="mc mc-4"><span class="mc-icon">⊕</span><div class="mc-name">解密</div><div class="mc-val">.97</div><div class="mc-status st-ok">✓ NORMAL</div></div>
+      <div class="mc mc-5"><span class="mc-icon">↺</span><div class="mc-name">Retcon</div><div class="mc-val">0</div><div class="mc-status st-ok">✓ NORMAL</div></div>
+    </div>
+  </section>
+
+  <section class="al">
+    <div class="sec-label">Recent Alerts</div>
+    <div class="al-list">
+      <div class="al-row"><div class="al-bar w"></div><div class="al-body"><div class="al-text"><span class="eid">#E007</span>因果违反 — KP已 override</div><div class="al-sub">前置事件 #E005 未提交 → barrier B3 未满足</div></div><div class="al-time">2m ago</div></div>
+      <div class="al-row"><div class="al-bar w"></div><div class="al-body"><div class="al-text"><span class="eid">#E003</span>潜在信息泄露 — 已 flag</div><div class="al-sub">李 可能推断出 [info_12] 尸体位置 (high)</div></div><div class="al-time">8m ago</div></div>
+      <div class="al-row"><div class="al-bar o"></div><div class="al-body"><div class="al-text"><span class="eid">#E012</span>Barrier B3 满足 ✓</div><div class="al-sub">scene old_house 已解锁</div></div><div class="al-time">12m ago</div></div>
+    </div>
+  </section>
+
+  <section class="ac">
+    <div class="sec-label">Quick Actions</div>
+    <div class="ac-grid">
+      <button class="ac-btn"><span class="bi">▣</span>提交行动</button>
+      <button class="ac-btn"><span class="bi">≡</span>Timeline</button>
+      <button class="ac-btn"><span class="bi">⊞</span>知识地图</button>
+      <button class="ac-btn"><span class="bi">◉</span>保存状态</button>
+    </div>
+  </section>
+
+  <section style="margin-top:36px">
+    <div class="sec-label">Scene Progress</div>
+    <div class="scenes-list">
+      <div class="s-row"><div class="s-name">hospital_wing</div><div class="s-track"><div class="s-fill green" style="width:66%"></div></div><div class="s-info">2/3 events · barrier B2 waiting</div></div>
+      <div class="s-row"><div class="s-name">street</div><div class="s-track"><div class="s-fill amber" style="width:25%"></div></div><div class="s-info">1/4 events · active</div></div>
+      <div class="s-row"><div class="s-name">old_house</div><div class="s-track"><div class="s-fill gray" style="width:100%"></div></div><div class="s-info">0/2 events · needs B3</div><div class="s-lock">🔒</div></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

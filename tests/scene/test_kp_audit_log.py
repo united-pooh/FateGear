@@ -5,8 +5,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from scenario.agent import KeeperNarration, NPCDialogue, PrivateClue
+from scenario.agent import IntentAgentDecision, KeeperNarration, NPCDialogue, PrivateClue
 from scenario.api import ScenarioService
+from scenario.auth import Principal
 from scenario.runtime import SceneRuntime
 
 
@@ -53,6 +54,20 @@ class _AuditNarrator:
         )
 
 
+class _FreeformIntentAgent:
+    async def call(self, prompt: Any) -> _Record:
+        return _Record(
+            prompt=prompt,
+            output=IntentAgentDecision(
+                intent_type="freeform",
+                confidence=0.9,
+                freeform_kind="generic",
+                risk_hint="可由 KP 作为低风险自由行动裁定。",
+                rationale="玩家正在描述角色动作。",
+            ),
+        )
+
+
 def test_scenario_service_writes_kp_jsonl_audit_log(tmp_path) -> None:
     log_path = tmp_path / "kp-flow.jsonl"
     runtime = SceneRuntime(
@@ -65,11 +80,25 @@ def test_scenario_service_writes_kp_jsonl_audit_log(tmp_path) -> None:
     )
 
     created = service.create_party({"module_id": "generic_mvp", "creator_id": "keeper"})
-    service.submit_text_intent(
+    service.submit_intent(
         created.session_id,
-        {"player_id": "keeper", "text": "我去储藏室"},
+        {
+            "player_id": "keeper",
+            "intent": {"type": "move", "target_scene_id": "storage"},
+        },
     )
-    asyncio.run(service.resolve_turn(created.session_id, expected_turn=1))
+    principal = Principal(
+        principal_id="keeper",
+        role="keeper",
+        session_id=created.session_id,
+    )
+    asyncio.run(
+        service.resolve_turn(
+            created.session_id,
+            expected_turn=1,
+            principal=principal,
+        )
+    )
 
     events = [
         json.loads(line)
@@ -78,11 +107,10 @@ def test_scenario_service_writes_kp_jsonl_audit_log(tmp_path) -> None:
 
     assert [event["event_type"] for event in events] == [
         "party_created",
-        "text_intent_submitted",
+        "structured_intent_submitted",
         "turn_resolved",
     ]
-    assert events[1]["raw_text"] == "我去储藏室"
-    assert events[1]["normalization"]["intent_payload"] == {
+    assert events[1]["intent"] == {
         "type": "move",
         "target_scene_id": "storage",
     }
@@ -95,6 +123,11 @@ def test_scenario_service_writes_kp_jsonl_audit_log(tmp_path) -> None:
     assert scene["private_clues"][0]["clue_text"] == "你注意到钥匙孔边缘有新鲜划痕。"
     assert scene["keeper_hint"] == "KP提示：下一轮推进后方威胁。"
     assert resolved["turn_resolution"]["agent_calls"][0]["stage"] == "render"
+    assert resolved["principal_id"] == "keeper"
+    assert resolved["principal_role"] == "keeper"
+    assert resolved["principal_session_scope"] == created.session_id
+    assert "authorization" not in json.dumps(resolved).lower()
+    assert "bearer" not in json.dumps(resolved).lower()
 
 
 def test_kp_jsonl_records_freeform_non_progression_without_fake_effects(
@@ -103,6 +136,7 @@ def test_kp_jsonl_records_freeform_non_progression_without_fake_effects(
     log_path = tmp_path / "kp-flow.jsonl"
     service = ScenarioService(
         runtime=SceneRuntime(roll_provider=lambda: 1),
+        intent_agent=_FreeformIntentAgent(),
         kp_audit_log_path=log_path,
     )
 
@@ -121,12 +155,15 @@ def test_kp_jsonl_records_freeform_non_progression_without_fake_effects(
     resolved = events[2]
     outcome = resolved["turn_resolution"]["scene_batches"][0]["outcomes"][0]
 
-    assert submitted["normalization"]["matched_id"] == "freeform"
+    assert submitted["normalization"]["matched_id"] == "llm_freeform"
     assert submitted["normalization"]["intent_payload"] == {
         "type": "freeform",
         "text": "我开始跳舞",
+        "freeform_kind": "generic",
+        "risk_hint": "可由 KP 作为低风险自由行动裁定。",
     }
     assert outcome["intent_type"] == "freeform"
     assert outcome["freeform_text"] == "我开始跳舞"
+    assert outcome["freeform_kind"] == "generic"
     assert outcome["effects_applied"] == []
     assert resolved["party"]["players"][0]["current_scene_id"] == "foyer"

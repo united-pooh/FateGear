@@ -10,7 +10,11 @@ from cards import build_investigator_from_mapping, load_skill_template_mapping
 from scenario.agent import KeeperPlanAgent, KeeperRenderAgent
 from scenario.agent.config import AgentModelConfig, AgentSettings, OpenAIProviderConfig
 from scenario.runtime import SceneRuntime, TurnResolution
+from scenario.session.state import NPCSessionState
 from tests.scene.card_fixtures import build_player_cards
+
+# CoC 7e 人类八维特征默认键
+_COC_DEFAULT_KEYS = {"STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU"}
 
 
 class FixedRollProvider:
@@ -443,6 +447,54 @@ def test_generic_mvp_harness_smoke_runs_planner_and_narrator_agents() -> None:
         "private_clues": 0,
         "is_fallback": False,
     }
+
+
+# ---------------------------------------------------------------------------
+# _init_npc_states 相关测试（GROUP-7 / TASK-010 与 TASK-011）
+# ---------------------------------------------------------------------------
+
+
+def test_create_session_initializes_npc_states() -> None:
+    """tokoyami_subset 的 attendant NPC 应被正确初始化会话中。"""
+    runtime = SceneRuntime(roll_provider=lambda: 1)
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+
+    assert "attendant" in session.npc_states, (
+        "tokoyami_subset 模组有 attendant NPC，初始化后应存在"
+    )
+    npc_state = session.npc_states["attendant"]
+    assert isinstance(npc_state, NPCSessionState)
+    assert npc_state.npc_id == "attendant"
+    assert npc_state.module_id == "tokoyami_subset"
+    # NPC 未配置 characteristics，应使用 CoC 7e 默认八维均值 50。
+    assert set(npc_state.characteristics.keys()) == _COC_DEFAULT_KEYS
+    assert all(
+        value == 50 for value in npc_state.characteristics.values()
+    ), "默认 characteristics 八项均应为 50"
+    # active_scene_ids[0] = car_4 应成为 NPC 的默认场景。
+    assert npc_state.current_scene_id == "car_4"
+    # ENGINE-002 phase-A: attendant 是 public NPC，因此默认对全玩家可见。
+    assert npc_state.visible_to_player_ids == {"p1"}
+    assert npc_state.skills == {}
+    assert npc_state.last_updated_turn == 1
+
+
+def test_create_session_default_scene_from_active_scene_ids() -> None:
+    """当 default_scene_id 缺失时应回退到 active_scene_ids[0]。"""
+    runtime = SceneRuntime(roll_provider=lambda: 1)
+    session = runtime.create_session(
+        "tokoyami_subset",
+        ["p1"],
+        player_cards=build_player_cards(["p1"]),
+    )
+
+    npc_state = session.npc_states["attendant"]
+    # tokoyami_subset attendant 没有 default_scene_id，但有 active_scene_ids=[car_4]。
+    assert npc_state.current_scene_id == "car_4"
 
 
 def test_runtime_passes_narrative_context_to_planner_and_narrator() -> None:

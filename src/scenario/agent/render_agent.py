@@ -23,11 +23,12 @@ from ..context import NarrativeContextLayer
 from .base import AgentCallRecord, AgentOutputError, BaseAgent
 from .config import (
     AgentSettings,
-    build_openai_client,
+    build_model_client,
     detect_provider_kind,
     load_agent_settings,
     select_provider_for_model,
 )
+from .model_client import ModelMessage, ModelRequest
 from .models import CommitResult, KeeperNarration, PrivateClue
 
 logger = logging.getLogger(__name__)
@@ -494,6 +495,7 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
         *,
         model_id: str | None = None,
         openai_client: Any = None,  # openai.AsyncOpenAI
+        model_client: Any = None,
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
@@ -507,8 +509,14 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
             model_id=self._model_id,
             default_provider=settings.narrator_provider,
             deepseek_provider=settings.deepseek_provider,
+            anthropic_provider=settings.anthropic_provider,
         )
-        self._client = openai_client or build_openai_client(provider)
+        self._model_client = model_client or build_model_client(
+            provider,
+            model_id=self._model_id,
+            openai_client=openai_client,
+        )
+        self._client = getattr(self._model_client, "raw_client", self._model_client)
         self._temperature = (
             narrator_config.temperature if temperature is None else temperature
         )
@@ -520,9 +528,12 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
             else timeout_seconds
         )
         self._deepseek_thinking = settings.deepseek_thinking
-        self._provider_kind = detect_provider_kind(
-            model_id=self._model_id,
-            client=self._client,
+        self._provider_kind = str(
+            getattr(
+                self._model_client,
+                "provider_kind",
+                detect_provider_kind(model_id=self._model_id, client=provider),
+            )
         )
 
     # ------------------------------------------------------------------
@@ -531,9 +542,9 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
 
     async def _call_llm(self, prompt: CommitResult) -> str:
         """向 OpenAI 发起 structured output 调用，返回叙事 JSON 字符串。"""
-        if self._client is None:
+        if self._model_client is None:
             logger.info(
-                "KeeperRenderAgent: openai_client 未配置，跳过 LLM 调用（降级模式）。"
+                "KeeperRenderAgent: model_client 未配置，跳过 LLM 调用（降级模式）。"
             )
             return ""
 
@@ -551,6 +562,19 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
                 ]
             )
             response_format = {"type": "json_object"}
+        elif self._provider_kind == "anthropic":
+            system_prompt = "\n\n".join(
+                [system_prompt, _DEEPSEEK_NARRATION_JSON_EXAMPLE]
+            )
+            user_msg = "\n\n".join(
+                [
+                    user_msg,
+                    "再次提醒：请只返回合法的 json object，不要输出 markdown 或额外解释。",
+                ]
+            )
+            response_format = {"type": "json_object"}
+        elif self._provider_kind == "json_object_only":
+            response_format = {"type": "json_object"}
         else:
             response_format = {
                 "type": "json_schema",
@@ -560,42 +584,46 @@ class KeeperRenderAgent(BaseAgent[CommitResult, KeeperNarration]):
                     "schema": _KEEPER_NARRATION_SCHEMA,
                 },
             }
-        request_kwargs: dict[str, object] = {
-            "model": self._model_id,
-            "temperature": self._temperature,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_msg},
-            ],
-            "response_format": response_format,
-            "presence_penalty": 1.0,  # 鼓励模型输出与上下文不同的内容
-        }
+        max_tokens: int | None = None
+        extra_body: dict[str, object] | None = None
         if self._top_p is not None:
-            request_kwargs["top_p"] = self._top_p
+            top_p = self._top_p
+        else:
+            top_p = None
         if self._top_k is not None:
             logger.debug(
                 "KeeperRenderAgent 配置了 top_k=%s，但当前 OpenAI Chat Completions 调用不会使用该参数。",
                 self._top_k,
             )
         if self._provider_kind == "deepseek":
-            request_kwargs["max_tokens"] = 1600
-            request_kwargs["extra_body"] = {
+            max_tokens = 1600
+            extra_body = {
                 "thinking": {"type": self._deepseek_thinking}
             }
+        elif self._provider_kind in {"json_object_only", "anthropic"}:
+            max_tokens = 1600
 
-        response = await self._client.chat.completions.create(**request_kwargs)
+        response = await self._model_client.complete(
+            ModelRequest(
+                model=self._model_id,
+                temperature=self._temperature,
+                top_p=top_p,
+                max_tokens=max_tokens,
+                messages=[
+                    ModelMessage(role="system", content=system_prompt),
+                    ModelMessage(role="user", content=user_msg),
+                ],
+                response_format=response_format,
+                presence_penalty=1.0,
+                extra_body=extra_body,
+            )
+        )
 
-        raw_content: str = response.choices[0].message.content or ""
-
-        # 记录 token 用量
-        usage = getattr(response, "usage", None)
-        if usage is not None:
-            self._last_usage = {
-                "input_tokens": getattr(usage, "prompt_tokens", 0),
-                "output_tokens": getattr(usage, "completion_tokens", 0),
-            }
-
-        return raw_content
+        self._last_usage = {
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        }
+        return response.text
 
     def _parse_output(self, raw: str) -> KeeperNarration:
         """将 JSON 字符串解析为 KeeperNarration。"""

@@ -7,6 +7,7 @@ from scenario.agent.render_agent import (
     _build_render_user_message,
 )
 from scenario.agent.models import CommitResult
+from scenario.context.models import SelectedNPCContext
 from scenario.io import load_module_by_id
 from scenario.runtime import SceneRuntime
 from tests.scene.card_fixtures import build_player_cards
@@ -282,3 +283,22 @@ def test_prompt_builder_previews_pending_off_map_move_risk_update() -> None:
     assert "violation_kind=off_map_move" in user_message
     assert "preview=3->9" in user_message
     assert "heavy_required=True" in user_message
+
+
+def test_selected_npc_context_schema_stable_in_prompt_pipeline() -> None:
+    """TASK-012/TASK-013: pipeline consumer relies on SelectedNPCContext schema — must
+    remain identical across prompt-builder flows."""
+    expected = {
+        "npc_id",
+        "name",
+        "role",
+        "public_description",
+        "persona",
+        "speaking_style",
+        "goals",
+        "knowledge_boundary",
+        "secrets",
+        "visibility",
+        "selection_reason",
+    }
+    assert set(SelectedNPCContext.model_fields.keys()) == expected

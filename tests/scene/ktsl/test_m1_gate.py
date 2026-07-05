@@ -1,7 +1,6 @@
 """M1 gate: paper fixture converts into a valid KTSLLedger and persists."""
 from __future__ import annotations
 
-import pytest
 
 from scenario.ktsl.fixtures import build_library_sewer_church_fixture
 from scenario.ktsl.models import KTSLLedger

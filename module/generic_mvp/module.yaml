@@ -62,6 +62,7 @@ actions:
     aliases: [找钥匙, 搜钥匙, 翻箱子, 搜索储藏室]
     expected_inputs: [钥匙, 箱子, 工具]
     stakes: 成功会找到控制室钥匙；失败会浪费本回合机会。
+    fail_forward_hint: 你没有找到钥匙本体，但注意到一串新鲜拖痕通向备用工具箱后方。
     once: true
     check:
       skill_key: spot_hidden

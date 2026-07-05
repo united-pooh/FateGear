@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KTSL Reports — Suprematist</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#FFF8F0;--paper:#FEF3C7;--sand:#F5E6D3;--primary:#E85D3A;--amber:#F59E0B;--gold:#FBBF24;--indigo:#1E3A5F;--forest:#2D6A4F;--brick:#DC2626;--ink:#292524;--muted:#78716C;--line:#D6C4A8}
+body{font-family:'Arial Black','Helvetica Neue',sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+body::before{content:'';position:fixed;top:-80px;right:200px;width:300px;height:300px;background:var(--primary);opacity:.07;border-radius:50%;z-index:0;pointer-events:none}
+.sidebar{position:fixed;top:0;left:0;width:64px;height:100vh;background:var(--indigo);z-index:100;display:flex;flex-direction:column;align-items:center;padding-top:20px;gap:4px}
+.sb-logo{width:40px;height:40px;background:var(--amber);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:var(--indigo);margin-bottom:24px}
+.sb-icon{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:18px;color:rgba(255,255,255,.6);cursor:pointer;position:relative}
+.sb-icon:hover,.sb-icon.active{color:var(--amber);background:rgba(255,255,255,.08)}
+.sb-icon.active::before{content:'';position:absolute;left:0;top:8px;width:3px;height:28px;background:var(--amber)}
+
+main{margin-left:64px;flex:1;padding:36px 40px 60px;position:relative;z-index:1;max-width:1200px}
+h1{font-size:22px;font-weight:900;margin-bottom:6px}
+.subtitle{font-family:sans-serif;font-size:11px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:24px}
+
+.tabs{display:flex;gap:0;margin-bottom:28px;border-bottom:3px solid var(--ink)}
+.tab{padding:12px 24px;font-size:12px;font-weight:900;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border:2px solid var(--ink);border-bottom:none;margin-bottom:-3px;background:var(--sand);margin-right:4px}
+.tab.active{background:var(--ink);color:var(--bg)}
+
+/* Report list table */
+.report-list{border:2px solid var(--ink);background:#FFF}
+.rl-header{display:grid;grid-template-columns:1fr 1fr 80px 80px 100px 120px;gap:0;background:var(--paper);border-bottom:2px solid var(--ink);font-size:10px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:var(--muted);padding:10px 16px}
+.rl-row{display:grid;grid-template-columns:1fr 1fr 80px 80px 100px 120px;gap:0;border-bottom:1.5px solid var(--line);padding:12px 16px;align-items:center;font-size:12px;transition:background .1s}
+.rl-row:hover{background:var(--paper)}
+.rl-row:last-child{border-bottom:none}
+.rl-date{font-family:monospace;font-size:11px}
+.rl-module{font-weight:700}
+.rl-chip{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.5px;padding:2px 8px;border:2px solid}
+.chip-pass{background:var(--forest);color:#FFF;border-color:#1a4a35}
+.chip-warn{background:var(--gold);color:var(--ink);border-color:#B45309}
+.chip-fail{background:var(--brick);color:#FFF;border-color:#991b1b}
+.rl-time{font-family:monospace;color:var(--muted);font-size:11px}
+.rl-actions{display:flex;gap:6px}
+.rl-btn{font-family:sans-serif;font-size:10px;font-weight:700;border:1.5px solid var(--line);background:#FFF;padding:4px 10px;cursor:pointer}
+.rl-btn:hover{border-color:var(--indigo);color:var(--indigo)}
+
+/* Report preview panel */
+.preview{margin-top:32px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.preview-left{border:3px solid var(--ink);background:#FFF;padding:28px}
+.verdict-badge{display:inline-block;font-size:32px;font-weight:900;letter-spacing:2px;padding:8px 20px;margin-bottom:20px;border:3px solid}
+.verdict-pass{background:var(--forest);color:#FFF;border-color:#1a4a35}
+.verdict-fail{background:var(--brick);color:#FFF;border-color:#991b1b}
+.report-meta{font-family:sans-serif;font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:20px}
+.report-meta strong{color:var(--ink);font-weight:700}
+
+/* Comparison table */
+.comp-table{width:100%;border-collapse:collapse;font-size:11px}
+.comp-table th{background:var(--paper);border:2px solid var(--ink);padding:8px 10px;text-align:center;font-weight:900;font-size:10px;letter-spacing:1px;text-transform:uppercase}
+.comp-table td{border:1.5px solid var(--line);padding:8px 10px;text-align:center;font-family:monospace;font-weight:700;font-size:12px}
+.comp-table td:first-child{text-align:left;font-family:'Arial Black',sans-serif;font-size:11px;font-weight:900}
+.comp-table .v-pass{color:var(--forest)}
+.comp-table .v-fail{color:var(--brick)}
+.comp-table .th-mode{background:var(--sand);font-size:13px;font-weight:900}
+.row-baseline{background:#FFF}
+.row-schedule{background:#FFF}
+.row-ktsl{background:var(--paper)}
+
+.preview-right{border:3px solid var(--line);background:#FFF;padding:28px;display:flex;flex-direction:column;align-items:center}
+.radar-title{font-size:10px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:20px}
+.legend-row{display:flex;gap:16px;margin-top:16px;font-family:sans-serif;font-size:10px;color:var(--muted)}
+.legend-item{display:flex;align-items:center;gap:4px}
+.legend-swatch{width:12px;height:12px;border:1px solid var(--ink)}
+
+/* Suprematist accent shapes */
+.accent-shape{position:fixed;pointer-events:none;z-index:0;opacity:.06}
+.a-sq{top:60vh;left:900px;width:60px;height:60px;background:var(--primary);transform:rotate(20deg)}
+.a-rd{top:15vh;right:400px;width:40px;height:40px;border-radius:50%;background:var(--indigo)}
+</style>
+</head>
+<body>
+<div class="accent-shape a-sq"></div>
+<div class="accent-shape a-rd"></div>
+
+<nav class="sidebar">
+  <div class="sb-logo">K</div>
+  <div class="sb-icon">▦</div>
+  <div class="sb-icon">▶</div>
+  <div class="sb-icon">≡</div>
+  <div class="sb-icon">⊞</div>
+  <div class="sb-icon">⊟</div>
+  <div class="sb-icon active">◈</div>
+  <div class="sb-icon" style="margin-top:auto;margin-bottom:20px">⚙</div>
+</nav>
+
+<main>
+  <h1>Reports</h1>
+  <div class="subtitle">Session Reports · 6 files</div>
+
+  <div class="tabs">
+    <div class="tab active">Session Reports</div>
+    <div class="tab">Publish Reports</div>
+  </div>
+
+  <!-- Report List -->
+  <div class="report-list" style="margin-bottom:24px">
+    <div class="rl-header">
+      <div>Date</div><div>Module</div><div>Duration</div><div>Events</div><div>Status</div><div></div>
+    </div>
+    <div class="rl-row">
+      <div class="rl-date">2026-07-04 14:22</div>
+      <div class="rl-module">police_hospital</div>
+      <div class="rl-time">42 min</div>
+      <div class="rl-time">8</div>
+      <div><span class="rl-chip chip-warn">⚠ 1 flagged</span></div>
+      <div class="rl-actions"><button class="rl-btn">MD</button><button class="rl-btn">HTML</button><button class="rl-btn">▶</button></div>
+    </div>
+    <div class="rl-row">
+      <div class="rl-date">2026-07-03 20:05</div>
+      <div class="rl-module">police_hospital</div>
+      <div class="rl-time">58 min</div>
+      <div class="rl-time">12</div>
+      <div><span class="rl-chip chip-pass">✓ CLEAN</span></div>
+      <div class="rl-actions"><button class="rl-btn">MD</button><button class="rl-btn">HTML</button><button class="rl-btn">▶</button></div>
+    </div>
+    <div class="rl-row">
+      <div class="rl-date">2026-06-28 19:30</div>
+      <div class="rl-module">simple_library</div>
+      <div class="rl-time">35 min</div>
+      <div class="rl-time">5</div>
+      <div><span class="rl-chip chip-fail">✗ ERRORS</span></div>
+      <div class="rl-actions"><button class="rl-btn">MD</button><button class="rl-btn">HTML</button><button class="rl-btn">▶</button></div>
+    </div>
+  </div>
+
+  <!-- Report Preview -->
+  <div class="preview">
+    <div class="preview-left">
+      <div class="verdict-badge verdict-warn">⚠ FLAGGED</div>
+      <div class="report-meta">
+        <strong>Module:</strong> police_hospital_old_house<br>
+        <strong>Date:</strong> 2026-07-04 14:22 → 15:04<br>
+        <strong>Duration:</strong> 42 minutes · 8 events committed<br>
+        <strong>KP:</strong> 田中
+      </div>
+
+      <table class="comp-table">
+        <tr>
+          <th>Metric</th>
+          <th class="row-baseline" style="background:var(--sand)">Baseline</th>
+          <th class="row-schedule" style="background:var(--sand)">Schedule</th>
+          <th class="row-ktsl" style="background:var(--paper)">KTSL Full</th>
+        </tr>
+        <tr>
+          <td>Caus.Vio</td>
+          <td class="v-pass">3</td>
+          <td class="v-pass">1</td>
+          <td class="v-pass">0</td>
+        </tr>
+        <tr>
+          <td>Unauth</td>
+          <td class="v-pass">8</td>
+          <td class="v-pass">3</td>
+          <td class="v-pass">0</td>
+        </tr>
+        <tr>
+          <td>Info Leak</td>
+          <td class="v-pass">2</td>
+          <td class="v-pass">1</td>
+          <td class="v-fail">1 ⚠</td>
+        </tr>
+        <tr>
+          <td>Retcon</td>
+          <td class="v-pass">1</td>
+          <td class="v-pass">0</td>
+          <td class="v-pass">0</td>
+        </tr>
+        <tr>
+          <td>Spot Gap</td>
+          <td class="v-pass">45'</td>
+          <td class="v-pass">32'</td>
+          <td class="v-pass">25'</td>
+        </tr>
+        <tr>
+          <td>Declass</td>
+          <td class="v-pass">.40</td>
+          <td class="v-pass">.65</td>
+          <td class="v-pass">.97</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="preview-right">
+      <div class="radar-title">Metrics Radar</div>
+      <!-- Inline SVG radar chart -->
+      <svg width="280" height="280" viewBox="0 0 280 280">
+        <!-- Background hex grid -->
+        <polygon points="140,20 240,75 240,185 140,240 40,185 40,75" fill="none" stroke="#D6C4A8" stroke-width="1.5"/>
+        <polygon points="140,60 205,95 205,175 140,210 75,175 75,95" fill="none" stroke="#D6C4A8" stroke-width="1"/>
+        <polygon points="140,100 175,115 175,155 140,170 105,155 105,115" fill="none" stroke="#D6C4A8" stroke-width="1"/>
+        <!-- Axes -->
+        <line x1="140" y1="140" x2="140" y2="20" stroke="#D6C4A8" stroke-width="1"/>
+        <line x1="140" y1="140" x2="240" y2="75" stroke="#D6C4A8" stroke-width="1"/>
+        <line x1="140" y1="140" x2="240" y2="185" stroke="#D6C4A8" stroke-width="1"/>
+        <line x1="140" y1="140" x2="140" y2="240" stroke="#D6C4A8" stroke-width="1"/>
+        <line x1="140" y1="140" x2="40" y2="185" stroke="#D6C4A8" stroke-width="1"/>
+        <line x1="140" y1="140" x2="40" y2="75" stroke="#D6C4A8" stroke-width="1"/>
+
+        <!-- Axis Labels -->
+        <text x="140" y="12" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#78716C" font-weight="bold">Causal</text>
+        <text x="250" y="78" text-anchor="start" font-family="sans-serif" font-size="10" fill="#78716C" font-weight="bold">Unauth</text>
+        <text x="250" y="192" text-anchor="start" font-family="sans-serif" font-size="10" fill="#78716C" font-weight="bold">Leak</text>
+        <text x="140" y="258" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#78716C" font-weight="bold">Retcon</text>
+        <text x="30" y="192" text-anchor="end" font-family="sans-serif" font-size="10" fill="#78716C" font-weight="bold">Spot</text>
+        <text x="30" y="78" text-anchor="end" font-family="sans-serif" font-size="10" fill="#78716C" font-weight="bold">Declass</text>
+
+        <!-- KTSL Full polygon (good — large) -->
+        <polygon points="140,25 235,80 235,180 140,235 45,180 48,85"
+                 fill="rgba(45,106,79,0.15)" stroke="#2D6A4F" stroke-width="2.5"/>
+
+        <!-- Schedule-only polygon (medium) -->
+        <polygon points="140,50 210,95 210,178 140,220 75,178 78,97"
+                 fill="rgba(245,158,11,0.12)" stroke="#F59E0B" stroke-width="2" stroke-dasharray="4,3"/>
+
+        <!-- Baseline polygon (small — more violations) -->
+        <polygon points="140,80 190,110 190,170 140,205 95,170 98,112"
+                 fill="rgba(26,58,95,0.10)" stroke="#1E3A5F" stroke-width="2" stroke-dasharray="2,4"/>
+
+        <!-- Center dot -->
+        <circle cx="140" cy="140" r="3" fill="#292524"/>
+
+        <!-- KTSL Full vertex dots -->
+        <circle cx="140" cy="25" r="4" fill="#2D6A4F"/>
+        <circle cx="235" cy="80" r="4" fill="#2D6A4F"/>
+        <circle cx="235" cy="180" r="4" fill="#2D6A4F"/>
+        <circle cx="140" cy="235" r="4" fill="#2D6A4F"/>
+        <circle cx="45" cy="180" r="4" fill="#2D6A4F"/>
+        <circle cx="48" cy="85" r="4" fill="#2D6A4F"/>
+      </svg>
+
+      <div class="legend-row">
+        <div class="legend-item"><div class="legend-swatch" style="background:#2D6A4F"></div>KTSL Full</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#F59E0B"></div>Schedule</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#1E3A5F"></div>Baseline</div>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
